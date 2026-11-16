@@ -23,7 +23,7 @@ android {
         buildConfigField("String", "REPO", "\"$repoSlug\"")
         buildConfigField("String", "CLOUD_VERSION", "\"$cloudVer\"")
         ndk {
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+            abiFilters += listOf("arm64-v8a", "x86_64")   // Python 3.12 в Chaquopy — только 64-битные
         }
     }
 
