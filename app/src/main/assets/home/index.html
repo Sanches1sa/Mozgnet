@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>mozgnet</title>
+<style>
+  :root{--bg:#0b0f17;--card:#121826;--line:#22304a;--txt:#cfd6e4;--hi:#eef2f8;--acc:#2dd4bf;--acc2:#60a5fa;--bad:#f87171;--ok:#34d399;--mut:#8592a8}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--txt);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;padding:14px 14px 40px}
+  h1{margin:4px 0 2px;color:var(--hi);font-size:24px;letter-spacing:.5px}
+  h1 b{color:var(--acc)}
+  .sub{color:var(--mut);font-size:12.5px;margin-bottom:12px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px;margin:12px 0}
+  .card h2{margin:0 0 8px;font-size:16px;color:var(--hi)}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:6px 0}
+  .k{color:var(--mut);min-width:84px;font-size:13px}
+  .v{color:var(--hi);word-break:break-all;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13.5px}
+  button{background:var(--acc);color:#0b0f17;border:0;border-radius:11px;padding:10px 14px;font:600 14px system-ui,sans-serif}
+  button.g{background:transparent;color:var(--acc);border:1px solid var(--line)}
+  button.s{padding:6px 10px;font-size:12.5px}
+  button:disabled{opacity:.5}
+  input[type=text]{flex:1;min-width:120px;background:#0e1420;border:1px solid var(--line);border-radius:10px;color:var(--hi);padding:9px 10px;font-size:14px}
+  .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;background:var(--mut)}
+  .dot.ok{background:var(--ok)} .dot.bad{background:var(--bad)} .dot.wait{background:#fbbf24}
+  .bar{height:6px;border-radius:3px;background:#0e1420;overflow:hidden;margin:8px 0}
+  .bar i{display:block;height:100%;width:0;background:var(--acc2);transition:width .2s}
+  .host{border:1px solid var(--line);border-radius:12px;padding:10px;margin:8px 0;background:#0f1522}
+  .host .t{color:var(--hi);font-weight:600}
+  .tag{display:inline-block;font-size:11.5px;border-radius:8px;padding:1px 7px;margin-left:6px;background:#1c2a44;color:var(--acc2)}
+  .tag.b{background:#16332e;color:var(--acc)}
+  .mut{color:var(--mut);font-size:12.5px}
+  .err{color:var(--bad);font-size:12.5px;white-space:pre-wrap}
+  .sw{display:flex;align-items:center;gap:8px}
+  .sw input{width:20px;height:20px;flex:none}
+  .sw label{flex:1;min-width:0}
+  a{color:var(--acc2)}
+</style>
+</head>
+<body>
+<h1>mozg<b>net</b></h1>
+<div class="sub" id="ver">мобильное облако «Мозг-12»</div>
+
+<div class="card" id="cLocal">
+  <h2>Облако в телефоне</h2>
+  <div class="row"><span class="dot wait" id="lDot"></span><span id="lState">запускается…</span></div>
+  <div class="row sw" style="flex-wrap:nowrap"><input type="checkbox" id="lOn"><label for="lOn">Держать облако включённым (уведомление в шторке)</label></div>
+  <div class="row"><span class="k">Адрес для плат</span><span class="v" id="lAddr">—</span><button class="g s" id="cpAddr">копировать</button></div>
+  <div class="row"><span class="k">Пароль панели</span><span class="v" id="lPw">••••••</span><button class="g s" id="shPw">показать</button><button class="g s" id="cpPw">копировать</button></div>
+  <div class="row"><span class="k">Мозг-токен</span><span class="v" id="lTok">—</span><button class="g s" id="cpTok">копировать</button></div>
+  <div class="row"><button id="openLocal">Открыть облако</button><button class="g" id="brLocal">в браузере</button></div>
+  <div class="err" id="lErr"></div>
+  <div class="mut">Это то же облако, что на компьютере: чат, мозг, своя LLM, база знаний, боты, обновления. Память хранится в телефоне.</div>
+</div>
+
+<div class="card">
+  <h2>Сеть</h2>
+  <div class="mut" id="nIp">Телефон в сети: —</div>
+  <div class="row"><button id="scan">Сканировать сеть</button><span class="mut" id="scanTxt"></span></div>
+  <div class="bar"><i id="scanBar"></i></div>
+  <div class="row"><input type="text" id="manIp" placeholder="адрес платы или облака, напр. 192.168.1.50" inputmode="decimal"><button class="g" id="manGo">Проверить</button></div>
+  <div id="hosts"></div>
+</div>
+
+<div class="card">
+  <h2>Как подключить плату</h2>
+  <div class="mut">1. Телефон и плата — в одной сети Wi-Fi (или плата в точке доступа телефона).<br>
+  2. «Сканировать сеть» → у платы «Подключить к облаку телефона»: плата получит адрес облака и мозг-токен.<br>
+  3. Облако работает, пока включено «Держать облако включённым». На ночь лучше на зарядке.<br>
+  Облако на компьютере тоже находится сканом — плату можно подключить к нему.</div>
+  <div class="row" id="upd"></div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const M = window.Mozg || null;
+let INFO = {}, pwShown = false, hosts = {};
+
+function J(s, d) { try { return JSON.parse(s); } catch (e) { return d; } }
+
+function refresh() {
+  if (!M) { $('#lState').textContent = 'открыто не в приложении mozgnet'; return; }
+  const i = J(M.info(), {}); INFO = i;
+  $('#ver').textContent = 'mozgnet ' + (i.app || '') ;
+  $('#lOn').checked = i.local_on !== false;
+  $('#nIp').textContent = 'Телефон в сети: ' + (i.ip || 'нет Wi-Fi');
+  const st = i.status || {};
+  const dot = $('#lDot');
+  if (!i.local_on) { dot.className = 'dot'; $('#lState').textContent = 'выключено'; }
+  else if (st.ok) { dot.className = 'dot ok'; $('#lState').textContent = 'работает · облако v' + (st.version || '?') + (st.starting ? ' · заканчивает запуск' : '') + (st.numpy === false ? ' · без numpy' : ''); }
+  else if (st.err || i.error) { dot.className = 'dot bad'; $('#lState').textContent = 'не запустилось'; }
+  else { dot.className = 'dot wait'; $('#lState').textContent = 'запускается… (первый запуск — до минуты)'; }
+  $('#lErr').textContent = (st.err || i.error || '');
+  $('#lAddr').textContent = i.ip ? 'http://' + i.ip + ':' + (i.port || 8077) : 'нет Wi-Fi';
+  $('#lPw').textContent = i.password ? (pwShown ? i.password : '••••••') : '—';
+  $('#lTok').textContent = i.token ? i.token.slice(0, 6) + '…' + i.token.slice(-4) : '—';
+  $('#openLocal').disabled = !st.ok;
+  if (i.repo) $('#upd').innerHTML = '<a href="#" id="relLink">Новые версии mozgnet — github.com/' + esc(i.repo) + '/releases</a>';
+  const rl = $('#relLink'); if (rl) rl.onclick = e => { e.preventDefault(); M.browser('https://github.com/' + i.repo + '/releases/latest'); };
+}
+
+function hostHtml(h) {
+  const me = h.me ? ' <span class="tag">этот телефон</span>' : '';
+  let s = '<div class="host"><div class="t">' + esc(h.ip) + me + '</div>';
+  if (h.board) {
+    s += '<div><span class="tag b">плата neuro_12 v' + esc(h.board_ver) + '</span> <span class="mut">' + esc(h.sketch || '') + '</span></div>' +
+      '<div class="row"><button class="s" data-open="' + esc(h.board) + '">Открыть плату</button>' +
+      '<button class="g s" data-conn="' + esc(h.board) + '">Подключить к облаку телефона</button>' +
+      (Object.values(hosts).some(x => x.cloud && !x.me) ? '<button class="g s" data-connpc="' + esc(h.board) + '">…к облаку компьютера</button>' : '') +
+      '</div><div class="mut" id="cr_' + esc(h.ip.replace(/\./g, '_')) + '"></div>';
+  }
+  if (h.cloud) {
+    s += '<div><span class="tag">облако v' + esc(h.cloud_ver) + '</span></div>' +
+      '<div class="row"><button class="s" data-open="' + esc(h.cloud) + '">Открыть облако</button></div>';
+  }
+  if (!h.board && !h.cloud) s += '<div class="mut">открыты порты ' + esc((h.ports || []).join(', ')) + ' — не плата и не облако</div>';
+  return s + '</div>';
+}
+
+function drawHosts() {
+  const list = Object.values(hosts).sort((a, b) => (b.board ? 2 : b.cloud ? 1 : 0) - (a.board ? 2 : a.cloud ? 1 : 0));
+  $('#hosts').innerHTML = list.length ? list.map(hostHtml).join('') : '<div class="mut">Пока ничего не найдено.</div>';
+  document.querySelectorAll('[data-open]').forEach(b => b.onclick = () => M.open(b.dataset.open));
+  document.querySelectorAll('[data-conn]').forEach(b => b.onclick = () => {
+    if (!INFO.ip || !INFO.token) { alert('Облако телефона ещё не готово или нет Wi-Fi'); return; }
+    note(b.dataset.conn, 'подключаю к облаку телефона…');
+    M.connectBoard(b.dataset.conn, 'http://' + INFO.ip + ':' + (INFO.port || 8077), INFO.token);
+  });
+  document.querySelectorAll('[data-connpc]').forEach(b => b.onclick = () => {
+    const clouds = Object.values(hosts).filter(x => x.cloud && !x.me);
+    const c = clouds.length === 1 ? clouds[0] : clouds[(+prompt('Номер облака:\n' + clouds.map((x, i) => (i + 1) + ') ' + x.cloud).join('\n'), '1') || 1) - 1];
+    if (!c) return;
+    const tok = prompt('Мозг-токен облака компьютера (data/token.txt или ⚙ → Платы):', '');
+    if (tok === null) return;
+    note(b.dataset.connpc, 'подключаю к ' + c.cloud + '…');
+    M.connectBoard(b.dataset.connpc, c.cloud.replace(/\/$/, ''), tok);
+  });
+  try { M.setPref('hosts', JSON.stringify(hosts)); } catch (e) {}
+}
+
+function note(base, txt) {
+  const ip = base.replace(/^https?:\/\//, '').split(':')[0];
+  const el = document.getElementById('cr_' + ip.replace(/\./g, '_'));
+  if (el) el.textContent = txt;
+}
+
+window.onScan = (done, total, h, fin) => {
+  if (h) { hosts[h.ip] = h; drawHosts(); }
+  if (total) $('#scanBar').style.width = Math.round(100 * done / total) + '%';
+  if (total) $('#scanTxt').textContent = 'проверено ' + done + ' из ' + total;
+  if (fin) {
+    $('#scan').disabled = false;
+    const n = Object.values(hosts).filter(x => x.board).length, c = Object.values(hosts).filter(x => x.cloud).length;
+    $('#scanTxt').textContent = 'готово: плат ' + n + ', облаков ' + c;
+    drawHosts();
+  }
+};
+window.onProbe = (ip, h) => {
+  $('#manGo').disabled = false;
+  if (h) { hosts[h.ip] = h; drawHosts(); } else alert(ip + ': ни платы, ни облака (порты 7000, 8077 закрыты)');
+};
+window.onConnect = (base, res) => {
+  note(base, res === 'ok' ? '✅ плата подключена — через пару секунд она появится в облаке' : '⚠️ не вышло: ' + res);
+};
+
+$('#scan').onclick = () => { if (!M) return; $('#scan').disabled = true; $('#scanBar').style.width = '0'; $('#scanTxt').textContent = 'ищу…'; M.scan(); };
+$('#manGo').onclick = () => { const ip = $('#manIp').value.trim(); if (!ip || !M) return; $('#manGo').disabled = true; M.probe(ip); };
+$('#lOn').onchange = () => { M.setLocal($('#lOn').checked); setTimeout(refresh, 600); };
+$('#openLocal').onclick = () => M.openLocal();
+$('#brLocal').onclick = () => INFO.ip && M.browser('http://' + INFO.ip + ':' + (INFO.port || 8077) + '/');
+$('#cpAddr').onclick = () => INFO.ip && M.copy('http://' + INFO.ip + ':' + (INFO.port || 8077));
+$('#cpPw').onclick = () => INFO.password && M.copy(INFO.password);
+$('#cpTok').onclick = () => INFO.token && M.copy(INFO.token);
+$('#shPw').onclick = () => { pwShown = !pwShown; $('#shPw').textContent = pwShown ? 'скрыть' : 'показать'; refresh(); };
+
+if (M) { hosts = J(M.pref('hosts') || '{}', {}) || {}; }
+drawHosts();
+refresh();
+setInterval(refresh, 2500);
+if (M && !Object.keys(hosts).length) setTimeout(() => $('#scan').click(), 1500);
+</script>
+</body>
+</html>

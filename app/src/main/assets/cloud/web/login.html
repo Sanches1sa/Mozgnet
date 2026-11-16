@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Вход · мозг-12 облако</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2310a37f'/%3E%3Ctext x='16' y='22' font-size='16' text-anchor='middle' fill='white' font-family='sans-serif'%3E%F0%9F%A7%A0%3C/text%3E%3C/svg%3E">
+<style>
+  :root{--bg:#0f1115;--panel:#161a22;--line:#262b35;--text:#eceef2;
+        --muted:#8b93a3;--acc:#2dd4bf;--acc2:#8b5cf6;--err:#f87171}
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{min-height:100vh;display:flex;align-items:center;justify-content:center;
+    color:var(--text);padding:18px;overflow:hidden;
+    font-family:Inter,'Segoe UI Variable','Segoe UI',system-ui,sans-serif;
+    background:radial-gradient(900px 520px at 85% -10%,rgba(139,92,246,.22),transparent 60%),
+      radial-gradient(800px 520px at -5% 110%,rgba(45,212,191,.18),transparent 60%),var(--bg);
+    -webkit-font-smoothing:antialiased}
+  #net{position:fixed;inset:0;width:100%;height:100%;opacity:.55;pointer-events:none}
+  .card{position:relative;width:100%;max-width:390px;border-radius:24px;padding:32px 28px;
+    background:rgba(22,26,34,.74);backdrop-filter:blur(18px);
+    -webkit-backdrop-filter:blur(18px);border:1px solid var(--line);
+    box-shadow:0 30px 80px rgba(0,0,0,.55),0 0 0 1px rgba(45,212,191,.06);
+    animation:in .5s cubic-bezier(.2,.8,.2,1) both}
+  @keyframes in{from{opacity:0;transform:translateY(16px) scale(.98)}to{opacity:1;transform:none}}
+  .logo{width:62px;height:62px;border-radius:18px;margin:0 auto 16px;
+    background:linear-gradient(135deg,var(--acc),var(--acc2));
+    display:flex;align-items:center;justify-content:center;font-size:32px;
+    box-shadow:0 10px 30px rgba(45,212,191,.35);animation:fl 5s ease-in-out infinite}
+  @keyframes fl{50%{transform:translateY(-5px)}}
+  h1{font-size:20px;text-align:center;margin-bottom:6px;letter-spacing:-.01em}
+  .sub{color:var(--muted);font-size:13px;text-align:center;margin-bottom:22px;line-height:1.5}
+  label{display:block;font-size:12.5px;color:var(--muted);margin:14px 0 6px}
+  .pw{position:relative}
+  input{width:100%;background:#1c212b;border:1px solid var(--line);color:var(--text);
+    border-radius:12px;padding:12px 14px;font-size:14.5px;outline:none;transition:.15s}
+  input:focus{border-color:rgba(45,212,191,.7);box-shadow:0 0 0 4px rgba(45,212,191,.13)}
+  .eye{position:absolute;right:6px;top:50%;transform:translateY(-50%);width:auto;
+    margin:0;padding:6px 9px;background:none;color:var(--muted);font-size:15px;border-radius:8px}
+  .eye:hover{background:#252a34;color:var(--text)}
+  .pw input{padding-right:44px}
+  button.go{width:100%;margin-top:20px;border:0;border-radius:12px;padding:13px;
+    font-size:14.5px;font-weight:700;cursor:pointer;color:#04211d;
+    background:linear-gradient(135deg,var(--acc),#14b8a6);transition:.15s}
+  button.go:hover{filter:brightness(1.08);box-shadow:0 8px 26px rgba(45,212,191,.32)}
+  button.go:active{transform:scale(.98)}
+  button:disabled{opacity:.6;cursor:wait}
+  .err{color:var(--err);font-size:13px;margin-top:12px;min-height:18px;text-align:center}
+  .shake{animation:sh .35s}
+  @keyframes sh{20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}
+  .hint{color:var(--muted);font-size:12px;margin-top:16px;line-height:1.5;
+    border-top:1px solid var(--line);padding-top:14px}
+  .hint b{color:var(--text)}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important}}
+</style>
+</head>
+<body>
+<canvas id="net"></canvas>
+<div class="card">
+  <div class="logo">🧠</div>
+  <h1 id="title">мозг-12 · облако</h1>
+  <div class="sub" id="sub">Панель защищена паролем. Войди, чтобы открыть
+    чат, зрение и настройки.</div>
+
+  <div id="formLogin" hidden>
+    <label for="pw">Пароль панели</label>
+    <div class="pw"><input id="pw" type="password" autocomplete="current-password"
+           placeholder="••••••••" autofocus><button type="button" class="eye" data-for="pw" aria-label="показать пароль">👁</button></div>
+    <button class="go" id="btnGo">Войти</button>
+    <div class="err" id="err1"></div>
+  </div>
+
+  <div id="formSetup" hidden>
+    <div class="sub">Первый запуск: придумай пароль веб-панели. Он нужен
+      будет при каждом входе с этого и других устройств.</div>
+    <label for="pw1">Новый пароль (от 4 знаков)</label>
+    <input id="pw1" type="password" autocomplete="new-password"
+           placeholder="••••••••">
+    <label for="pw2">Повтори пароль</label>
+    <input id="pw2" type="password" autocomplete="new-password"
+           placeholder="••••••••">
+    <button class="go" id="btnSet">Создать пароль и войти</button>
+    <div class="err" id="err2"></div>
+    <div class="hint">Платы neuro_12 подключаются отдельно — по <b>токену
+      платы</b> (X-Mozg-Token), им пароль панели не нужен.</div>
+  </div>
+</div>
+
+<script>
+'use strict';
+const err1 = document.getElementById('err1');
+const err2 = document.getElementById('err2');
+
+async function post(path, body){
+  const r = await fetch(path, {method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(body)});
+  let j = {};
+  try { j = await r.json(); } catch(e){}
+  return {status: r.status, j: j};
+}
+
+function show(which){
+  document.getElementById('formLogin').hidden = which !== 'login';
+  document.getElementById('formSetup').hidden = which !== 'setup';
+}
+
+async function login(pw, btn, errbox){
+  btn.disabled = true; errbox.textContent = '';
+  const res = await post('/api/auth/login', {password: pw});
+  if (res.status === 200 && res.j.ok) { location.href = '/'; return; }
+  errbox.textContent = res.j.error || ('Ошибка ' + res.status);
+  btn.disabled = false;
+  const c = document.querySelector('.card');
+  c.classList.remove('shake'); void c.offsetWidth; c.classList.add('shake');
+}
+
+document.querySelectorAll('.eye').forEach(function(b){
+  b.onclick = function(){
+    var i = document.getElementById(b.dataset.for);
+    i.type = i.type === 'password' ? 'text' : 'password';
+    b.textContent = i.type === 'password' ? '👁' : '🙈';
+  };
+});
+
+(function bg(){
+  var cv = document.getElementById('net'), cx = cv.getContext('2d'), W, H, P = [];
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  function rs(){ W = cv.width = innerWidth; H = cv.height = innerHeight;
+    P = Array.from({length: Math.min(60, Math.round(W*H/24000))}, function(){
+      return {x:Math.random()*W, y:Math.random()*H, vx:(Math.random()-.5)*.3,
+              vy:(Math.random()-.5)*.3}; }); }
+  addEventListener('resize', rs); rs();
+  (function f(){
+    cx.clearRect(0,0,W,H);
+    P.forEach(function(p){ p.x+=p.vx; p.y+=p.vy;
+      if(p.x<0||p.x>W)p.vx*=-1; if(p.y<0||p.y>H)p.vy*=-1; });
+    for(var i=0;i<P.length;i++){
+      for(var j=i+1;j<P.length;j++){
+        var d=Math.hypot(P[i].x-P[j].x,P[i].y-P[j].y);
+        if(d<140){ cx.strokeStyle='rgba(45,212,191,'+(.28*(1-d/140)).toFixed(3)+')';
+          cx.beginPath(); cx.moveTo(P[i].x,P[i].y); cx.lineTo(P[j].x,P[j].y); cx.stroke(); } }
+      cx.fillStyle='rgba(139,92,246,.7)'; cx.beginPath();
+      cx.arc(P[i].x,P[i].y,1.8,0,6.283); cx.fill(); }
+    requestAnimationFrame(f);
+  })();
+})();
+
+(async function init(){
+  let j = {};
+  try {
+    const r = await fetch('/api/auth/check');
+    j = await r.json();
+  } catch(e) {
+    document.getElementById('sub').textContent =
+      'Облако не отвечает — проверь, запущен ли сервер.';
+    return;
+  }
+  if (j.has_password) {
+    show('login');
+    const go = () => login(document.getElementById('pw').value,
+                           document.getElementById('btnGo'), err1);
+    document.getElementById('btnGo').onclick = go;
+    document.getElementById('pw').addEventListener('keydown', e => {
+      if (e.key === 'Enter') go(); });
+  } else {
+    show('setup');
+    const go = () => {
+      const p1 = document.getElementById('pw1').value;
+      const p2 = document.getElementById('pw2').value;
+      err2.textContent = '';
+      if (p1.length < 4) { err2.textContent =
+        'Пароль слишком короткий — минимум 4 знака.'; return; }
+      if (p1 !== p2) { err2.textContent = 'Пароли не совпадают.'; return; }
+      const btn = document.getElementById('btnSet');
+      btn.disabled = true;
+      post('/api/auth/setup', {password: p1}).then(res => {
+        if (res.status === 200 && res.j.ok) { location.href = '/'; return; }
+        err2.textContent = res.j.error || ('Ошибка ' + res.status);
+        btn.disabled = false;
+      });
+    };
+    document.getElementById('btnSet').onclick = go;
+    document.getElementById('pw2').addEventListener('keydown', e => {
+      if (e.key === 'Enter') go(); });
+  }
+})();
+</script>
+</body>
+</html>

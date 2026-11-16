@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>мозг-12 · Cyber Neural</title>
+<meta name="theme-color" content="#0f1115">
+<script>/* v3.21: тема и акцент применяются ДО отрисовки — без «вспышки» */
+(function(){try{var a=localStorage.getItem('n12_accent');
+if(a)document.documentElement.setAttribute('data-accent',a);
+var t=localStorage.getItem('n12_theme')||'dark';
+var light=t==='light'||(t==='auto'&&matchMedia('(prefers-color-scheme: light)').matches);
+document.addEventListener('DOMContentLoaded',function(){document.body.classList.toggle('light',light)});
+}catch(e){}})();</script>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2310a37f'/%3E%3Ctext x='16' y='22' font-size='16' text-anchor='middle' fill='white' font-family='sans-serif'%3E%F0%9F%A7%A0%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+<div class="app">
+
+  <!-- ======================= САЙДБАР ======================= -->
+  <aside id="sidebar">
+    <div class="side-top">
+      <div class="brand">
+        <div class="logo">🧠</div>
+        <div>
+          <b>мозг-12 · Cyber Neural</b>
+          <small id="verline">neuro12-cloud</small>
+        </div>
+      </div>
+      <button class="newchat" id="btnNewChat"><span>＋ Новый чат</span><kbd>Alt+N</kbd></button>
+      <input class="search" id="chatSearch" type="search"
+             placeholder="Поиск по чатам…" autocomplete="off">
+    </div>
+
+    <div class="sidetitle">Чаты</div>
+    <div id="chatlist"></div>
+
+    <div class="side-status" id="sideStatus">
+      <div class="chip"><span class="dot ok" id="dotCloud"></span> облако</div>
+      <div class="chip"><span class="dot" id="dotBoards"></span>
+        платы: <b id="boardsOnline">—</b></div>
+      <div class="chip">сеть: <b id="netNodes">—</b> узлов</div>
+    </div>
+  </aside>
+  <div class="side-veil" id="sideVeil"></div>
+
+  <!-- ======================= ОСНОВНАЯ КОЛОНКА ======================= -->
+  <main>
+    <header>
+      <button class="burger" id="btnBurger" aria-label="меню">☰</button>
+      <button class="hbtn backchat" id="btnBackChat" hidden title="Вернуться в чат (Esc)">← Чат</button>
+      <div class="head-titles">
+        <h1 id="chatTitle">Новый чат</h1>
+        <div class="sub" id="headSub">думаю сам, без LLM</div>
+      </div>
+      <div class="grow"></div>
+      <button class="hbtn burger2" id="btnBurger2" aria-label="меню платформы">☰</button>
+      <div class="modes" id="modeBox" title="Кто отвечает в чате">
+        <button data-route="auto" class="on" title="Тот же ИИ, что в боте МАКС">Авто</button>
+        <button data-route="cloud" title="Тот же ИИ, что в боте МАКС">Облако</button>
+        <button data-route="talk" title="Разговор: просто поговорить — пишет сам мозг (плата, иначе мозг облака), своя LLM дополняет; без базы знаний и фактов, сплошным текстом">💬 Разговор</button>
+        <button data-route="code" title="Мозг пишет код по запросу">⌨ Код</button>
+      </div>
+      <label class="longtoggle" title="Длинные ответы (сеть материалов)">
+        <input type="checkbox" id="chkLong"> длинно
+      </label>
+      <a class="hbtn" href="/doom" target="_blank" title="Игра «РОК-12»: мозг платы играет в DOOM-подобную игру, когда сам захочет" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center">🎮</a>
+      <button class="hbtn" id="btnExport" title="Экспорт чата в Markdown">⭳</button>
+      <button class="hbtn" id="btnTheme" title="Тема: тёмная / светлая / авто">◐</button>
+      <button class="hbtn" id="btnCmdk" title="Команды (Ctrl+K)">⌘</button>
+    </header>
+
+    <!-- вид: чат -->
+    <section id="viewChat" class="view on">
+      <canvas id="bgnet" aria-hidden="true"></canvas>
+      <button class="fab" id="btnDown" title="Вниз" aria-label="Вниз">↓</button>
+      <section id="projectAgent" class="project-agent" hidden></section>
+      <div id="msgs"><div class="inner" id="msgsInner"></div></div>
+      <div class="composer">
+        <div class="attach-preview" id="attachPreview"></div>
+        <div class="slashbox" id="slashBox" role="listbox"></div>
+        <div class="langbar" id="langBar" hidden></div>
+        <div class="cbox">
+          <button class="iconbtn" id="btnAttach" title="Прикрепить файл">📎</button>
+          <input type="file" id="fileInput" hidden
+                 accept=".zip,.rar,.txt,.md,.csv,.json,.html,.xml,.pdf,.docx,.xlsx,.pptx,.py,.ino,.log,.yaml,.yml">
+          <textarea id="input" rows="1" placeholder="Спроси мозг-12…"
+                    autocomplete="off"></textarea>
+          <button class="iconbtn" id="btnTTS" title="Озвучивать ответы">🔊</button>
+          <button class="send" id="btnSend" title="Отправить">➤</button>
+        </div>
+        <div class="cnote">neuro12-cloud отвечает ассоциативной сетью
+          материалов, базой знаний и навыками · LLM отключён</div>
+      </div>
+    </section>
+
+    <!-- вид: пульс мозга (v3.21) -->
+    <section id="viewPulse" class="view">
+      <div class="panel-wrap"><div class="inner" id="pulseBox"></div></div>
+    </section>
+
+    <!-- вид: app lab -->
+    <section id="viewApplab" class="view">
+      <div class="panel-wrap"><div class="inner" id="applabBox"></div></div>
+    </section>
+
+    <!-- вид: хроника -->
+    <section id="viewChronicle" class="view">
+      <div class="panel-wrap"><div class="inner" id="chronicleBox"></div></div>
+    </section>
+
+    <!-- вид: рабочий стол (v3.150) -->
+    <section id="viewDesktop" class="view">
+      <div class="panel-wrap"><div class="inner" id="desktopBox"></div></div>
+    </section>
+
+    <!-- вид: зрение -->
+    <section id="viewVision" class="view">
+      <div class="panel-wrap"><div class="inner" id="visionBox"></div></div>
+    </section>
+  </main>
+  <aside id="rightmenu">
+    <div class="sidetitle">Платформа <button class="rm-fold" id="btnRmFold" title="Свернуть меню">⇥</button></div>
+    <nav class="sidenav">
+      <button data-view="chat" class="on" title="Вернуться в чат (Esc)">💬 Чат</button>
+      <button data-view="pulse">💗 Пульс мозга</button>
+      <button data-view="applab">🧩 App Lab</button>
+      <button data-view="chronicle">📜 Хроника плат</button>
+      <button data-view="vision">📷 Зрение</button>
+      <button data-view="thoughts">💭 Мысли плат</button>
+      <button data-view="desktop">🖥 Рабочий стол</button>
+      <div class="sep"></div>
+      <button id="btnCmdkSide">⌘ Команды <span class="kbd" style="margin-left:auto">Ctrl+K</span></button>
+      <button id="btnSettings">⚙ Настройки</button>
+      <button id="btnLogout">⎋ Выйти</button>
+    </nav>
+  </aside>
+</div>
+
+<!-- ======================= НАСТРОЙКИ (модал) ======================= -->
+<div class="modal-veil" id="settingsVeil">
+  <div class="modal" role="dialog" aria-modal="true">
+    <aside class="mtabs">
+      <div class="mtabs-title">Настройки</div>
+      <div class="mgrp">Основное</div>
+      <button data-tab="common" class="on">Общие</button>
+      <button data-tab="devices">Устройства и платы</button>
+      <button data-tab="ssh">SSH-серверы</button>
+      <div class="mgrp">Знания и обучение</div>
+      <button data-tab="memory">Облачная память</button>
+      <button data-tab="kb">База знаний</button>
+      <button data-tab="zones">Зоны мысли</button>
+      <button data-tab="teacher">Учитель (LLM)</button>
+      <button data-tab="instruct">Инструкции ИИ</button>
+      <div class="mgrp">Каналы</div>
+      <button data-tab="voice">Голос</button>
+      <button data-tab="maxbot">Макс-бот</button>
+      <button data-tab="tgbot">Телеграм-бот</button>
+      <button data-tab="aiapi">API и ответы</button>
+      <div class="mgrp">Система</div>
+      <button data-tab="security">Безопасность</button>
+      <button data-tab="update">⬆ Обновление</button>
+      <button data-tab="log">Журнал</button>
+      <div class="grow"></div>
+      <button class="close" id="btnCloseSettings">✕ Закрыть</button>
+    </aside>
+    <div class="mbody">
+      <div class="mpane on" data-pane="common"></div>
+      <div class="mpane" data-pane="devices"></div>
+      <div class="mpane" data-pane="ssh"></div>
+      <div class="mpane" data-pane="memory"></div>
+      <div class="mpane" data-pane="kb"></div>
+      <div class="mpane" data-pane="zones"></div>
+      <div class="mpane" data-pane="teacher"></div>
+      <div class="mpane" data-pane="instruct"></div>
+      <div class="mpane" data-pane="voice"></div>
+      <div class="mpane" data-pane="maxbot"></div>
+      <div class="mpane" data-pane="tgbot"></div>
+      <div class="mpane" data-pane="aiapi"></div>
+      <div class="mpane" data-pane="security"></div>
+      <div class="mpane" data-pane="update"></div>
+      <div class="mpane" data-pane="log"></div>
+    </div>
+  </div>
+</div>
+
+<!-- командная палитра (Ctrl+K) -->
+<div class="cmdk-veil" id="cmdkVeil">
+  <div class="cmdk" role="dialog" aria-modal="true" aria-label="Команды">
+    <input id="cmdkInput" placeholder="Что сделать? Чат, раздел, настройка, действие…"
+           autocomplete="off" spellcheck="false">
+    <div class="list" id="cmdkList"></div>
+    <div class="foot"><span><span class="kbd">↑↓</span> выбор</span>
+      <span><span class="kbd">Enter</span> открыть</span>
+      <span><span class="kbd">Esc</span> закрыть</span></div>
+  </div>
+</div>
+
+<div id="toasts"></div>
+<script src="/app.js"></script>
+<script src="/ui-plus.js"></script>
+</body>
+</html>
