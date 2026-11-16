@@ -13,7 +13,10 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
+import android.graphics.Insets;
+import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
 import android.webkit.CookieManager;
 import android.webkit.PermissionRequest;
 import android.webkit.URLUtil;
@@ -41,11 +44,18 @@ public class MainActivity extends Activity {
     // кнопка «назад к mozgnet» на страницах облака и плат
     private static final String BAR_JS =
             "(function(){if(document.getElementById('mozgnetHome'))return;" +
-            "var b=document.createElement('div');b.id='mozgnetHome';b.textContent='⌂';" +
-            "b.title='mozgnet';b.style.cssText='position:fixed;left:10px;bottom:84px;z-index:2147483647;" +
-            "width:44px;height:44px;border-radius:22px;background:#2dd4bf;color:#0b0f17;font:700 22px/44px sans-serif;" +
-            "text-align:center;box-shadow:0 4px 14px rgba(0,0,0,.45);opacity:.9;cursor:pointer';" +
-            "b.onclick=function(){try{Mozg.home()}catch(e){location.href='" + HOME + "'}};" +
+            "var b=document.createElement('div');b.id='mozgnetHome';b.textContent='⌂';b.title='mozgnet';" +
+            "var y=0;try{y=+localStorage.getItem('mozgnetHomeY')||0}catch(e){}" +
+            "if(!y)y=Math.round(innerHeight*0.42);" +
+            "b.style.cssText='position:fixed;right:0;top:'+y+'px;z-index:2147483647;width:30px;height:40px;" +
+            "border-radius:12px 0 0 12px;background:rgba(45,212,191,.85);color:#0b0f17;font:700 18px/40px sans-serif;" +
+            "text-align:center;box-shadow:0 2px 10px rgba(0,0,0,.4);touch-action:none;user-select:none';" +
+            "var sy=0,st=0,mv=false;" +
+            "b.addEventListener('touchstart',function(e){sy=e.touches[0].clientY;st=b.offsetTop;mv=false},{passive:true});" +
+            "b.addEventListener('touchmove',function(e){var d=e.touches[0].clientY-sy;if(Math.abs(d)>6)mv=true;" +
+            "if(mv){b.style.top=Math.max(40,Math.min(innerHeight-60,st+d))+'px';e.preventDefault()}},{passive:false});" +
+            "b.addEventListener('touchend',function(){if(mv){try{localStorage.setItem('mozgnetHomeY',parseInt(b.style.top))}catch(e){}}});" +
+            "b.onclick=function(){if(mv)return;try{Mozg.home()}catch(e){location.href='" + HOME + "'}};" +
             "document.body.appendChild(b)})()";
 
     @SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
@@ -55,6 +65,19 @@ public class MainActivity extends Activity {
         web = new WebView(this);
         web.setLayoutParams(new ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         setContentView(web);
+        // Android 15: окно рисуется под строкой состояния и жестами — отступаем,
+        // чтобы шапка облака не залезала под часы, а поле ввода — под жесты
+        web.setOnApplyWindowInsetsListener((View v, WindowInsets in) -> {
+            if (Build.VERSION.SDK_INT >= 30) {
+                Insets b = in.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+                Insets ime = in.getInsets(WindowInsets.Type.ime());
+                v.setPadding(b.left, b.top, b.right, Math.max(b.bottom, ime.bottom));
+            } else {
+                v.setPadding(in.getSystemWindowInsetLeft(), in.getSystemWindowInsetTop(),
+                        in.getSystemWindowInsetRight(), in.getSystemWindowInsetBottom());
+            }
+            return in;
+        });
 
         WebSettings s = web.getSettings();
         s.setJavaScriptEnabled(true);
