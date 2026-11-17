@@ -109,7 +109,10 @@ jobs:
           Invoke-WebRequest https://bootstrap.pypa.io/get-pip.py -OutFile get-pip.py
           & "$R/python.exe" get-pip.py --no-warn-script-location
           if ($LASTEXITCODE) { throw "get-pip" }
-          & "$R/python.exe" -m pip install --no-warn-script-location --no-cache-dir numpy pillow vosk
+          # srt (зависимость vosk) — только исходники: сборка без изоляции, setuptools заранее
+          & "$R/python.exe" -m pip install --no-warn-script-location --no-cache-dir setuptools wheel
+          if ($LASTEXITCODE) { throw "setuptools" }
+          & "$R/python.exe" -m pip install --no-warn-script-location --no-cache-dir --no-build-isolation numpy pillow vosk
           if ($LASTEXITCODE) { throw "pip install" }
           & "$R/python.exe" -c "import numpy, PIL, vosk, sys; print('ok', sys.version, numpy.__version__)"
           if ($LASTEXITCODE) { throw "imports" }
