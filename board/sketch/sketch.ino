@@ -1670,6 +1670,26 @@ void vrTick() {
   }
 }
 
+/* RPC vr_enable("1"/"0") — включить/выключить приём VR3 на D12/D13 */
+static bool vrOn = false;
+String rpcVrEnable(String a) {
+  bool want = a.length() && a[0] == '1';
+  if (want == vrOn) return vrOn ? "on" : "off";
+  if (want) {
+    int irq = digitalPinToInterrupt(VR_RX_PIN);
+    if (irq < 0) return "no-irq";
+    pinMode(VR_TX_PIN, OUTPUT);
+    digitalWrite(VR_TX_PIN, HIGH);
+    pinMode(VR_RX_PIN, INPUT_PULLUP);
+    attachInterrupt(irq, vrRxIsr, FALLING);
+    vrOn = true;
+    return "on";
+  }
+  detachInterrupt(digitalPinToInterrupt(VR_RX_PIN));
+  vrOn = false;
+  return "off";
+}
+
 /* RPC vr_read -> "b=<байт>;e=<ошибок>;f=<кадров>|HEX;HEX;" (кадры: cmd+data) */
 String rpcVrRead() {
   String r = "b=" + String(vrBytes) + ";e=" + String(vrErr) + ";f=" + String(vrFrames) + "|" + String(vrOut);
@@ -1679,6 +1699,7 @@ String rpcVrRead() {
 
 /* RPC vr_send("HEX") — cmd+data; плата сама добавит AA, длину и 0A */
 String rpcVrSend(String hex) {
+  if (!vrOn) return "off";
   uint8_t buf[40];
   uint8_t n = 0;
   hex.trim();
@@ -3159,6 +3180,7 @@ void rpcRegister() {
   Bridge.provide_safe("cam_vote_res", rpcCamVoteRes);     /* v2.88: голос камеры */
   Bridge.provide_safe("cam_say", rpcCamSay);              /* v2.88: фраза мозга -> камере */
   Bridge.provide_safe("vr_read", rpcVrRead);              /* v2.94: голосовой модуль VR3 */
+  Bridge.provide_safe("vr_enable", rpcVrEnable);          /* v2.94.3: включается из Python */
   Bridge.provide_safe("vr_send", rpcVrSend);
   Bridge.provide_safe("ping", rpcPing);                /* v2.14: пульс моста  */
   Bridge.provide_safe("sync_hz", rpcSyncHz);           /* v2.67: общий ритм платформы */
@@ -3389,10 +3411,9 @@ void setup() {
   pinMode(NN_OUT_PIN, OUTPUT);         // v2.22: буфер слов (UTF-8 байты) на D6 (PWM)
   analogWrite(NN_OUT_PIN, 0);
   for (uint8_t k = 0; k < MIC_PINS_N; k++) pinMode(MIC_PIN[k], INPUT);
-  pinMode(VR_TX_PIN, OUTPUT);              // v2.94: VR3 — линия передачи в покое HIGH
-  digitalWrite(VR_TX_PIN, HIGH);
-  pinMode(VR_RX_PIN, INPUT_PULLUP);
-  attachInterrupt(digitalPinToInterrupt(VR_RX_PIN), vrRxIsr, FALLING);
+  /* v2.94.3: VR3 при старте НЕ трогаем (прерывание на D12 включает Python
+   * командой vr_enable, когда мост уже жив) — иначе сбой прерывания мог
+   * уронить скетч на старте, и мост молчал */
 #if !LINK_SW_WIRE
   for (uint8_t b = 0; b < 4; b++) pinMode(MUX_PINS[b], OUTPUT);
 #endif

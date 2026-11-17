@@ -277,7 +277,7 @@ except Exception:
 # App Lab отсутствует (из-за него приложение не запускалось), arduino:tts
 # тоже не подключён. LLM и TTS работают ЧЕРЕЗ ОБЛАКО — см. секции [4] и [6].
 
-APP_VERSION = "2.94.2"
+APP_VERSION = "2.94.3"
 
 # ---------------------------------------------------------------------------
 #   v2.33 (2026): МОСТ-КАНАЛ БЕЗ ТАЙМАУТОВ — фикс «word_push не работает,
@@ -13353,9 +13353,35 @@ def _vr_frame(fr):
 def vr_worker():
     time.sleep(25)
     last_check = 0.0
+    enabled = None
     while True:
         time.sleep(0.4)
-        if not CFG.get("vr_on", True):
+        want = bool(CFG.get("vr_on", True))
+        if want != enabled:                     # v2.94.3: приём на D12 включаем, когда мост жив
+            r = _bridge_call("vr_enable", "1" if want else "0", timeout=4)
+            if r is None:
+                _VR["state"] = "скетч не отвечает"
+                time.sleep(5)
+                continue
+            enabled = want
+            if r == "no-irq":
+                _VR.update(state="ошибка", err="на D12 нет прерывания в этом ядре — VR3 недоступен")
+                CFG["vr_on"] = False
+            _VR["log"].append("приём D12/D13: %s" % r)
+            if want and r == "on":              # сторож: скетч жив после включения?
+                time.sleep(20)
+                if time.time() - float(SH.bridge_ts or 0) > 15:
+                    CFG["vr_on"] = False
+                    try:
+                        save_cfg(CFG)
+                    except Exception:
+                        pass
+                    _VR.update(state="выключен сторожем", err=(
+                        "после включения приёма на D12 скетч перестал отвечать — VR3 "
+                        "выключен; пришли это сообщение разработчику"))
+                    log("СЛУХ", "VR3: скетч замолчал после vr_enable — выключаю")
+                    enabled = None
+        if not want:
             _VR["state"] = "выкл"
             time.sleep(3)
             continue
