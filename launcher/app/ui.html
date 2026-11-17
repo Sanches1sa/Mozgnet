@@ -220,12 +220,13 @@ header{padding:10px 20px}
   <div class="chips">
     <div class="chip" title="Облако на этом компьютере"><span class="dot" id="mdC"></span><b>Облако</b><span class="v" id="msC">—</span></div>
     <div class="chip" title="Плата Arduino UNO Q"><span class="dot" id="mdB"></span><b>Плата</b><span class="v" id="msB">—</span></div>
-    <div class="chip" id="chipSpin" style="display:none" title="Спин MAC на плате"><span class="dot warn"></span><b>Спин</b><span class="v" id="msS"></span></div>
+    <div class="chip" id="chipSpin" title="Спин (вращение) MAC платы — нажми, чтобы настроить" style="cursor:pointer"><span class="dot" id="mdS"></span><b>Спин</b><span class="v" id="msS">—</span></div>
   </div>
 </main>
 
 <div class="stabs" id="stabs">
   <button class="stab" id="bGear" title="Настройки: облако, плата, вращение MAC, интернет платы"><svg id="gearIco" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path id="gearPath"/><circle cx="12" cy="12" r="3.2"/></svg></button>
+  <button class="stab" id="bApk" title="APK для телефона (mozgnet): сохранить в «Загрузки» или раздать на телефон по Wi-Fi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6.5" y="2.5" width="11" height="19" rx="2.4"/><path d="M10.5 18.5h3"/><path d="M12 7v6.5M9.4 11l2.6 2.6 2.6-2.6"/></svg></button>
   <button class="stab" id="bWrench" title="Сеть: подключение, предсказание адреса, сканер, журнал"><svg class="wr" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></button>
 </div>
 
@@ -233,6 +234,15 @@ header{padding:10px 20px}
 
 <aside class="drawer" id="dGear">
   <div class="dhead"><h3>⚙ Настройки</h3><button class="b" data-close>✕ Закрыть</button></div>
+    <div class="msec" style="border-top:none">
+      <h4>📦 Установка из ZIP-архива</h4>
+      <div class="hint" style="margin-top:0">Общий архив <b>neuro12-all-v….zip</b>: в нём папки <b>neuro12-cloud</b> (облако), <b>neuro12-app</b> (приложение платы) и <b>apk</b> (телефон). Лаунчер сам кладёт каждую куда нужно: облако — в папку облака (data/ не трогает, облако перезапустит), приложение платы — в свою папку (его зальёт на плату ⏻), APK — к кнопке 📱 сбоку. Подходят и отдельные архивы облака или платы.</div>
+      <div class="row" style="margin-top:10px">
+        <button class="b p" id="bZip">Выбрать архив…</button>
+        <span class="chk" style="margin:0"><input type="checkbox" id="cZipDeploy"> сразу залить приложение на плату</span>
+      </div>
+      <div class="netbox" id="zipBox" style="display:none"></div>
+    </div>
     <div class="msec">
       <h4>Облако на этом компьютере</h4>
       <label>Папка облака (в ней server\app.py)</label>
@@ -299,6 +309,16 @@ header{padding:10px 20px}
         <div style="align-self:flex-end"><button class="b" id="bWconn">Подключить</button></div>
       </div>
     </div>
+</aside>
+
+<aside class="drawer" id="dApk">
+  <div class="dhead"><h3>📱 Телефон: mozgnet</h3><button class="b" data-close>✕ Закрыть</button></div>
+  <section class="dsec">
+    <div class="hint" style="margin-top:0">Приложение для телефона (Android): облако внутри, скан сети, подключение платы, вращение MAC. APK приходит в общем архиве (⚙ → «Установка из ZIP-архива»), лаунчер находит его и в «Загрузках».</div>
+    <div id="apkList" style="margin-top:10px"></div>
+    <div class="netbox" id="apkShare" style="display:none"></div>
+    <div class="hint">«Раздать на телефон» открывает на 15 минут адрес в домашней сети: открой его в браузере телефона (Wi-Fi та же) — там кнопка «Скачать APK». Кроме этого файла адрес ничего не отдаёт. Установка: открыть скачанный файл и разрешить установку из этого источника.</div>
+  </section>
 </aside>
 
 <aside class="drawer" id="dWrench">
@@ -411,17 +431,43 @@ document.querySelectorAll("[data-pick]").forEach(b => b.onclick = async () => {
 });
 // v3.155: две выезжающие панели — ⚙ настройки и 🔧 сеть/журнал
 function openDrawer(id) {
-  ["dGear", "dWrench"].forEach(d => $(d).classList.toggle("show", d === id));
+  ["dGear", "dWrench", "dApk"].forEach(d => $(d).classList.toggle("show", d === id));
   $("scrim").classList.add("show"); $("stabs").classList.add("open");
-  $("bGear").classList.toggle("on", id === "dGear"); $("bWrench").classList.toggle("on", id === "dWrench");
+  $("bGear").classList.toggle("on", id === "dGear"); $("bWrench").classList.toggle("on", id === "dWrench"); $("bApk").classList.toggle("on", id === "dApk");
   if (id === "dWrench") { const lg = $("log"); lg.scrollTop = lg.scrollHeight; }
 }
 function closeDrawers() {
-  ["dGear", "dWrench"].forEach(d => $(d).classList.remove("show"));
-  $("scrim").classList.remove("show"); $("stabs").classList.remove("open"); $("bGear").classList.remove("on"); $("bWrench").classList.remove("on");
+  ["dGear", "dWrench", "dApk"].forEach(d => $(d).classList.remove("show"));
+  $("scrim").classList.remove("show"); $("stabs").classList.remove("open"); ["bGear", "bWrench", "bApk"].forEach(b => $(b).classList.remove("on"));
 }
 $("bGear").onclick = () => { if ($("dGear").classList.contains("show")) return closeDrawers(); openDrawer("dGear"); if (!(st.mac && st.mac.board) && $("fIp").value.trim()) act("macshow"); };
 $("bWrench").onclick = () => $("dWrench").classList.contains("show") ? closeDrawers() : openDrawer("dWrench");
+$("bApk").onclick = () => $("dApk").classList.contains("show") ? closeDrawers() : openDrawer("dApk");
+$("chipSpin").onclick = () => { openDrawer("dGear"); const b = $("macBox"); if (b) setTimeout(() => b.scrollIntoView({block: "center", behavior: "smooth"}), 300); };
+// v3.161: общий ZIP-архив и APK
+$("bZip").onclick = async () => { $("bZip").disabled = true; try { await call("/api/action", {do: "zip", deploy: $("cZipDeploy").checked}); } finally { $("bZip").disabled = false; refresh(); } };
+function renderPkg() {
+  const p = st.pkg || {}, zb = $("zipBox"), busy = st.busy || {};
+  zb.style.display = p.msg || busy.zip ? "" : "none";
+  const zh = (busy.zip ? "⏳ " : p.state === "ошибка" ? "⚠ " : p.state === "готово" ? "✓ " : "") + esc(p.msg || "работаю…").replace(/ · /g, "<br>");
+  if (zb.dataset.h !== zh) { zb.innerHTML = zh; zb.dataset.h = zh; }
+  $("bZip").textContent = busy.zip ? "Устанавливаю…" : "Выбрать архив…";
+  const a = st.apk || {}, fs = a.files || [];
+  const ah = fs.length ? fs.map((f, i) => '<div class="stat" style="align-items:center;gap:10px;margin-top:8px"><span style="font-size:22px">📱</span><span style="flex:1"><b>' + esc(f.name) + '</b><br><span class="hint" style="margin:0">' +
+      esc(f.mb) + ' МБ · ' + esc(f.date) + ' · ' + esc(f.path) + '</span></span><span class="row" style="margin:0;flex-wrap:wrap">' +
+      '<button class="b" data-apk="save" data-i="' + i + '">💾 В «Загрузки»</button><button class="b p" data-apk="share" data-i="' + i + '">📶 Раздать на телефон</button></span></div>').join("")
+    : '<div class="netbox">APK пока нет. Установи общий архив <b>neuro12-all-v….zip</b> (⚙ → «Установка из ZIP-архива») или положи mozgnet-….apk в «Загрузки».</div>';
+  if ($("apkList").dataset.h !== ah) {
+    $("apkList").innerHTML = ah; $("apkList").dataset.h = ah;
+    $("apkList").querySelectorAll("[data-apk]").forEach(b => b.onclick = () => call("/api/action", {do: "apk" + b.dataset.apk, path: fs[+b.dataset.i].path}).then(refresh));
+  }
+  const sh = a.share, sb = $("apkShare");
+  sb.style.display = sh ? "" : "none";
+  const shh = sh ? "📶 Раздаю ещё " + fmtT(sh.left) + (sh.hits ? " · скачали " + sh.hits + " раз" : "") + ". Открой на телефоне:<br>" +
+    sh.urls.map(u => '<b class="mono" style="font-size:15px">' + esc(u) + "</b>").join("<br>") + '<br><button class="b sm" id="bApkStop" style="margin-top:8px">Остановить раздачу</button>' : "";
+  if (sb.dataset.h !== shh) { sb.innerHTML = shh; sb.dataset.h = shh; if ($("bApkStop")) $("bApkStop").onclick = () => call("/api/action", {do: "apkstop"}).then(refresh); }
+  $("bApk").classList.toggle("has", fs.length > 0);
+}
 $("scrim").onclick = closeDrawers;
 document.querySelectorAll("[data-close]").forEach(b => b.onclick = closeDrawers);
 document.addEventListener("keydown", e => { if (e.key === "Escape") closeDrawers(); });
@@ -576,8 +622,14 @@ function render() {
   $("msC").textContent = cs.ok ? "работает" + (cs.version ? " · v" + cs.version : "") : busy.cloud ? "запускается…" : "не запущено";
   $("msB").textContent = !bs.ip ? "ищу в сети…" : bs.ip + " · " + (bs.ok ? (bs.sketch_alive ? "скетч жив" : "приложение работает") : bs.ssh ? "в сети, приложение не запущено" : "не отвечает");
   const mm = st.mac || {};
-  $("chipSpin").style.display = mm.spin ? "" : "none";
-  if (mm.spin) $("msS").textContent = mm.sp_avg > 0 ? "смена раз в " + fmtT(+mm.sp_avg) : "идёт";
+  // v3.161: спин всегда на главном экране — как облако и плата
+  const sHz = hzOf(c), mBusy = !!busy.mac;
+  let sT, sC;
+  if (mBusy) { sT = "меняю MAC…"; sC = "warn"; }
+  else if (mm.spin) { sT = "крутится · смена раз в " + (mm.sp_avg > 0 ? fmtT(+mm.sp_avg) : fmtT(1 / (2 * sHz))) + (mm.sp_count ? " · поворотов " + mm.sp_count : ""); sC = "ok"; }
+  else if (c.mac_auto) { sT = "вращение " + fmtSpin(sHz * 60) + " · смена раз в " + fmtT(1 / (2 * sHz)) + (mm.board ? " · сейчас " + (mm.step === "1" ? "перевёрнутый" : mm.step === "R" ? "заводской" : "прямой") : ""); sC = "ok"; }
+  else { sT = "выкл" + (mm.board ? " · MAC " + mm.board + (mm.step === "1" ? " (перевёрнутый)" : mm.step === "R" ? " (заводской)" : "") : (bs.ip ? " · MAC не читался" : "")); sC = ""; }
+  $("msS").textContent = sT; $("mdS").className = "dot " + sC;
   $("gearIco").classList.toggle("fast", !!mm.spin || !!busy.mac);
   // предсказание адреса
   const pr = st.predict || {}, fam = c.board_macs || [], ips = c.mac_ips || {};
@@ -624,6 +676,7 @@ async function refresh() {
     next = st.next || next;
     if (st.nav) { location.href = st.nav; return; }
     render();
+    renderPkg();
   } catch (e) {}
 }
 (async () => {

@@ -5,6 +5,7 @@ package main
 import (
 	"runtime"
 	"syscall"
+	"unicode/utf16"
 	"unsafe"
 )
 
@@ -80,3 +81,55 @@ func dpiAware() {
 
 // newConsole — атрибуты процесса: отдельное окно консоли
 func newConsole() *syscall.SysProcAttr { return &syscall.SysProcAttr{CreationFlags: 0x00000010} }
+
+// v3.161: выбор ZIP-архива — стандартный диалог «Открыть» Windows
+var (
+	comdlg32          = syscall.NewLazyDLL("comdlg32.dll")
+	pGetOpenFileNameW = comdlg32.NewProc("GetOpenFileNameW")
+)
+
+type openFileName struct {
+	StructSize    uint32
+	Owner         uintptr
+	Instance      uintptr
+	Filter        *uint16
+	CustomFilter  *uint16
+	MaxCustFilter uint32
+	FilterIndex   uint32
+	File          *uint16
+	MaxFile       uint32
+	FileTitle     *uint16
+	MaxFileTitle  uint32
+	InitialDir    *uint16
+	Title         *uint16
+	Flags         uint32
+	FileOffset    uint16
+	FileExtension uint16
+	DefExt        *uint16
+	CustData      uintptr
+	FnHook        uintptr
+	TemplateName  *uint16
+	PvReserved    uintptr
+	DwReserved    uint32
+	FlagsEx       uint32
+}
+
+func u16z(s string) []uint16 { return append(utf16.Encode([]rune(s)), 0) }
+
+func pickFile(title, startDir string) string {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	buf := make([]uint16, 4096)
+	filter := u16z("ZIP-архив (*.zip)\x00*.zip\x00Все файлы\x00*.*\x00")
+	t := u16z(title)
+	dir := u16z(startDir)
+	owner, _, _ := pGetForeground.Call()
+	ofn := openFileName{Owner: owner, Filter: &filter[0], FilterIndex: 1, File: &buf[0], MaxFile: uint32(len(buf)),
+		Title: &t[0], InitialDir: &dir[0], Flags: 0x1000 | 0x800 | 0x80000 | 0x8}
+	ofn.StructSize = uint32(unsafe.Sizeof(ofn))
+	r, _, _ := pGetOpenFileNameW.Call(uintptr(unsafe.Pointer(&ofn)))
+	if r == 0 {
+		return ""
+	}
+	return syscall.UTF16ToString(buf)
+}

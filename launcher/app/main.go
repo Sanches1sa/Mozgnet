@@ -35,7 +35,7 @@ import (
 	"time"
 )
 
-const VER = "3.160.0"
+const VER = "3.161.0"
 
 //go:embed ui.html
 var uiHTML string
@@ -66,6 +66,7 @@ type Cfg struct {
 	MacIPs    map[string]string `json:"mac_ips,omitempty"`    // v3.155: какой IP был у какого MAC
 	MacHz     float64           `json:"mac_hz,omitempty"`     // v3.153: частота спина (Гц), до 15 ТГц
 	Browser   string            `json:"browser,omitempty"`    // v3.159 (Linux): браузер окна, напр. chromium
+	Apk       string            `json:"apk,omitempty"`        // v3.161: APK телефона из общего архива
 }
 
 type Host struct {
@@ -1070,6 +1071,8 @@ func api(w http.ResponseWriter, r *http.Request) {
 		}
 		out["predict"] = pc
 		mu.Unlock()
+		out["pkg"] = pkgState() // v3.161: установка из ZIP
+		out["apk"] = apkState() // v3.161: APK для телефона
 		out["step"] = getStep()
 		netMu.Lock()
 		out["net"] = netSt
@@ -1164,6 +1167,22 @@ func api(w http.ResponseWriter, r *http.Request) {
 			go macJob("show", false)
 		case "fixbuild":
 			go fixBuild()
+		case "zip": // v3.161: общий архив — облако, плата, APK
+			dl := ""
+			if d := downloadDirs(); len(d) > 0 {
+				dl = d[0]
+			}
+			zp := pickFile("Общий архив Мозг-12 (neuro12-all-v….zip) или архив облака/платы", dl)
+			out["path"] = zp
+			if zp != "" {
+				go installZip(zp, in["deploy"] == true)
+			}
+		case "apksave":
+			go apkSave(s("path"))
+		case "apkshare":
+			go apkShare(s("path"))
+		case "apkstop":
+			apkShareStop()
 		case "watchdog":
 			go func() {
 				sudoRun("Установка сторожа платы", "bash ~/ArduinoApps/neuro_12/deploy_cli/install_autostart.sh watchdog && systemctl restart neuro12", 10*time.Minute)

@@ -190,3 +190,12 @@ func runUI() {
 	wv.Navigate(homeURL)
 	wv.Run()
 }
+
+// v3.161: остановить процесс облака (перед заменой его файлов из ZIP)
+func stopCloudProc(dir string) {
+	ps := `Get-CimInstance Win32_Process | Where-Object { $_.CommandLine -like '*server\app.py*' -and $_.Name -match 'python' } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }`
+	hidden(exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", ps)).Run()
+}
+
+// v3.161: показать файл в Проводнике (выделенным)
+func revealFile(p string) { exec.Command("explorer.exe", "/select,", p).Start() }

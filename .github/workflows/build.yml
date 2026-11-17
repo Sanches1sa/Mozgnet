@@ -4,7 +4,7 @@
 #   mozgnet-….apk                         — приложение для телефона
 #   neuro12-cloud-v…-update.zip          — обновление облака (панель → Обновление)
 #   neuro_12-v….zip                       — приложение платы для App Lab
-#   neuro12-windows-v….zip                — Windows целиком, свой Python внутри
+#   neuro12-all-v….zip                    — общий: облако (свой Python), плата, APK, install.exe
 #   neuro12-start.exe                     — лаунчер Windows
 #   neuro12-launcher-linux-v….zip         — лаунчер Linux (РЕД ОС, Ubuntu) с облаком
 name: mozgnet
@@ -75,9 +75,11 @@ jobs:
         with: { name: pc, path: out/* }
 
   windows:
-    # Готовый пакет Windows БЕЗ зависимости от Python: свой Python 3.12
-    # (embeddable) + pip + numpy + Pillow + vosk + русская модель Vosk внутри,
-    # собранные exe лаунчера и установщика. Проверяется запуском облака.
+    # ОБЩИЙ АРХИВ neuro12-all-v….zip: neuro12-cloud (облако со своим Python 3.12
+    # + numpy + Pillow + vosk + русская модель Vosk, лаунчер), neuro12-app
+    # (приложение платы), apk (телефон), install.exe. Python ставить не нужно;
+    # лаунчер (⚙ → «Установка из ZIP-архива») сам раскладывает папки по местам.
+    needs: [apk]
     runs-on: windows-latest
     timeout-minutes: 45
     defaults:
@@ -86,13 +88,18 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with: { go-version: "1.22" }
-      - name: Пакет neuro12-windows
+      - uses: actions/download-artifact@v4
+        with: { name: apk, path: pkg/apk }
+      - name: Общий архив neuro12-all
         run: |
           $ErrorActionPreference = "Stop"
           $CV = (Get-Content cloud/VERSION -Raw).Trim()
           $P = "pkg"; $C = "$P/neuro12-cloud"
           New-Item -ItemType Directory -Force $C, "$C/launcher", out | Out-Null
           robocopy cloud $C /E /XD data __pycache__ .pytest_cache /NFL /NDL /NJH /NJS | Out-Null
+          robocopy board "$P/neuro12-app" /E /XD __pycache__ .ruff_cache /NFL /NDL /NJH /NJS | Out-Null
+          if (-not (Test-Path "$P/neuro12-app/app.yaml")) { throw "нет приложения платы" }
+          if (-not (Get-ChildItem "$P/apk/*.apk")) { throw "нет APK" }
           Push-Location launcher/app
           $env:CGO_ENABLED = "0"
           go build -trimpath -ldflags "-s -w -H windowsgui" -o "../../$C/launcher/neuro12-start.exe" .
@@ -134,17 +141,21 @@ jobs:
           if (-not $ok) { throw "облако не ответило на /api/health" }
           Write-Host "облако на своём Python отвечает: $($h | ConvertTo-Json -Compress)"
           @"
-          Мозг-12 для Windows $CV — Python ставить НЕ нужно.
+          Мозг-12 $CV — общий архив. Python ставить НЕ нужно.
 
-          1. Распакуй архив в любую папку.
-          2. Запусти install.exe — облако встанет в %LOCALAPPDATA%\neuro12-cloud
-             со своим Python 3.12 (numpy, Pillow, Vosk и русская модель речи внутри),
-             появится ярлык «Мозг-12» и автозапуск.
-          3. Открой ярлык (лаунчер neuro12-start.exe) — панель облака.
+          neuro12-cloud\  облако со своим Python 3.12 (numpy, Pillow, Vosk и русская модель речи) и лаунчер
+          neuro12-app\    приложение платы Arduino UNO Q (neuro_12)
+          apk\            mozgnet для телефона (Android)
+          install.exe      установщик облака для Windows
 
-          Обновления: положи neuro12-cloud-v…-update.zip рядом с install.exe и запусти его снова.
+          ПЕРВАЯ УСТАНОВКА: распакуй архив и запусти install.exe — облако встанет в
+          %LOCALAPPDATA%\neuro12-cloud, появится ярлык «Мозг-12» и автозапуск.
+
+          ОБНОВЛЕНИЕ: лаунчер → ⚙ → «Установка из ZIP-архива» → выбери этот архив (распаковывать
+          не нужно). Облако обновится (data не тронута), приложение платы встанет в лаунчер
+          (кнопка ⏻ зальёт его на плату), APK появится у кнопки 📱 сбоку.
           "@ -replace '(?m)^          ', '' | Set-Content "$P/README-Windows.txt" -Encoding utf8
-          Compress-Archive -Path "$P/*" -DestinationPath "out/neuro12-windows-v$($CV -replace '\.','_').zip" -CompressionLevel Optimal
+          Compress-Archive -Path "$P/*" -DestinationPath "out/neuro12-all-v$($CV -replace '\.','_').zip" -CompressionLevel Optimal
           Get-ChildItem out | Format-Table Name, Length
       - uses: actions/upload-artifact@v4
         with: { name: windows, path: out/* }
@@ -172,6 +183,6 @@ jobs:
             * **mozgnet-….apk** — телефон: облако внутри, скан сети, подключение плат, вращение MAC плат.
             * **neuro12-cloud-v…-update.zip** — облако ${{ env.CV }}: панель → Обновление (или распаковать поверх папки облака, data/ не трогать).
             * **neuro_12-v….zip** — плата ${{ env.BV }}: импорт в Arduino App Lab → Run.
-            * **neuro12-windows-v….zip** — Windows целиком, Python ставить НЕ нужно: свой Python 3.12 + numpy + Pillow + Vosk (речь) внутри; распаковать → install.exe.
+            * **neuro12-all-v….zip** — ОБЩИЙ АРХИВ: папки neuro12-cloud (облако со своим Python 3.12 — ставить Python не нужно), neuro12-app (плата), apk (телефон) и install.exe. Первая установка — install.exe; обновление — лаунчер → ⚙ → «Установка из ZIP-архива».
             * **neuro12-start.exe** — лаунчер ${{ env.LV }} для Windows (положить в …\neuro12-cloud\launcher\).
             * **neuro12-launcher-linux-v….zip** — лаунчер для РЕД ОС и Ubuntu с облаком: `bash install-linux.sh`.

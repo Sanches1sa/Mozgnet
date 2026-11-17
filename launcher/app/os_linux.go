@@ -660,3 +660,38 @@ func runUI() {
 		}
 	}
 }
+
+// v3.161: выбор ZIP-архива
+func pickFile(title, startDir string) string {
+	var cmd *exec.Cmd
+	switch {
+	case has("zenity"):
+		cmd = exec.Command("zenity", "--file-selection", "--title", title, "--filename", startDir+"/", "--file-filter=ZIP | *.zip", "--file-filter=Все файлы | *")
+	case has("kdialog"):
+		cmd = exec.Command("kdialog", "--title", title, "--getopenfilename", startDir, "*.zip")
+	case has("yad"):
+		cmd = exec.Command("yad", "--file", "--title", title, "--filename", startDir+"/")
+	default:
+		logf("Нет диалога выбора файла (поставь zenity) — положи архив в «Загрузки» и выбери его там.")
+		return ""
+	}
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// v3.161: остановить процесс облака (перед заменой его файлов из ZIP)
+func stopCloudProc(dir string) {
+	if has("systemctl") { // служба с Restart= подняла бы облако снова
+		exec.Command("systemctl", "--user", "stop", "neuro12-cloud").Run()
+		exec.Command("systemctl", "--no-ask-password", "stop", "neuro12-cloud").Run()
+	}
+	if exec.Command("pkill", "-f", filepath.Join(dir, "server", "app.py")).Run() != nil {
+		exec.Command("pkill", "-f", "server/app.py").Run()
+	}
+}
+
+// v3.161: открыть папку с файлом
+func revealFile(p string) { openURL("file://" + filepath.Dir(p)) }
