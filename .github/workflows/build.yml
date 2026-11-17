@@ -160,6 +160,28 @@ jobs:
       - uses: actions/upload-artifact@v4
         with: { name: windows, path: out/* }
 
+  sketch:
+    # Проверка: скетч платы собирается (arduino-cli, ядро arduino:zephyr, UNO Q)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: arduino-cli и ядро UNO Q
+        run: |
+          curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR=$HOME/bin sh
+          echo "$HOME/bin" >> $GITHUB_PATH
+          $HOME/bin/arduino-cli core update-index
+          $HOME/bin/arduino-cli core install arduino:zephyr
+          $HOME/bin/arduino-cli board listall | grep -i "uno q" || true
+          $HOME/bin/arduino-cli lib install Arduino_RouterBridge || true
+          $HOME/bin/arduino-cli lib install SoftwareWire || true
+      - name: Сборка скетча
+        run: |
+          FQBN=$(arduino-cli board listall | grep -i "uno q" | awk '{print $NF}' | head -1)
+          echo "FQBN=$FQBN"
+          arduino-cli compile --fqbn "${FQBN:-arduino:zephyr:unoq}" --warnings default board/sketch 2>&1 | tail -60
+          test ${PIPESTATUS[0]} -eq 0
+
   release:
     needs: [apk, pc, windows]
     runs-on: ubuntu-latest

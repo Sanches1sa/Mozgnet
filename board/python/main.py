@@ -277,7 +277,7 @@ except Exception:
 # App Lab отсутствует (из-за него приложение не запускалось), arduino:tts
 # тоже не подключён. LLM и TTS работают ЧЕРЕЗ ОБЛАКО — см. секции [4] и [6].
 
-APP_VERSION = "2.93.0"
+APP_VERSION = "2.93.1"
 
 # ---------------------------------------------------------------------------
 #   v2.33 (2026): МОСТ-КАНАЛ БЕЗ ТАЙМАУТОВ — фикс «word_push не работает,
@@ -1057,7 +1057,17 @@ def _cam_uart_diag():
         except Exception:
             pass
     if not _CAM_UART.get("info"):
-        why = "скетч не ответил на cam_frame_info (мост/скетч старый?)"
+        ba = time.time() - float(SH.bridge_ts or 0)
+        if not _CAM_UART.get("ts"):
+            why = ("камера по проводу ещё не опрашивалась — включи камеру (cam_on) "
+                   "и адрес «uart» в ⚙ платы")
+        elif not SH.bridge_seen or ba > 15:
+            why = ("скетч не отвечает ВООБЩЕ (мост молчит %s): скетч не собрался или не "
+                   "запущен — смотри вывод сборки в App Lab / журнал лаунчера; лаунчер: "
+                   "⚙ → «Починить сборку»" % ("с запуска" if not SH.bridge_seen else "%d с" % ba))
+        else:
+            why = ("мост со скетчем жив, но cam_frame_info не ответил за 4 с — loop скетча "
+                   "занят (нейроны/I2C); кадры при этом могут приниматься")
     elif not d.get("bytes") and "bytes" in d:
         why = ("по проводу не пришло НИ ОДНОГО байта: проверь TX ESP32-CAM (GPIO1/U0TXD "
                "или пин из esp32cam_uart) → D0/RX платы, общий GND и питание камеры 5 В")
@@ -1080,7 +1090,7 @@ def _cam_uart_frame():
     кадр уже сменился). Кадр собирается кусками; если во время сборки
     пришёл новый кадр (seq сменился) — честно возвращаем b"": догоним в
     следующий период. Возвращает JPEG-байты или b""."""
-    info = _bridge_call("cam_frame_info", timeout=4)
+    info = _bridge_call("cam_frame_info", timeout=8)
     if not info:
         _CAM_UART.update(info="", ts=time.time())
         return b""
