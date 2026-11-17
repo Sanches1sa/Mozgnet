@@ -39,7 +39,7 @@ jobs:
         run: |
           VER=$(tr -d ' \r\n' < cloud/VERSION)
           NP=$([ "${{ steps.full.outcome }}" = "success" ] && echo "" || echo "-nonumpy")
-          mkdir -p out && cp app/build/outputs/apk/release/app-release.apk "out/mozgnet-1.1.${{ github.run_number }}-cloud${VER}${NP}.apk"
+          mkdir -p out && cp app/build/outputs/apk/release/app-release.apk "out/mozgnet-1.2.${{ github.run_number }}-cloud${VER}${NP}.apk"
       - uses: actions/upload-artifact@v4
         with: { name: apk, path: out/* }
 
@@ -88,7 +88,7 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: mozgnet 1.1.${{ github.run_number }} · облако ${{ env.CV }} · плата ${{ env.BV }} · лаунчер ${{ env.LV }}
+          name: mozgnet 1.2.${{ github.run_number }} · облако ${{ env.CV }} · плата ${{ env.BV }} · лаунчер ${{ env.LV }}
           make_latest: true
           files: out/*
           body: |

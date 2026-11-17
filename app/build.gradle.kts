@@ -32,7 +32,7 @@ android {
         minSdk = 26          // v1.1: SSH-клиент (JSch) — Android 8+
         targetSdk = 35
         versionCode = runNumber
-        versionName = "1.0.$runNumber (облако $cloudVer)"
+        versionName = "1.2.$runNumber (облако $cloudVer)"
         buildConfigField("String", "REPO", "\"$repoSlug\"")
         buildConfigField("String", "CLOUD_VERSION", "\"$cloudVer\"")
         ndk {

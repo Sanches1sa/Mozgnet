@@ -12,6 +12,12 @@
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.CAMERA" />
 
+    <!-- v1.2: увидеть, установлен ли Magisk (MAC телефона через root) -->
+    <queries>
+        <package android:name="com.topjohnwu.magisk" />
+        <package android:name="com.mi.global.bbs" />
+    </queries>
+
     <application
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"

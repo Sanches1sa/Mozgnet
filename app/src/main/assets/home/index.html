@@ -53,6 +53,40 @@
   <div class="mut">Это то же облако, что на компьютере: чат, мозг, своя LLM, база знаний, боты, обновления. Память хранится в телефоне.</div>
 </div>
 
+<div class="card" id="cPhone">
+  <h2>MAC телефона (облака)</h2>
+  <div class="mut" id="phState">нажми «Проверить» — Magisk может спросить разрешение для mozgnet</div>
+  <div class="row"><span class="k">MAC сейчас</span><span class="v" id="phMac">—</span></div>
+  <div class="row"><span class="k">Исходный</span><span class="v" id="phOrig">—</span></div>
+  <div class="row">
+    <button class="g s" id="phCheck">Проверить</button>
+    <button class="g s ph" data-ph="rotate">Повернуть</button>
+    <button class="g s ph" data-ph="mirror">Зеркало платы</button>
+    <button class="g s ph" data-ph="spin">Вращать…</button>
+    <button class="g s ph" data-ph="stop">Стоп</button>
+    <button class="g s ph" data-ph="restore">Вернуть исходный</button>
+  </div>
+  <div class="row sw" style="flex-wrap:nowrap"><input type="checkbox" id="phWithBoard"><label for="phWithBoard">Вместе с платой: после поворота MAC платы телефон берёт её зеркало</label></div>
+  <div class="mut" id="phRes"></div>
+  <details id="rootHow" style="margin-top:8px"><summary class="mut" style="cursor:pointer">Как получить root (Redmi / Xiaomi, HyperOS)</summary>
+    <div class="mut" style="margin-top:6px;line-height:1.6">
+      Без root Android не даёт приложениям менять MAC — поэтому эти кнопки работают только на телефоне с root (Magisk).<br>
+      <b>0.</b> Сделай копию: разблокировка стирает телефон. Копия облака — панель облака → Система → Экспорт.<br>
+      <b>1.</b> Обнови HyperOS до последней версии: после разблокировки обновления по воздуху могут перестать приходить.<br>
+      <b>2.</b> Приложение <b>Xiaomi Community</b>: регион Global, аккаунту больше 30 дней → «Я» → «Unlock bootloader» → заявка.
+      <button class="g s" id="lkCommunity">открыть</button><br>
+      <b>3.</b> Настройки → О телефоне → 7 раз по «Версия ОС» → «Для разработчиков» → «Статус Mi Unlock» → привязать аккаунт.
+      <button class="g s" id="lkDev">для разработчиков</button><br>
+      <b>4.</b> На компьютере: Mi Unlock, телефон в режиме fastboot (выключить, громкость − и питание) → Unlock.
+      <button class="g s" id="lkUnlock">сайт Mi Unlock</button><br>
+      <b>5.</b> Поставь <b>Magisk</b>, пропатчи им boot.img своей прошивки и прошей: <code>fastboot flash boot magisk_patched.img</code>.
+      <button class="g s" id="lkMagisk">Magisk</button><br>
+      <b>6.</b> Открой mozgnet → «Проверить» → разреши root в окне Magisk. Дальше кнопки делают всё сами.<br>
+      Если драйвер Wi-Fi возвращает адрес, в настройках этой сети Wi-Fi выбери «Конфиденциальность → MAC-адрес устройства».
+    </div>
+  </details>
+</div>
+
 <div class="card">
   <h2>Сеть</h2>
   <div class="mut" id="nIp">Телефон в сети: —</div>
@@ -183,8 +217,49 @@ window.onMac = (ip, mode, r) => {
   else if (mode === 'spin') t = '✅ вращение идёт на самой плате' + (r.sudo ? ' (через sudo)' : '') + ' — её адрес будет меняться, сканируй сеть';
   else t = '✅ вращение остановлено — плата вернётся на прямой MAC';
   if (/неверный логин/.test(r.out || '')) M.setBoardUser('', '');
+  const bm = k.NEW || k.NOW || k.CUR;
+  if (r.ok && bm) { boardMacs[ip] = bm; M.setPref('board_macs', JSON.stringify(boardMacs)); }
+  if (r.ok && mode === 'rotate' && $('#phWithBoard').checked && k.NEW) {
+    setTimeout(() => { $('#phRes').textContent = '…телефон берёт зеркало платы'; M.phoneMac('mirror', k.NEW); }, 4000);
+  }
   note('http://' + ip, t);
 };
+
+// v1.2: MAC ТЕЛЕФОНА через root
+const boardMacs = J((M && M.pref('board_macs')) || '{}', {}) || {};
+window.onPhone = (i) => {
+  const rootTxt = i.root ? '✅ root есть' : (i.magisk ? '⚠️ Magisk стоит, но root не выдан mozgnet (разреши в Magisk)' : '❌ root нет');
+  const bl = {unlocked: 'загрузчик разблокирован', locked: 'загрузчик заблокирован', '?': 'загрузчик: ?'}[i.bootloader] || '';
+  $('#phState').textContent = (i.model ? i.model + ' · ' : '') + bl + ' · ' + rootTxt + (i.spin ? ' · вращение: ' + (i.spin_info || 'идёт') : '');
+  $('#phMac').textContent = i.mac || (i.root ? 'Wi-Fi выключен?' : 'видно только с root');
+  $('#phOrig').textContent = i.orig || '—';
+  document.querySelectorAll('.ph').forEach(b => b.disabled = !i.root);
+  if (!i.root) $('#rootHow').open = true;
+};
+window.onPhoneMac = (mode, r) => {
+  let t = r.ok ? '✅ ' : '⚠️ ';
+  if (r.was || r.now) t += (r.was || '?') + ' → ' + (r.now || '?');
+  if (r.why) t += ' ' + r.why;
+  if (r.ip) t += ' · IP ' + r.ip;
+  if (r.boards && r.boards.length) t += ' · новый адрес облака отправлен платам: ' + r.boards.join(', ');
+  $('#phRes').textContent = t;
+};
+function phGo(mode) {
+  let arg = '';
+  if (mode === 'spin') {
+    arg = prompt('Через сколько секунд переворачивать MAC телефона (не меньше 5)?', M.pref('ph_gap') || '60');
+    if (arg === null) return; M.setPref('ph_gap', arg);
+  }
+  if (mode === 'mirror') {
+    const ips = Object.keys(boardMacs);
+    if (!ips.length) { alert('Сначала у платы нажми «MAC: показать» — нужен её адрес'); return; }
+    const ip = ips.length === 1 ? ips[0] : ips[(+prompt('Чей MAC зеркалить:\n' + ips.map((x, n) => (n + 1) + ') ' + x + ' — ' + boardMacs[x]).join('\n'), '1') || 1) - 1];
+    if (!ip) return; arg = boardMacs[ip];
+  }
+  if (mode !== 'stop' && !confirm('Wi-Fi телефона переподключится (2–6 с). Облако продолжит работать. Дальше?')) return;
+  $('#phRes').textContent = '…меняю MAC телефона';
+  M.phoneMac(mode, arg);
+}
 
 window.onScan = (done, total, h, fin) => {
   if (h) { hosts[h.ip] = h; drawHosts(); }
@@ -205,6 +280,14 @@ window.onConnect = (base, res) => {
   note(base, res === 'ok' ? '✅ плата подключена — через пару секунд она появится в облаке' : '⚠️ не вышло: ' + res);
 };
 
+$('#phCheck').onclick = () => { $('#phState').textContent = 'проверяю root…'; M.phoneInfo(); };
+document.querySelectorAll('.ph').forEach(b => b.onclick = () => phGo(b.dataset.ph));
+$('#phWithBoard').checked = M && M.pref('ph_with') === '1';
+$('#phWithBoard').onchange = () => M.setPref('ph_with', $('#phWithBoard').checked ? '1' : '');
+$('#lkCommunity').onclick = () => M.browser('market://details?id=com.mi.global.bbs');
+$('#lkDev').onclick = () => M.settings('dev');
+$('#lkUnlock').onclick = () => M.browser('https://en.miui.com/unlock/');
+$('#lkMagisk').onclick = () => M.browser('https://github.com/topjohnwu/Magisk/releases/latest');
 $('#macCred').onclick = () => {
   const u = J(M.boardUser(), {});
   const user = prompt('Логин платы для SSH:', u.user || 'arduino'); if (user === null) return;

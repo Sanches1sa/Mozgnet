@@ -211,6 +211,41 @@ public class Bridge {
         }, "mac").start();
     }
 
+    /** v1.2: MAC телефона (root). Ответ — window.onPhone(состояние). */
+    @JavascriptInterface
+    public void phoneInfo() {
+        if (!ok()) return;
+        new Thread(() -> js("window.onPhone&&onPhone(" + PhoneMac.info(act) + ")"), "phone-info").start();
+    }
+
+    /** rotate | mirror (arg — MAC платы) | restore | spin (arg — секунды) | stop -> window.onPhoneMac. */
+    @JavascriptInterface
+    public void phoneMac(String mode, String arg) {
+        if (!ok()) return;
+        new Thread(() -> {
+            JSONObject r = PhoneMac.run(act, mode, arg);
+            js("window.onPhoneMac&&onPhoneMac(" + q(mode) + "," + r + ")");
+            js("window.onPhone&&onPhone(" + PhoneMac.info(act) + ")");
+        }, "phone-mac").start();
+    }
+
+    /** Открыть настройки Android: dev — для разработчиков, wifi — панель Wi-Fi, about — о телефоне. */
+    @JavascriptInterface
+    public void settings(String which) {
+        if (!ok()) return;
+        act.runOnUiThread(() -> {
+            String a = "dev".equals(which) ? android.provider.Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS
+                    : "about".equals(which) ? android.provider.Settings.ACTION_DEVICE_INFO_SETTINGS
+                    : (android.os.Build.VERSION.SDK_INT >= 29 ? android.provider.Settings.Panel.ACTION_WIFI
+                    : android.provider.Settings.ACTION_WIFI_SETTINGS);
+            try {
+                act.startActivity(new Intent(a));
+            } catch (Exception e) {
+                act.startActivity(new Intent(android.provider.Settings.ACTION_SETTINGS));
+            }
+        });
+    }
+
     @JavascriptInterface
     public void home() {
         act.runOnUiThread(act::goHome);
