@@ -277,7 +277,7 @@ except Exception:
 # App Lab отсутствует (из-за него приложение не запускалось), arduino:tts
 # тоже не подключён. LLM и TTS работают ЧЕРЕЗ ОБЛАКО — см. секции [4] и [6].
 
-APP_VERSION = "2.94.1"
+APP_VERSION = "2.94.2"
 
 # ---------------------------------------------------------------------------
 #   v2.33 (2026): МОСТ-КАНАЛ БЕЗ ТАЙМАУТОВ — фикс «word_push не работает,
@@ -12925,6 +12925,12 @@ def mic_listen_worker():
                           timeout=10).stdout.decode("utf-8", "replace")
         except Exception:
             lst = "card"
+        # v2.94.2: «default» часто не умеет 16 кГц моно (audio open error: Invalid
+        # argument) — пробуем найденные карты через plughw (сам переводит формат)
+        cards = re.findall(r"card (\d+):[^\n]*device (\d+):", lst)
+        _MIC["cards"] = ["plughw:%s,%s" % c for c in cards]
+        if dev == "default" and _MIC.get("dev_auto"):
+            dev = _MIC["dev_auto"]
         if "card" not in lst.lower():
             _MIC["state"] = "нет USB-микрофона"
             _MIC["err"] = ("у платы нет устройства записи звука: речь в облако, Vosk и живой "
@@ -12942,6 +12948,7 @@ def mic_listen_worker():
             time.sleep(60)
             continue
         _MIC["state"], _MIC["err"] = "слушаю", ""
+        _MIC["dev_used"] = dev
         log("СЛУХ", "микрофон платы: arecord -D %s (16 кГц), фразы -> облако" % dev)
         floor, speech, pre = 0.0, None, deque(maxlen=10)
         silent = voiced = 0
@@ -12990,10 +12997,22 @@ def mic_listen_worker():
         except Exception:
             pass
         if CFG.get("mic_on", True):
+            if "Invalid argument" in err or "No such file" in err or "cannot find" in err.lower():
+                tried = _MIC.setdefault("tried", [])
+                if dev not in tried:
+                    tried.append(dev)
+                nxt = [c for c in _MIC.get("cards") or [] if c not in tried]
+                if str(CFG.get("mic_dev") or "default") == "default" and nxt:
+                    _MIC["dev_auto"] = nxt[0]          # v2.94.2: следующая карта
+                    _MIC["state"], _MIC["err"] = "подбираю устройство", "пробую %s" % nxt[0]
+                    log("СЛУХ", "arecord на %s: %s — пробую %s" % (dev, err[-80:], nxt[0]))
+                    time.sleep(2)
+                    continue
             _MIC["state"] = "ошибка"
-            _MIC["err"] = ("arecord остановился: %s (проверь, что USB-микрофон "
-                           "подключён; устройство: «arecord -l», настройка mic_dev)"
-                           % (err or "без сообщения"))
+            _MIC["err"] = ("arecord остановился на «%s»: %s (найдены: %s; устройство можно "
+                           "задать в ⚙ платы — «Устройство ALSA», например plughw:1,0)"
+                           % (dev, err or "без сообщения", ", ".join(_MIC.get("cards") or []) or "ничего"))
+            _MIC["tried"] = []
             time.sleep(20)
 
 
