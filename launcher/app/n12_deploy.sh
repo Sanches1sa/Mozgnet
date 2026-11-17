@@ -12,6 +12,22 @@ cd "$A" || { echo "нет папки $A"; exit 1; }
 [ -d neuro_12.new ] || { echo "нет новой копии neuro_12.new — копирование не прошло"; exit 1; }
 
 free_mb() { df -Pm "$A" | awk 'NR==2{print $4}'; }
+
+# v3.162.1: СТОРОЖ НА ПАУЗУ. Пока приложение остановлено, сторож видел
+# «порт 7000 молчит» и запускал СВОЮ сборку — две сборки писали в один кэш
+# и портили объектные файлы (ld: «error adding symbols: bad value»,
+# «.symtab local symbol…», «file truncated»). Теперь на время заливки —
+# файл паузы сторожа, а чужие сборки останавливаются.
+pause_wd() { for d in "$APP" "$A/neuro_12.new"; do [ -d "$d" ] && touch "$d/.watchdog_pause"; done; }
+unpause_wd() { rm -f "$APP/.watchdog_pause" "$A/neuro_12.new/.watchdog_pause" 2>/dev/null; true; }
+trap unpause_wd EXIT
+pause_wd
+if pgrep -f "[a]rduino-app-cli app start" >/dev/null 2>&1 || pgrep -f "[a]rduino-cli.*compile" >/dev/null 2>&1; then
+  echo "== идёт чужая сборка (сторож/App Lab) — останавливаю её, чтобы не портила кэш"
+  pkill -f "[a]rduino-app-cli app start" 2>/dev/null
+  pkill -f "[a]rduino-cli.*compile" 2>/dev/null
+  sleep 3
+fi
 echo "== место на плате: $(df -h "$A" | awk 'NR==2{print $4" свободно из "$2}')"
 
 echo "== останавливаю приложение"
@@ -20,6 +36,7 @@ arduino-app-cli app stop "$APP" 2>/dev/null || true
 rm -rf neuro_12.old
 [ -d neuro_12 ] && mv neuro_12 neuro_12.old
 mv neuro_12.new neuro_12 || { echo "не удалось заменить папку приложения"; exit 1; }
+pause_wd
 if [ -d neuro_12.old ]; then          # память платы — из прежней копии
   # v3.152: память платы ПЕРЕКРЫВАЕТ файлы из копии с компьютера (раньше cp -n
   # оставлял файлы с компьютера, и накопленная память платы терялась)
@@ -67,9 +84,10 @@ start() {
 }
 
 echo "== сборка и заливка скетча + запуск Python (несколько минут)"
-if ! start; then
+if ! start || grep -qE "bad value|file truncated|symtab|error adding symbols" /tmp/n12_start.out; then
   echo
-  echo "== сборка не прошла — чищу кэши ещё раз и собираю заново"
+  echo "== сборка не прошла (или битый объектный файл) — чищу кэши ещё раз и собираю заново"
+  pkill -f "[a]rduino-cli.*compile" 2>/dev/null
   clean_cache
   echo "   свободно: $(free_mb) МБ"
   if ! start; then

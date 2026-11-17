@@ -35,7 +35,7 @@ import (
 	"time"
 )
 
-const VER = "3.162.0"
+const VER = "3.162.1"
 
 //go:embed ui.html
 var uiHTML string
@@ -912,7 +912,7 @@ func runAll() {
 func fixBuild() {
 	logf("Чиню сборку скетча: стоп приложения, удаление кэшей сборки, сборка заново…")
 	boardRun("Починка сборки скетча",
-		"A=~/ArduinoApps/neuro_12; arduino-app-cli app stop $A; rm -rf $A/.cache ~/.cache/arduino; echo; df -h ~ | tail -1; echo; arduino-app-cli app start $A 2>&1 | tee -a $A/neuro12_start.log",
+		"A=~/ArduinoApps/neuro_12; C=arduino-app-cli; touch $A/.watchdog_pause; $C app stop $A; pkill -f '[a]rduino-app-cli app start'; pkill -f '[a]rduino-cli.*compile'; sleep 2; rm -rf $A/.cache ~/.cache/arduino; echo; df -h ~ | tail -1; echo; $C app start $A 2>&1 | tee -a $A/neuro12_start.log; rm -f $A/.watchdog_pause",
 		30*time.Minute)
 }
 
