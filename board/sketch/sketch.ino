@@ -3189,20 +3189,21 @@ void rpcRegister() {
   Bridge.provide_safe("neuro_assign", rpcNeuroAssign); /* v2.28: назначение номеров нейронам */
   Bridge.provide_safe("neuro_assign_poll", rpcNeuroAssignPoll); /* v2.33: прогресс назначения */
   Bridge.provide_safe("neuro_reset", rpcNeuroReset);   /* v2.29: сброс номеров нейронов */
-  /* v2.94.1: кадр камеры отдаём из ПОТОКА МОСТА (provide, не provide_safe):
-   * раньше запрос ждал конца прохода loop() и при занятом loop (I2C
-   * нейронов, шум A4) не успевал за таймаут — «cam_frame_info не ответил» */
-  Bridge.provide("cam_frame_info", rpcCamFrameInfo);      /* v2.30: кадр UART-камеры */
-  Bridge.provide("cam_chunk", rpcCamChunk);               /* v2.30: кадр кусками (b64) */
+  /* v2.94.8: кадр камеры — снова в потоке loop (provide_safe). В v2.94.1
+   * его отдавал поток моста, и строки (String/куча) собирались сразу в двух
+   * потоках — плата отвечала после старта, а потом падала. Таймауты лечит
+   * не это, а то, что loop теперь отдаёт процессор (v2.94.5) и I2C не душит
+   * мост (v2.94.7). */
+  Bridge.provide_safe("cam_frame_info", rpcCamFrameInfo); /* v2.30: кадр UART-камеры */
+  Bridge.provide_safe("cam_chunk", rpcCamChunk);          /* v2.30: кадр кусками (b64) */
   Bridge.provide_safe("cam_vis", rpcCamVis);              /* v2.88: зрение камеры (JSON) */
   Bridge.provide_safe("cam_vote", rpcCamVote);            /* v2.88: камера голосует за фразы */
   Bridge.provide_safe("cam_vote_res", rpcCamVoteRes);     /* v2.88: голос камеры */
   Bridge.provide_safe("cam_say", rpcCamSay);              /* v2.88: фраза мозга -> камере */
-  /* v2.94.4: VR3 целиком в потоке моста (не ждёт loop): приём — кольцо из
-   * прерывания (один писатель, один читатель), разбор — в vr_read */
-  Bridge.provide("vr_read", rpcVrRead);                   /* v2.94: голосовой модуль VR3 */
-  Bridge.provide("vr_enable", rpcVrEnable);               /* v2.94.3: включается из Python */
-  Bridge.provide("vr_send", rpcVrSend);
+  /* v2.94.8: VR3 — тоже в потоке loop (provide_safe), строки только в одном потоке */
+  Bridge.provide_safe("vr_read", rpcVrRead);              /* v2.94: голосовой модуль VR3 */
+  Bridge.provide_safe("vr_enable", rpcVrEnable);          /* v2.94.3: включается из Python */
+  Bridge.provide_safe("vr_send", rpcVrSend);
   Bridge.provide_safe("ping", rpcPing);                /* v2.14: пульс моста  */
   Bridge.provide_safe("sync_hz", rpcSyncHz);           /* v2.67: общий ритм платформы */
   Bridge.provide("diag", rpcDiag);                     /* v2.68: из потока моста — работает, даже если loop() завис */
@@ -3553,7 +3554,7 @@ void loop() {
   static uint32_t sverMs = 0;            // v2.94.6: версия СКЕТЧА — видно, залился ли новый
   if ((uint32_t)(millis() - sverMs) >= 10000) {
     sverMs = millis();
-    Bridge.notify("on_sver", String("2.94.7;up=") + String(millis() / 1000UL) + ";loops=" + String((unsigned long)loopCount));
+    Bridge.notify("on_sver", String("2.94.8;up=") + String(millis() / 1000UL) + ";loops=" + String((unsigned long)loopCount));
   }
 #endif
   static uint32_t yieldMs = 0;
