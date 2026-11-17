@@ -6,3 +6,7 @@ local.properties
 .idea/
 __pycache__/
 app/src/main/assets/cloud/data/
+launcher/bin/
+out/
+tmp/
+cloud/data/

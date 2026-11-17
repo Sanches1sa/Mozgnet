@@ -1945,12 +1945,42 @@ function groupCommon(p) {
   });
 }
 
+/* v3.177.2: КВАНТЫ НА D6 — галочки для скетча платы и шум плат */
+async function partWire() {
+  const box = $('#partForm');
+  if (!box) return;
+  let r;
+  try { r = await api('/api/particles'); } catch (e) { box.textContent = 'нет связи с облаком'; return; }
+  const s = r.settings || {};
+  const ck = (id, k, t) => '<label class="switch-inline" style="margin-right:14px"><input type="checkbox" id="' + id + '"' + (s[k] ? ' checked' : '') + '> ' + t + '</label>';
+  box.innerHTML =
+    '<div style="margin:4px 0">' + ck('partGrav', 'part_grav', '«гравитоны» — низкий фон') + ck('partMuon', 'part_muon', '«мюоны» — пакеты') +
+    ck('partPhot', 'part_phot', '«фотоны» — вспышки') + '</div>' +
+    '<div style="margin:4px 0">Частота генератора: <input type="number" id="partGen" min="0" max="20000" style="width:84px" value="' + (s.part_gen_hz || 0) + '"> Гц (0 — сам) · ' +
+    ck('partCpu', 'part_cpu_link', 'привязать к частоте процессора') + '</div>' +
+    '<div style="margin:4px 0">Полоса: от <input type="number" id="partMin" step="1" style="width:76px" value="' + (s.part_min_mhz ?? 100) + '"> МГц до ' +
+    '<input type="number" id="partMax" step="0.1" style="width:64px" value="' + (s.part_max_ghz ?? 4) + '"> ГГц</div>' +
+    '<div style="margin:4px 0">Скетчу уходит: <code>' + esc(r.cfg || '') + '</code></div>' +
+    ((r.boards || []).length ? (r.boards || []).map(b => '<div>📟 <b>' + esc(b.board) + '</b>: шум A4 <b>' + (b.cap ?? '—') + '</b>/255 · активность D6 ' + (b.d6 ?? '—') +
+      ' · шаг весов ×' + (b.scale ?? 1) + (b.cfg ? '' : ' · <i>конфиг ещё не дошёл</i>') + ' <span class="muted">(' + b.age + ' с назад)</span></div>').join('')
+      : '<div class="muted">Платы v2.92 пока не прислали шум (они шлют его каждые 5 с в канале связи).</div>');
+  const save = async () => {
+    await api('/api/particles', { body: { part_grav: $('#partGrav').checked, part_muon: $('#partMuon').checked,
+      part_phot: $('#partPhot').checked, part_cpu_link: $('#partCpu').checked, part_gen_hz: +$('#partGen').value || 0,
+      part_min_mhz: +$('#partMin').value || 0, part_max_ghz: +$('#partMax').value || 0 } });
+    toast('Кванты: сохранено — платы получат за 5 с', 'ok');
+    partWire();
+  };
+  box.querySelectorAll('input').forEach(i => i.onchange = save);
+}
+
 /* ------------------------- Общие (вкладка) ------------------------------- */
 function tabCommon() {
   const p = $('[data-pane="common"]');
   const st = S.status || {};
   const rset = SETTINGS || {};
   const L = st.load || {};
+  setTimeout(partWire, 60);            // v3.177.2: кванты на D6 — свой блок
   p.innerHTML = '<h2>Общие</h2>' +
     /* v3.173.1: блок Pillow был два раза (одинаковые id — второй вечно «Проверка…») */
     '<div class="fgroup" style="margin-bottom:12px"><label><b>Зрение — Pillow</b></label>' +
@@ -1970,6 +2000,10 @@ function tabCommon() {
       ' · потоков: ' + L.threads + ' · данные облака: ' + fmtN(L.data_mb) + ' МБ, файлов ' +
       fmtN(L.data_files) + ' · Python ' + esc(L.python || '') + ' (' + esc(L.os || '') + ')' +
       '</div><div class="mini" id="llmLoad"></div></div>' : '') +
+    '<div class="card" id="partBox" style="margin:8px 0 12px"><h3 style="margin-top:0">⚛ Кванты на D6 (плата v2.92+)</h3>' +
+    '<div class="mini">Скетч платы выдаёт на пин D6 дискретные уровни ШИМ: короткие вспышки, пакеты и низкий фон. ' +
+    'Шум конденсатора на A4 становится стимулом нейронам и ускоряет подбор весов. Это имитация квантов: настоящие частицы конденсатор не рождает.</div>' +
+    '<div id="partForm" class="mini" style="margin-top:6px">загрузка…</div></div>' +
     '<div class="fgroup" id="setMode"><label><b>Как мозг отвечает на вопрос</b> (v3.129)</label>' +
     '<div class="mini">1) Команды и точные вещи: расчёт, время, заметки, камера и микрофон, код. ' +
     '2) Подтверждённый ответ из памяти диалогов (👍 или «правильный ответ: …»). 3) Статья базы знаний — по контексту вопроса (эпоха, что спрашивают). ' +

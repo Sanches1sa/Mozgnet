@@ -52,9 +52,9 @@ Ok "вошёл как $me"
 if ($Cloud) {
     Say "ОБЛАКО ДЛЯ ПРИЛОЖЕНИЯ: $Cloud"
     if (-not (Test-Path (Join-Path $Cloud "server\app.py"))) { Die "в $Cloud нет server\app.py" }
-    $dst = "app\src\main\assets\cloud"
-    if (Test-Path $dst) { Remove-Item $dst -Recurse -Force }
-    New-Item -ItemType Directory $dst | Out-Null
+    $dst = "cloud"
+    foreach ($x in @("server", "web", "docs")) { if (Test-Path "$dst\$x") { Remove-Item "$dst\$x" -Recurse -Force } }
+    New-Item -ItemType Directory $dst -Force | Out-Null
     foreach ($x in @("server", "web", "docs", "VERSION", "README.md", "AGENT-GUIDE.md")) {
         $s = Join-Path $Cloud $x
         if (Test-Path $s) { Copy-Item $s $dst -Recurse -Force }

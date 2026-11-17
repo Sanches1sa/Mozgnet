@@ -34,7 +34,7 @@ echo "  вошёл как $ME"
 
 if [ -n "$CLOUD" ]; then
   [ -f "$CLOUD/server/app.py" ] || die "в $CLOUD нет server/app.py"
-  D=app/src/main/assets/cloud; rm -rf "$D"; mkdir -p "$D"
+  D=cloud; rm -rf "$D/server" "$D/web" "$D/docs"; mkdir -p "$D"
   for x in server web docs VERSION README.md AGENT-GUIDE.md; do [ -e "$CLOUD/$x" ] && cp -r "$CLOUD/$x" "$D/"; done
   find "$D" -name __pycache__ -prune -exec rm -rf {} +
   echo "  облако v$(cat "$D/VERSION")"

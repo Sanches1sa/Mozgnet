@@ -7,7 +7,20 @@ plugins {
 
 val runNumber = (System.getenv("GITHUB_RUN_NUMBER") ?: "1").toInt()
 val repoSlug = System.getenv("GITHUB_REPOSITORY") ?: ""
-val cloudVer = file("src/main/assets/cloud/VERSION").takeIf { it.exists() }?.readText()?.trim() ?: "?"
+// v1.1: один репозиторий — облако (cloud/), плата (board/), лаунчер (launcher/)
+// и приложение. Код облака попадает в APK из cloud/ при каждой сборке.
+val cloudVer = rootProject.file("cloud/VERSION").takeIf { it.exists() }?.readText()?.trim() ?: "?"
+val genAssets = layout.buildDirectory.dir("generated/mozgAssets")
+val copyMozgAssets = tasks.register<Sync>("copyMozgAssets") {
+    into(genAssets)
+    from(rootProject.file("cloud")) {
+        into("cloud")
+        include("server/**", "web/**", "docs/**", "VERSION", "README.md", "AGENT-GUIDE.md")
+        exclude("**/__pycache__/**", "**/*.pyc", "data/**")
+        includeEmptyDirs = false
+    }
+    from(rootProject.file("launcher/app/n12_mac.sh")) { into("board") }
+}
 val withNumpy = (project.findProperty("mozgnet.numpy") ?: "true").toString() == "true"
 
 android {
@@ -16,7 +29,7 @@ android {
 
     defaultConfig {
         applicationId = "ru.mozgnet.app"
-        minSdk = 24
+        minSdk = 26          // v1.1: SSH-клиент (JSch) — Android 8+
         targetSdk = 35
         versionCode = runNumber
         versionName = "1.0.$runNumber (облако $cloudVer)"
@@ -45,6 +58,9 @@ android {
         }
     }
     buildFeatures { buildConfig = true }
+    sourceSets {
+        getByName("main") { assets.srcDir(genAssets) }
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -65,4 +81,14 @@ chaquopy {
             if (withNumpy) install("numpy")
         }
     }
+}
+
+tasks.named("preBuild") { dependsOn(copyMozgAssets) }
+tasks.matching { it.name.startsWith("merge") && it.name.endsWith("Assets") }.configureEach {
+    dependsOn(copyMozgAssets)
+}
+
+dependencies {
+    // SSH до платы — вращение MAC с телефона (как в лаунчере)
+    implementation("com.github.mwiede:jsch:0.2.20")
 }

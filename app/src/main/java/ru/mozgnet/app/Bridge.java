@@ -179,6 +179,38 @@ public class Bridge {
         }, "connect").start();
     }
 
+    /** v1.1: логин платы для SSH (вращение MAC) — хранится в приложении. */
+    @JavascriptInterface
+    public String boardUser() {
+        if (!ok()) return "{}";
+        JSONObject o = new JSONObject();
+        try {
+            o.put("user", prefs.getString("b_user", "arduino"));
+            o.put("has_pass", !prefs.getString("b_pass", "").isEmpty());
+        } catch (Exception ignored) {
+        }
+        return o.toString();
+    }
+
+    @JavascriptInterface
+    public void setBoardUser(String user, String pass) {
+        if (!ok()) return;
+        SharedPreferences.Editor e = prefs.edit().putString("b_user", user == null || user.trim().isEmpty() ? "arduino" : user.trim());
+        if (pass != null && !pass.isEmpty()) e.putString("b_pass", pass);
+        e.apply();
+    }
+
+    /** MAC платы: show | rotate | restore | spin <сек> | stop -> window.onMac(ip, ответ). */
+    @JavascriptInterface
+    public void mac(String ip, String mode, String arg) {
+        if (!ok()) return;
+        String user = prefs.getString("b_user", "arduino"), pass = prefs.getString("b_pass", "");
+        new Thread(() -> {
+            JSONObject r = BoardMac.run(act, ip, user, pass, mode, arg);
+            js("window.onMac&&onMac(" + q(ip) + "," + q(mode) + "," + r.toString() + ")");
+        }, "mac").start();
+    }
+
     @JavascriptInterface
     public void home() {
         act.runOnUiThread(act::goHome);

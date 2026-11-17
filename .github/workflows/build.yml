@@ -1,7 +1,12 @@
-# mozgnet: автосборка APK на GitHub. Каждый push в main (и запуск вручную:
-# Actions → «mozgnet APK» → Run workflow) собирает APK и выкладывает его в
-# Releases — ставь на телефон с github.com/<ты>/mozgnet/releases/latest.
-name: mozgnet APK
+# mozgnet — один репозиторий «Мозг-12»: приложение (app/), облако (cloud/),
+# плата neuro_12 (board/), лаунчер (launcher/). Каждый push в main собирает
+# ВСЁ и выкладывает в Releases:
+#   mozgnet-….apk                         — приложение для телефона
+#   neuro12-cloud-v…-update.zip          — обновление облака (панель → Обновление)
+#   neuro_12-v….zip                       — приложение платы для App Lab
+#   neuro12-start.exe                     — лаунчер Windows
+#   neuro12-launcher-linux-v….zip         — лаунчер Linux (РЕД ОС, Ubuntu) с облаком
+name: mozgnet
 
 on:
   push:
@@ -12,58 +17,84 @@ permissions:
   contents: write
 
 jobs:
-  build:
+  apk:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "17"
-
-      # Chaquopy собирает Python-часть приложения тем же Python, что в телефоне
+        with: { distribution: temurin, java-version: "17" }
       - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
+        with: { python-version: "3.12" }
       - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.11.1"
-
+        with: { gradle-version: "8.11.1" }
       - name: Сборка APK (с numpy для своей LLM)
         id: full
         continue-on-error: true
         run: gradle --no-daemon --stacktrace assembleRelease -Pmozgnet.numpy=true
-
       - name: Сборка APK без numpy (если numpy не собрался)
         if: steps.full.outcome != 'success'
         run: gradle --no-daemon --stacktrace assembleRelease -Pmozgnet.numpy=false
-
-      - name: Имя файла
-        id: name
+      - name: Имя APK
         run: |
-          VER=$(cat app/src/main/assets/cloud/VERSION | tr -d ' \r\n')
+          VER=$(tr -d ' \r\n' < cloud/VERSION)
           NP=$([ "${{ steps.full.outcome }}" = "success" ] && echo "" || echo "-nonumpy")
-          OUT="mozgnet-1.0.${{ github.run_number }}-cloud${VER}${NP}.apk"
-          cp app/build/outputs/apk/release/app-release.apk "$OUT"
-          echo "file=$OUT" >> "$GITHUB_OUTPUT"
-          echo "ver=$VER" >> "$GITHUB_OUTPUT"
-
+          mkdir -p out && cp app/build/outputs/apk/release/app-release.apk "out/mozgnet-1.1.${{ github.run_number }}-cloud${VER}${NP}.apk"
       - uses: actions/upload-artifact@v4
-        with:
-          name: mozgnet-apk
-          path: ${{ steps.name.outputs.file }}
+        with: { name: apk, path: out/* }
 
-      - name: Выложить в Releases
-        uses: softprops/action-gh-release@v2
+  pc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: "1.22" }
+      - name: Лаунчер Windows и Linux
+        run: |
+          cd launcher/app
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -H windowsgui" -o ../../out/neuro12-start.exe .
+          mkdir -p ../bin
+          for a in amd64 arm64; do GOOS=linux GOARCH=$a CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o ../bin/neuro12-start-linux-$a .; done
+      - name: Облако, плата, пакет для Linux
+        run: |
+          CV=$(tr -d ' \r\n' < cloud/VERSION); BV=$(grep -oP 'APP_VERSION = "\K[^"]+' board/python/main.py)
+          LV=$(grep -oP 'const VER = "\K[^"]+' launcher/app/main.go)
+          mkdir -p out tmp/neuro12-cloud
+          rsync -a --exclude data --exclude '__pycache__' --exclude '.pytest_cache' cloud/ tmp/neuro12-cloud/
+          (cd tmp && zip -qr ../out/neuro12-cloud-v${CV//./_}-update.zip neuro12-cloud)
+          (cd board && zip -qr ../out/neuro_12-v${BV//./_}.zip . -x '*__pycache__*' '*.ruff_cache*')
+          L=tmp/neuro12-launcher-linux-v$LV; mkdir -p $L/src
+          cp launcher/install-linux.sh launcher/uninstall-linux.sh launcher/README-linux.md launcher/README.md launcher/THIRD_PARTY_LICENSES.txt launcher/brain.png $L/
+          cp -r launcher/bin $L/ && cp -r launcher/app launcher/installer $L/src/ && cp -r tmp/neuro12-cloud $L/neuro12-cloud
+          (cd tmp && zip -qr ../out/neuro12-launcher-linux-v${LV//./_}.zip neuro12-launcher-linux-v$LV)
+          echo "CV=$CV" >> $GITHUB_ENV; echo "BV=$BV" >> $GITHUB_ENV; echo "LV=$LV" >> $GITHUB_ENV
+          ls -la out
+      - uses: actions/upload-artifact@v4
+        with: { name: pc, path: out/* }
+
+  release:
+    needs: [apk, pc]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { path: out, merge-multiple: true }
+      - name: Версии
+        run: |
+          echo "CV=$(tr -d ' \r\n' < cloud/VERSION)" >> $GITHUB_ENV
+          echo "BV=$(grep -oP 'APP_VERSION = "\K[^"]+' board/python/main.py)" >> $GITHUB_ENV
+          echo "LV=$(grep -oP 'const VER = "\K[^"]+' launcher/app/main.go)" >> $GITHUB_ENV
+      - uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
-          name: mozgnet 1.0.${{ github.run_number }} (облако ${{ steps.name.outputs.ver }})
+          name: mozgnet 1.1.${{ github.run_number }} · облако ${{ env.CV }} · плата ${{ env.BV }} · лаунчер ${{ env.LV }}
           make_latest: true
-          files: ${{ steps.name.outputs.file }}
+          files: out/*
           body: |
-            APK mozgnet — облако «Мозг-12» в телефоне, скан сети, платы.
-            Установка: скачай APK на телефон и открой (разреши установку из этого источника).
-            Новая версия ставится поверх старой — память облака в телефоне сохраняется.
+            Всё «Мозг-12» одной сборкой:
+            * **mozgnet-….apk** — телефон: облако внутри, скан сети, подключение плат, вращение MAC плат.
+            * **neuro12-cloud-v…-update.zip** — облако ${{ env.CV }}: панель → Обновление (или распаковать поверх папки облака, data/ не трогать).
+            * **neuro_12-v….zip** — плата ${{ env.BV }}: импорт в Arduino App Lab → Run.
+            * **neuro12-start.exe** — лаунчер ${{ env.LV }} для Windows (положить в …\neuro12-cloud\launcher\).
+            * **neuro12-launcher-linux-v….zip** — лаунчер для РЕД ОС и Ubuntu с облаком: `bash install-linux.sh`.

@@ -1,0 +1,173 @@
+<!doctype html>
+<!-- neuro_12 — веб-интерфейс приложения «Мозг-12» (Arduino App Lab).
+     Раздаётся кирпичом arduino:web_ui из папки assets (порт 7000).
+     v2.19: буквы и слова буквогенератора скрыты (ленты/чипов больше нет) —
+     буквы уходят на пин D6, наружу только готовые фразы; мозг тихо создаёт
+     новые функции по инструкциям LLM. -->
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>neuro_12 — Мозг-12</title>
+<meta name="theme-color" content="#0f1115">
+<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="ui12.css">
+<script>/* v2.37: тема применяется до отрисовки */
+(function(){try{var m=localStorage.getItem('n12_theme')||'dark',a=localStorage.getItem('n12_accent');
+var l=m==='light'||(m==='auto'&&matchMedia('(prefers-color-scheme: light)').matches);
+document.documentElement.setAttribute('data-theme',l?'light':'dark');
+if(a&&a!=='teal')document.documentElement.setAttribute('data-accent',a);}catch(e){}})();</script>
+</head>
+<body>
+<header>
+  <div class="brand"><span class="logo12">🧠</span><span>neuro_12 <span class="sub">Мозг-12 · фразы из словаря</span></span></div>
+  <div class="chips">
+    <span class="chip" id="c-bridge" title="Мост RouterBridge к скетчу (MCU)">мост</span>
+    <span class="chip" id="c-cloud" title="Доступность облака: проверяется автоматически каждые ~20 с">облако</span>
+    <span class="chip" id="c-mem" title="Память мозга: реплики диалога, история чата, счётчики — локально и в облаке">память</span>
+    <span class="chip" id="c-dict" title="Словари русского языка: основа новой системы обучения">словарь</span>
+    <span class="chip" id="c-learn" title="Новая система обучения: словарная награда + диктант">учёба</span>
+    <span class="chip" id="c-llm" title="LLM-молчун: канал и причина, если недоступен">LLM</span>
+    <span class="chip" id="c-mail" title="Единый мозг: мозг-почта — письма других устройств через облако">почта</span>
+    <span class="chip" id="c-net" title="Связь с нейронами: сколько из 12 плат отвечают на опрос скетча (v2.11)">нейроны</span>
+    <span class="chip" id="c-nnet" title="Адаптивная зонная сеть: число нейронов задаёт наставник; активные нейроны подсказывают слова генератору (v2.15/v2.17)">сеть</span>
+    <span class="chip" id="c-tnet" title="Тензор мысли: логика зон; объём по ОЗУ платы; поведение от частоты, воли и дыхания; учится по материалам базы (v2.84)">тензор</span>
+    <span class="chip" id="c-gen" title="Частота генератора на шине D4→A0 нейронов">0 Гц</span>
+    <span class="chip hidden" id="c-nf" title="Отрицательная частота на D6 (опция облака)">−f D6</span>
+    <span class="chip" id="c-tts" title="Озвучка фраз через облако (TTS)">TTS</span>
+    <button id="btn-theme" class="iconbtn12" type="button" title="Тема (Alt+T)">☾</button>
+  </div>
+</header>
+
+<main>
+  <section id="chat-pane">
+    <!-- v2.36: строка статуса АКТИВНЫХ ЗОН над чатом: какие зоны мозга
+         отвечали (счётчики из /api/state zones_hist) + живые подсистемы:
+         нейроны, слова, мысли на D6, почта, диктант, любопытство, TTS -->
+    <div id="zstrip" class="zstrip" title="Активные зоны мозга: какая зона сколько раз отвечала, и какие подсистемы сейчас включены"></div>
+    <div id="chat"></div>
+    <div id="typing" class="hidden">…</div>
+    <div id="input-row">
+      <button id="btn-whisper" class="pill" title="Режим учителя: LLM молча выберет слово из твоего сообщения и поставит мозгу диктант. В чат LLM больше не пишет.">🤫 учить</button>
+      <button id="btn-file" class="pill" title="Загрузить файлы: фото, PDF, TXT, Excel, презентации — мозг прочитает, выучит слова и отправит копию в личную память облака">📎</button>
+      <input id="file-in" type="file" hidden multiple
+        accept=".png,.jpg,.jpeg,.gif,.bmp,.webp,.pdf,.txt,.md,.csv,.tsv,.log,.py,.js,.json,.yaml,.yml,.ini,.cfg,.html,.css,.xml,.ino,.sh,.c,.cpp,.h,.xlsx,.xlsm,.pptx,.docx">
+      <input id="inp" type="text" placeholder="Напиши мозгу… (/поиск запрос, /код задача, «цель слово», «мозг <id> <текст>» — письмо другому устройству)" autocomplete="off">
+      <button id="btn-send" class="pill primary" title="Отправить (Enter)">➤</button>
+      <button id="btn-panel" class="pill" title="Панель: настройки, учитель, облако, словари">⚙</button>
+    </div>
+  </section>
+
+  <aside id="panel" class="hidden">
+    <h3>⚙ Настройки</h3>
+    <label>Облако (адрес платформы мозг-12)
+      <input id="s-cloud" type="text" placeholder="http://192.168.1.50:8077"></label>
+    <label>Токен облака (X-Mozg-Token)
+      <input id="s-token" type="password" placeholder="оставь пустым — не менять"></label>
+    <label class="adv">Прямой URL ядра (OpenAI-совместимый)
+      <input id="s-direct" type="text" placeholder="http://…/v1"></label>
+    <label class="adv">Ключ прямого ядра
+      <input id="s-dkey" type="password" placeholder="оставь пустым — не менять"></label>
+    <label class="adv">Модель прямого ядра
+      <input id="s-dmodel" type="text" placeholder="qwen2.5:7b"></label>
+    <label class="adv">Голос TTS облака (можно пусто)
+      <input id="s-tvoice" type="text" placeholder="по умолчанию"></label>
+    <div class="checks">
+      <label class="chk"><input id="s-tts" type="checkbox"> TTS-речь фраз (через облако)</label>
+      <label class="chk"><input id="s-teach" type="checkbox"> LLM-вердикты фраз (мягко)</label>
+      <label class="chk"><input id="s-dictate" type="checkbox"> диктант: целевые слова для мозга</label>
+      <label class="chk"><input id="s-curious" type="checkbox"> любопытство: сам ищет новое в облаке</label>
+      <label class="chk"><input id="s-memsync" type="checkbox"> дублировать память в облако</label>
+      <label class="chk"><input id="s-brain" type="checkbox"> единый мозг: мозг-почта (письма устройств)</label>
+      <label class="chk"><input id="s-long" type="checkbox"> писать ответы как можно длиннее</label>
+      <label class="chk"><input id="s-advice" type="checkbox"> наставник: LLM советует нейросети, как отвечать (советы — в панели «Учитель»)</label>
+      <label class="chk"><input id="s-gen" type="checkbox"> голос мозга: фразы словами из словаря; слова подсказывают активные нейроны (v2.17)</label>
+      <label class="chk"><input id="s-grav" type="checkbox"> гравитация мыслей (v2.66, модель, не физика): фраза «падает» к самым активным понятиям; чем сильнее напряжена сеть, тем сильнее тяга</label>
+      <label>сила тяги G (0–3): <input id="s-gravg" type="number" min="0" max="3" step="0.1" style="width:70px"></label>
+      <label class="chk"><input id="s-cam" type="checkbox"> камера (v2.73): кадры ESP32-CAM → облако (раздел «Зрение», /cam, «что ты видишь?»). Адрес: <input id="s-camurl" type="text" style="width:170px" placeholder="192.168.1.50 или uart"></label>
+      <label class="chk"><input id="s-camai" type="checkbox"> камера с нейросетью выбирает слова вместе с мозгом (v2.88, скетч esp32cam_tflite, адрес камеры — uart). Вес голоса камеры: <input id="s-camaiw" type="number" min="0" max="1" step="0.05" style="width:64px"></label>
+      <label class="chk"><input id="s-mic" type="checkbox"> микрофон (v2.70): мозг слушает USB-микрофон платы и шлёт фразы в облако (речь в текст; «мозг, …» — вопрос, ответ голосом). Устройство ALSA: <input id="s-micdev" type="text" style="width:120px" placeholder="default"></label>
+      <label class="chk"><input id="s-game" type="checkbox"> игра «РОК-12» (v2.69): мозгу можно играть в DOOM-подобную игру облака — играет, только когда сам захочет (скука, напряжение сети, приглашение владельца)</label>
+      <label class="chk"><input id="s-sync" type="checkbox"> синхронизация с платформой (v2.67): генератор скетча подтягивается к общему ритму плат и облака (нужен пересобранный скетч)</label>
+    </div>
+    <button id="btn-save" class="pill primary wide">Сохранить настройки</button>
+    <div class="sep"></div>
+
+    <h3>🧑‍🏫 Учитель (LLM молчит и учит)</h3>
+    <div id="t-note" class="note" title="Последняя мысль учителя — не в чате, а здесь">…</div>
+    <div id="t-dict" class="info">…</div>
+    <div class="row2 adv">
+      <input id="t-word" type="text" placeholder="задать цель: слово">
+      <button id="btn-dictate" class="pill" title="Поставить мозгу это слово как цель диктанта">🎯</button>
+    </div>
+    <div class="row2">
+      <button id="btn-next-word" class="pill wide" title="Взять следующее слово из словаря">другое слово</button>
+    </div>
+    <div id="p-last-say" class="last-say">фраза ещё не собрана…</div>
+    <div id="p-brain-say" class="last-say brain-say" title="Мысль мозга: фраза, собранная зонной сетью словами из словаря (v2.17)">мысль ещё не родилась…</div>
+    <div id="p-breath" class="info" title="Общее дыхание ИИ-алгоритмов платы (v2.74)">🫁 дыхание: …</div>
+    <div id="p-cam" class="info" title="Камера (v2.73): идут ли кадры в облако, а если нет — почему">📷 камера: …</div>
+    <div id="p-mic" class="info" title="Уши мозга (v2.70): USB-микрофон платы -> речь в облако">🎤 микрофон: …</div>
+    <div id="p-game" class="info" title="Игра «РОК-12» в облаке (v2.69): мозг сам решает, играть ли">🎮 игра: …</div>
+    <div id="p-listen" class="info" title="Генератор слушает нейроны: активные нейроны подсказывают слова из своих связей (v2.17)">👂 нейроны тихи…</div>
+    <div class="row2">
+      <button id="btn-plus" class="pill good" title="Похвалить последнюю фразу (+1 в веса букв)">+1</button>
+      <button id="btn-minus" class="pill bad" title="Ослабить последнюю фразу (−1)">−1</button>
+    </div>
+    <div class="sep"></div>
+
+    <h3 data-adv="1">☁ Код в облаке</h3>
+    <input data-adv="1" id="code-task" type="text" placeholder="LLM напишет функцию: опиши задачу">
+    <button data-adv="1" id="btn-code-write" class="pill wide" title="LLM в облаке напишет def run(text) и проверит её в песочнице">✍ пусть LLM напишет</button>
+    <textarea data-adv="1" id="code-ed" class="code-ed" rows="7" spellcheck="false"
+      title="Python-функция run(text, ctx) выполняется В ОБЛАКЕ (песочница: без сети, файлов и импортов кроме math/random/re/json/… )"></textarea>
+    <div class="row2" data-adv="1">
+      <input data-adv="1" id="code-in" type="text" placeholder="текст для run(text)">
+      <button data-adv="1" id="btn-code-run" class="pill primary" title="Выполнить код в песочнице облака">▶</button>
+    </div>
+    <pre data-adv="1" id="code-out" class="out" hidden></pre>
+    <div class="sep" data-adv="1"></div>
+
+    <h3 data-adv="1">🌐 Поиск в облаке</h3>
+    <div class="row2" data-adv="1">
+      <input data-adv="1" id="search-q" type="text" placeholder="что искать (Википедия)">
+      <button data-adv="1" id="btn-search" class="pill primary" title="Искать через облако; найденные слова мозг выучит">🔎</button>
+    </div>
+    <div id="search-out" class="out" data-adv="1"></div>
+    <div class="sep" data-adv="1"></div>
+
+    <h3>📚 Словари русского языка</h3>
+    <div id="dict-info" class="info">…</div>
+    <div class="row2 adv">
+      <input id="dict-q" type="text" placeholder="проверить слово">
+      <button id="btn-dict-lookup" class="pill" title="Есть ли слово в словаре">?</button>
+    </div>
+    <div id="dict-out" class="out adv"></div>
+    <div class="sep"></div>
+
+    <h3>☁ Память мозга</h3>
+    <div id="mem-info" class="info">…</div>
+    <div class="row2">
+      <button id="btn-mem-sync" class="pill" title="Выгрузить память в облако сейчас и подтянуть её, если здесь пусто">↻ синхронизировать</button>
+      <button id="btn-mem-forget" class="pill bad" title="Стереть ВСЮ память: чат, реплики, счётчики, выученные слова — локально и в облаке">забыть всё</button>
+    </div>
+    <div class="sep"></div>
+
+    <h3>🔌 Связь с нейронами (v2.11)</h3>
+    <div id="net-row" class="netrow" title="Зелёные — отвечают на опрос шины, оранжевые — молчат, пульс — отозвались на пинг"></div>
+    <button id="btn-net" class="pill wide" title="Пинг всем 12 платам + проверка, кто отвечает на опрос и кто отзывается спайками">🔎 проверить связь</button>
+    <div id="net-out" class="out">Пассивный тест идёт всегда; кнопка запускает активный пинг.</div>
+    <div class="sep"></div>
+
+    <h3 data-adv="1">🔊 Говорить (через облако)</h3>
+    <input data-adv="1" id="s-speak" type="text" placeholder="текст для озвучки">
+    <button data-adv="1" id="btn-speak" class="pill wide">Озвучить</button>
+    <div class="sep" data-adv="1"></div>
+    <div id="p-info" class="info"></div>
+  </aside>
+</main>
+
+<script src="app.js"></script>
+<script src="ui12.js"></script>
+</body>
+</html>

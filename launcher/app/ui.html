@@ -1,0 +1,705 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Мозг-12</title>
+<style>
+:root{--bg:#0b0e14;--bg2:#12161f;--panel:#151a25;--line:#243043;--fg:#eef2f8;--mut:#8b95ab;
+--acc:#2dd4bf;--acc2:#818cf8;--acc3:#f472b6;--on-acc:#04211d;--bad:#f87171;--warn:#fbbf24;--ok:#4ade80;--r:16px}
+*{box-sizing:border-box}
+body{margin:0;color:var(--fg);font:14px/1.5 "Segoe UI",system-ui,sans-serif;
+background:
+  radial-gradient(900px 480px at 80% -12%,rgba(45,212,191,.08) 0%,transparent 55%),
+  radial-gradient(700px 420px at -8% 105%,rgba(129,140,248,.07) 0%,transparent 50%),
+  var(--bg);background-attachment:fixed}
+header{display:flex;align-items:center;gap:4px;padding:11px 18px;background:rgba(15,19,28,.92);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+header b{font-size:15.5px;margin-right:16px;letter-spacing:.02em;background:linear-gradient(90deg,var(--acc),var(--acc2));-webkit-background-clip:text;background-clip:text;color:transparent}
+.tab{padding:7px 15px;border-radius:10px;border:1px solid transparent;color:var(--mut);cursor:pointer;background:none;font:inherit;transition:color .15s,background .15s,border-color .15s}
+.tab.on{background:var(--panel);color:var(--fg);border-color:var(--line)}
+.tab:hover{color:var(--fg)}
+.ver{margin-left:auto;color:var(--mut);font-size:12px;opacity:.85}
+main{display:grid;grid-template-columns:1fr;gap:16px;padding:16px 18px 32px;max-width:1080px;margin:0 auto}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px 18px;box-shadow:0 4px 24px rgba(0,0,0,.18)}
+.card h2{margin:0 0 12px;font-size:14.5px;font-weight:600;display:flex;align-items:center;gap:8px;color:var(--fg)}
+label{display:block;color:var(--mut);font-size:12px;margin:8px 0 4px}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+input[type=text]{flex:1;min-width:120px;background:var(--bg);border:1px solid var(--line);color:var(--fg);border-radius:9px;padding:8px 10px;font:inherit;transition:border-color .15s}
+.row > div input[type=text]{width:100%}
+input[type=text]:focus{outline:none;border-color:var(--acc)}
+input[type=number]{width:100%;background:var(--bg);border:1px solid var(--line);color:var(--fg);border-radius:9px;padding:8px 10px;font:inherit}
+input[type=number]:focus{outline:none;border-color:var(--acc)}
+input[type=number]:disabled{opacity:.45}
+button.b{background:var(--bg2);border:1px solid var(--line);color:var(--fg);border-radius:9px;padding:8px 14px;font:inherit;cursor:pointer;white-space:nowrap;transition:border-color .15s,transform .1s,background .15s}
+button.b:hover{border-color:var(--acc);background:#1a2030}
+button.b:active{transform:scale(.97)}
+button.p{background:var(--acc);color:var(--on-acc);border-color:var(--acc);font-weight:600}
+button.p:hover{background:#25c0ad;border-color:#25c0ad}
+button.b:disabled{opacity:.5;cursor:default}
+button.b.sm{padding:4px 9px;font-size:12px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--mut);display:inline-block;flex:none;margin-top:4px}
+.dot.ok{background:var(--ok);box-shadow:0 0 8px rgba(74,222,128,.35)}.dot.bad{background:var(--bad)}.dot.warn{background:var(--warn);box-shadow:0 0 8px rgba(251,191,36,.3)}
+.st{color:var(--mut);font-size:13px;margin-top:8px}
+.chk{display:flex;gap:7px;align-items:center;color:var(--mut);font-size:13px;margin-top:8px}
+table{width:100%;border-collapse:collapse;font-size:13px;margin-top:10px;table-layout:fixed}
+th{text-align:left;color:var(--mut);font-weight:500;padding:7px 6px;border-bottom:1px solid var(--line)}
+td{padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top;overflow-wrap:anywhere}
+tr.best td{background:rgba(45,212,191,.06)}
+td .sub{color:var(--mut);font-size:12px}
+th:nth-child(1),td:nth-child(1){width:116px}
+th:nth-child(3),td:nth-child(3){width:96px}
+th:nth-child(4),td:nth-child(4){width:158px}
+th:nth-child(5),td:nth-child(5){width:268px}
+.tacts{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.mono{font-family:Consolas,"Cascadia Mono",monospace}
+.bar{height:5px;background:var(--bg);border-radius:4px;overflow:hidden;margin-top:10px}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,var(--acc),var(--acc2));width:0;transition:width .35s ease}
+#log{background:var(--bg);border:1px solid var(--line);border-radius:10px;height:220px;overflow:auto;padding:10px 12px;font:12px/1.55 Consolas,monospace;white-space:pre-wrap;color:#c5ccd9}
+.hint{color:var(--mut);font-size:12px;margin-top:8px;line-height:1.4}
+.scroll{overflow-x:auto}
+/* --- главная: кнопка запуска --- */
+.hero{text-align:center;padding:18px 20px 16px;position:relative;overflow:hidden}
+.hero::before{content:"";position:absolute;inset:0;background:radial-gradient(500px 220px at 50% 0%,rgba(45,212,191,.07) 0%,transparent 70%);pointer-events:none}
+.rune-wrap{position:relative;display:inline-block;margin-top:4px}
+.ring{position:absolute;inset:-10px;border-radius:50%;opacity:0;transition:opacity .4s;pointer-events:none}
+.ring.r1{background:conic-gradient(var(--acc),var(--acc2),var(--acc3),#fbbf24,var(--acc));animation:spin 1.9s linear infinite;filter:blur(10px)}
+.ring.r2{background:conic-gradient(from 180deg,transparent 30%,var(--acc2),transparent 65%,var(--acc));animation:spin 2.7s linear infinite reverse;filter:blur(16px)}
+.rune-wrap.busy .ring{opacity:.95}
+.rune{position:relative;z-index:1;width:158px;height:158px;border-radius:50%;border:none;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;
+font-size:48px;color:var(--on-acc);background:linear-gradient(145deg,#2dd4bf 0%,#34d399 45%,#2dd4bf 100%);background-size:220% 220%;animation:shim 5.5s ease infinite;
+box-shadow:0 0 0 7px rgba(45,212,191,.09),0 12px 40px rgba(45,212,191,.28);transition:transform .18s,box-shadow .3s}
+.rune:hover{transform:scale(1.05);box-shadow:0 0 0 10px rgba(45,212,191,.14),0 16px 50px rgba(45,212,191,.4)}
+.rune:active{transform:scale(.96)}
+.rune:disabled{cursor:default;animation:shim 1.6s ease infinite}
+.rune.busy{background:linear-gradient(145deg,#fbbf24,#f59e0b,#fbbf24);background-size:220% 220%;color:#3a2a02;box-shadow:0 0 0 7px rgba(251,191,36,.1),0 12px 40px rgba(251,191,36,.28)}
+@keyframes spin{to{transform:rotate(1turn)}}
+@keyframes shim{0%,100%{background-position:0% 50%}50%{background-position:100% 50%}}
+.run-t{margin-top:14px;font-size:16px;font-weight:650;letter-spacing:.01em}
+.run-s{color:var(--mut);font-size:12.5px;margin-top:4px;max-width:420px;margin-left:auto;margin-right:auto;line-height:1.4}
+.hrow{justify-content:center;margin-top:16px;gap:10px}
+.duo2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:18px;text-align:left}
+.stat{background:rgba(11,14,20,.65);border:1px solid var(--line);border-radius:12px;padding:11px 14px;font-size:13px;color:var(--mut);display:flex;gap:10px;align-items:flex-start;min-height:42px;transition:border-color .2s}
+.stat:hover{border-color:#2f3b52}
+@media(max-width:760px){.duo2{grid-template-columns:1fr}}
+/* --- шестерёнка --- */
+.gear{position:fixed;right:0;top:42%;z-index:20;width:44px;height:52px;border-radius:12px 0 0 12px;background:var(--panel);border:1px solid var(--line);border-right:none;
+cursor:pointer;font-size:20px;line-height:1;color:var(--mut);box-shadow:0 4px 20px rgba(0,0,0,.35);transition:color .15s,transform .3s}
+.gear:hover{color:var(--acc);transform:rotate(45deg)}
+/* --- настройки --- */
+.ovl{position:fixed;inset:0;background:rgba(4,7,12,.7);backdrop-filter:blur(4px);z-index:40;display:none;align-items:flex-start;justify-content:center;overflow:auto;padding:36px 12px}
+.ovl.show{display:flex}
+.modal{background:var(--panel);border:1px solid var(--line);border-radius:18px;width:660px;max-width:100%;padding:18px 22px 22px;box-shadow:0 24px 80px rgba(0,0,0,.55);animation:pop .2s ease}
+@keyframes pop{from{transform:translateY(14px);opacity:0}}
+.mhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.mhead h3{margin:0;font-size:16px}
+.msec{border-top:1px solid var(--line);margin-top:14px;padding-top:12px}
+.msec h4{margin:0 0 6px;font-size:13.5px;color:var(--acc);font-weight:600}
+@media(max-width:900px){th:nth-child(5),td:nth-child(5){width:150px}}
+
+/* --- v3.150: интернет платы, шаг запуска, адреса --- */
+.addr{font-family:Consolas,"Cascadia Mono",monospace;color:var(--fg);font-size:13.5px}
+.stat .lbl{display:block;font-size:11.5px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em;margin-bottom:2px}
+.wtab td,.wtab th{font-size:12.5px}
+.wtab th:nth-child(1),.wtab td:nth-child(1){width:auto}
+.wtab th:nth-child(2),.wtab td:nth-child(2){width:70px}
+.wtab th:nth-child(3),.wtab td:nth-child(3){width:110px}
+.wtab th:nth-child(4),.wtab td:nth-child(4){width:230px}
+.pill{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11.5px;border:1px solid var(--line);color:var(--mut)}
+.pill.ok{border-color:rgba(74,222,128,.4);color:var(--ok)}.pill.bad{border-color:rgba(248,113,113,.4);color:var(--bad)}
+.netbox{background:rgba(11,14,20,.65);border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:13px;color:var(--mut);margin-top:8px}
+select.sel{width:100%;background:var(--bg);border:1px solid var(--line);color:var(--fg);border-radius:9px;padding:8px 8px;font:inherit}
+select.sel:focus{outline:none;border-color:var(--acc)}
+input[type=password]{flex:1;min-width:120px;background:var(--bg);border:1px solid var(--line);color:var(--fg);border-radius:9px;padding:6px 9px;font:inherit}
+
+/* ================= v3.155: новый главный экран, крутящаяся шестерёнка, гаечный ключ ================= */
+header{padding:10px 20px}
+.brand{display:flex;align-items:center;gap:9px;margin-right:18px}
+.brand svg{width:22px;height:22px}
+.brand b{margin:0}
+.stage{min-height:calc(100vh - 58px);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px 16px 48px;position:relative;overflow:hidden}
+.stage::before{content:"";position:absolute;width:760px;height:760px;left:50%;top:46%;transform:translate(-50%,-50%);
+  background:radial-gradient(circle,rgba(45,212,191,.10) 0%,rgba(129,140,248,.05) 38%,transparent 66%);pointer-events:none;transition:background .6s}
+.stage.st-busy::before{background:radial-gradient(circle,rgba(251,191,36,.11) 0%,rgba(244,114,182,.05) 38%,transparent 66%)}
+.stage.st-ok::before{background:radial-gradient(circle,rgba(74,222,128,.11) 0%,rgba(45,212,191,.05) 38%,transparent 66%)}
+.core{position:relative;width:268px;height:268px;--c:var(--acc);--c2:var(--acc2)}
+.core.st-busy{--c:#fbbf24;--c2:#f472b6}
+.core.st-ok{--c:var(--ok);--c2:var(--acc)}
+.core svg.dial,.core svg.arc{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.core svg.dial{animation:spin 90s linear infinite}
+.core svg.dial circle{fill:none;stroke:var(--c);opacity:.28;transition:stroke .5s}
+.core svg.arc{opacity:0;transition:opacity .4s;animation:spin 1.3s linear infinite}
+.core.st-busy svg.arc{opacity:1}
+.core svg.arc circle{fill:none;stroke:url(#gArc);stroke-width:5;stroke-linecap:round;stroke-dasharray:150 560}
+.power{position:absolute;left:50%;top:50%;width:184px;height:184px;transform:translate(-50%,-50%);border-radius:50%;cursor:pointer;
+  border:2px solid color-mix(in srgb,var(--c) 70%,transparent);
+  background:radial-gradient(circle at 50% 38%,#1a2232 0%,#0f141d 62%,#0b0f16 100%);
+  box-shadow:0 0 0 10px color-mix(in srgb,var(--c) 7%,transparent),0 0 46px color-mix(in srgb,var(--c) 32%,transparent),inset 0 -14px 30px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.06);
+  display:flex;align-items:center;justify-content:center;transition:transform .18s,box-shadow .3s,border-color .4s}
+.power svg{width:66px;height:66px;stroke:var(--c);fill:none;stroke-width:2.2;stroke-linecap:round;filter:drop-shadow(0 0 10px color-mix(in srgb,var(--c) 60%,transparent));transition:stroke .4s}
+.power:hover{transform:translate(-50%,-50%) scale(1.04);box-shadow:0 0 0 14px color-mix(in srgb,var(--c) 10%,transparent),0 0 70px color-mix(in srgb,var(--c) 45%,transparent),inset 0 -14px 30px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.06)}
+.power:active{transform:translate(-50%,-50%) scale(.97)}
+.power:disabled{cursor:default}
+.core.st-ok .power{animation:breathe 3.2s ease-in-out infinite}
+@keyframes breathe{50%{box-shadow:0 0 0 16px color-mix(in srgb,var(--c) 5%,transparent),0 0 64px color-mix(in srgb,var(--c) 40%,transparent),inset 0 -14px 30px rgba(0,0,0,.45),inset 0 1px 0 rgba(255,255,255,.06)}}
+.ttl{margin-top:22px;font-size:22px;font-weight:650;letter-spacing:.01em;text-align:center}
+.sub2{color:var(--mut);font-size:13px;margin-top:6px;max-width:460px;text-align:center;line-height:1.45;min-height:19px}
+.chips{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:22px}
+.chip{display:flex;align-items:center;gap:9px;padding:8px 14px 8px 12px;border-radius:999px;background:rgba(18,22,31,.85);border:1px solid var(--line);font-size:13px;color:var(--mut);max-width:420px}
+.chip .dot{margin-top:0}
+.chip b{color:var(--fg);font-weight:600}
+.chip span.v{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* боковые вкладки справа */
+.stabs{position:fixed;right:0;top:38%;z-index:50;display:flex;flex-direction:column;gap:8px;transition:right .26s cubic-bezier(.2,.8,.2,1)}
+.stabs.open{right:min(700px,100vw)}
+@media(max-width:760px){.stabs.open{right:calc(100vw - 52px)}}
+.stab{width:50px;height:52px;border-radius:14px 0 0 14px;background:var(--panel);border:1px solid var(--line);border-right:none;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;color:var(--mut);box-shadow:0 4px 20px rgba(0,0,0,.35);transition:color .15s,width .15s,background .15s;padding:0}
+.stab:hover{color:var(--acc);width:56px;background:#1a2030}
+.stab svg{width:26px;height:26px}
+.stab.on{color:var(--acc)}
+#gearIco{animation:spin 9s linear infinite;transform-origin:50% 50%}
+.stab:hover #gearIco{animation-duration:2.2s}
+#gearIco.fast{animation-duration:.9s;color:var(--warn)}
+.stab .wr{transition:transform .25s}
+.stab:hover .wr{transform:rotate(-24deg)}
+/* выезжающие панели */
+.scrim{position:fixed;inset:0;background:rgba(4,7,12,.55);backdrop-filter:blur(3px);z-index:40;opacity:0;pointer-events:none;transition:opacity .2s}
+.scrim.show{opacity:1;pointer-events:auto}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(700px,100vw);z-index:45;background:var(--panel);border-left:1px solid var(--line);
+  box-shadow:-24px 0 80px rgba(0,0,0,.5);transform:translateX(102%);transition:transform .26s cubic-bezier(.2,.8,.2,1);overflow:auto;padding:16px 22px 28px}
+.drawer.show{transform:none}
+.dhead{display:flex;align-items:center;justify-content:space-between;position:sticky;top:-16px;background:var(--panel);padding:6px 0 10px;z-index:2;border-bottom:1px solid var(--line)}
+.dhead h3{margin:0;font-size:16px;display:flex;align-items:center;gap:9px}
+.dhead h3 svg{width:20px;height:20px;color:var(--acc)}
+.dsec{border-top:1px solid var(--line);margin-top:14px;padding-top:12px}
+.dsec:first-of-type{border-top:none}
+.dsec h4{margin:0 0 8px;font-size:13.5px;color:var(--acc);font-weight:600}
+.drawer #log{height:300px}
+.drawer table{font-size:12.5px}
+.lic{margin-top:10px}
+.lic h5{margin:14px 0 6px;font-size:12.5px;color:var(--mut);text-transform:uppercase;letter-spacing:.05em}
+.lic table{table-layout:fixed;margin-top:0}
+.lic td,.lic th{padding:6px 6px;overflow-wrap:break-word;word-break:normal;hyphens:auto}
+#dWrench .lic table.lt2 th:nth-child(1),#dWrench .lic table.lt2 td:nth-child(1){width:27%}
+#dWrench .lic table.lt2 th:nth-child(2),#dWrench .lic table.lt2 td:nth-child(2){width:19%}
+#dWrench .lic table.lt2 th:nth-child(3),#dWrench .lic table.lt2 td:nth-child(3){width:21%}
+#dWrench .lic table.lt2 th:nth-child(4),#dWrench .lic table.lt2 td:nth-child(4){width:33%}
+.lic td:first-child{font-weight:600;color:var(--fg)}
+.lic .lt{font-family:Consolas,monospace;font-size:11.5px;color:var(--acc)}
+.lic tr.warn td{background:rgba(251,191,36,.06)}
+.lic .must{background:rgba(11,14,20,.65);border:1px solid var(--line);border-radius:12px;padding:10px 14px;margin-top:12px;font-size:13px;line-height:1.5}
+.lic .must ol{margin:6px 0 0;padding-left:20px}
+#dWrench table:not(.wtab) th:nth-child(1),#dWrench table:not(.wtab) td:nth-child(1){width:104px}
+#dWrench table:not(.wtab) th:nth-child(2),#dWrench table:not(.wtab) td:nth-child(2){width:auto}
+#dWrench table:not(.wtab) th:nth-child(3),#dWrench table:not(.wtab) td:nth-child(3){width:54px}
+#dWrench table:not(.wtab) th:nth-child(4),#dWrench table:not(.wtab) td:nth-child(4){width:128px}
+#dWrench table:not(.wtab) th:nth-child(5),#dWrench table:not(.wtab) td:nth-child(5){width:150px}
+#dWrench .tacts{flex-direction:column;align-items:stretch}
+#dWrench .tacts .b{text-align:center}
+#dWrench td .sub.mono{font-size:11px}
+</style>
+</head>
+<body>
+<header>
+  <span class="brand"><b>🧠 Мозг-12</b></span>
+  <button class="tab on">Запуск</button>
+  <button class="tab" id="tCloud" title="Панель облака в этом окне">Облако</button>
+  <button class="tab" id="tBoard" title="Интерфейс платы (порт 7000) в этом окне">Плата</button>
+  <span class="ver" id="ver"></span>
+</header>
+
+<main class="stage" id="stage">
+  <div class="core" id="runWrap">
+    <svg class="dial" viewBox="0 0 268 268"><circle cx="134" cy="134" r="128" stroke-width="6" stroke-dasharray="1.2 9.85"/><circle cx="134" cy="134" r="119" stroke-width="1"/></svg>
+    <svg class="arc" viewBox="0 0 268 268"><defs><linearGradient id="gArc" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fbbf24"/><stop offset="1" stop-color="#f472b6"/></linearGradient></defs><circle cx="134" cy="134" r="110"/></svg>
+    <button class="power" id="bRun" title="Облако → копия приложения на плату → сборка скетча → запуск">
+      <svg viewBox="0 0 24 24"><path d="M12 3.2v8.3"/><path d="M6.4 6.9a7.6 7.6 0 1 0 11.2 0"/></svg>
+    </button>
+  </div>
+  <div class="ttl" id="sRun">Запустить всё</div>
+  <div class="sub2" id="sStep"></div>
+  <div class="chips">
+    <div class="chip" title="Облако на этом компьютере"><span class="dot" id="mdC"></span><b>Облако</b><span class="v" id="msC">—</span></div>
+    <div class="chip" title="Плата Arduino UNO Q"><span class="dot" id="mdB"></span><b>Плата</b><span class="v" id="msB">—</span></div>
+    <div class="chip" id="chipSpin" style="display:none" title="Спин MAC на плате"><span class="dot warn"></span><b>Спин</b><span class="v" id="msS"></span></div>
+  </div>
+</main>
+
+<div class="stabs" id="stabs">
+  <button class="stab" id="bGear" title="Настройки: облако, плата, вращение MAC, интернет платы"><svg id="gearIco" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path id="gearPath"/><circle cx="12" cy="12" r="3.2"/></svg></button>
+  <button class="stab" id="bWrench" title="Сеть: подключение, предсказание адреса, сканер, журнал"><svg class="wr" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></button>
+</div>
+
+<div class="scrim" id="scrim"></div>
+
+<aside class="drawer" id="dGear">
+  <div class="dhead"><h3>⚙ Настройки</h3><button class="b" data-close>✕ Закрыть</button></div>
+    <div class="msec">
+      <h4>Облако на этом компьютере</h4>
+      <label>Папка облака (в ней server\app.py)</label>
+      <div class="row"><input type="text" id="fCloud"><button class="b" data-pick="cloud">Выбрать…</button></div>
+      <div class="chk"><input type="checkbox" id="cAuto"> запускать облако при открытии лаунчера</div>
+      <div class="chk"><input type="checkbox" id="cOpen"> сразу показывать облако (когда адрес платы известен)</div>
+      <div class="row" style="margin-top:10px">
+        <button class="b" id="bCloudStart">Запустить облако</button>
+        <button class="b" id="bCloudExt" title="Открыть панель в обычном браузере">В браузере</button>
+      </div>
+    </div>
+
+    <div class="msec">
+      <h4>Плата Arduino UNO Q</h4>
+      <label>Папка приложения платы neuro_12 (в ней app.yaml)</label>
+      <div class="row"><input type="text" id="fApp"><button class="b" data-pick="app">Выбрать…</button></div>
+      <div class="row">
+        <div style="flex:1;min-width:150px"><label>IP платы</label><input type="text" id="fIp" class="mono" placeholder="найдёт сканер"></div>
+        <div style="width:130px"><label>пользователь</label><input type="text" id="fUser"></div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="b" id="bKey" title="Один раз ввести пароль платы — дальше все действия идут без окон консоли">Вход по ключу</button>
+        <button class="b" id="bWd" title="Автозапуск и сторож платы (нужны права sudo; пароль — один раз)">Сторож платы</button>
+        <button class="b" id="bFix" title="Удалить кэш сборки скетча и собрать заново (лечит «file truncated»)">Починить сборку</button>
+      </div>
+    </div>
+
+    <div class="msec">
+      <h4>🔄 Вращение MAC — виртуальное тело</h4>
+      <div class="hint" style="margin-top:0">Поворот переворачивает MAC платы: 6-й октет становится 1-м, 5-й — 2-м, 4-й меняется с 3-м (aa:bb:cc:dd:ee:ff → ff:ee:dd:cc:bb:aa). Следующий поворот возвращает прямой адрес. Если последний октет нечётный (например 61), он заменяется на 62 в обоих адресах — нечётный первый октет сетевая карта не примет. Во время поворота плата на несколько секунд пропадает из сети и может получить новый IP — лаунчер найдёт её сам. Нужен «Вход по ключу» и sudo на плате.</div>
+      <div class="netbox mono" id="macBox">MAC ещё не читался</div>
+      <div class="row" style="margin-top:10px">
+        <button class="b p" id="bMac" title="Перевернуть MAC платы (6→1, 5→2, 4↔3); следующий поворот — обратно">Повернуть MAC платы</button>
+        <button class="b" id="bMacM" title="Поставить компьютеру перевёрнутый (зеркальный) MAC платы — всегда отличный от неё. Нужны права администратора (окно Windows).">Зеркало на компьютер</button>
+        <button class="b" id="bMacR" title="Вернуть заводские MAC плате и компьютеру">Вернуть заводские MAC</button>
+        <button class="b sm" id="bMacS">Обновить</button>
+      </div>
+      <div class="row" style="margin-top:10px;align-items:flex-end">
+        <div style="width:150px"><label>Спин, оборотов в минуту</label><input type="number" id="fSpin" min="0" step="any" style="width:100%" title="1 оборот = прямой адрес → перевёрнутый → прямой (2 смены MAC). Спин 2 = 2 оборота в минуту = смена адреса раз в 15 с"></div>
+        <div style="flex:1;min-width:150px"><label>или частота (до 15 ТГц)</label><input type="number" id="fHz" min="0" step="any" style="width:100%"></div>
+        <div style="width:110px"><label>единицы</label>
+          <select id="fHzU" class="sel">
+            <option value="1e-6">мкГц</option><option value="1e-3">мГц</option><option value="1">Гц</option><option value="1e3">кГц</option>
+            <option value="1e6">МГц</option><option value="1e9">ГГц</option><option value="1e12">ТГц</option>
+          </select></div>
+      </div>
+      <div class="hint" id="hzInfo"></div>
+      <div class="chk"><input type="checkbox" id="cMacAuto"> вращать MAC с этой частотой</div>
+      <div class="chk"><input type="checkbox" id="cMacPC"> при авто-повороте делать и зеркало на компьютере (каждый раз — окно Windows для прав администратора; в быстром спине — нет)</div>
+    </div>
+
+    <div class="msec">
+      <h4>🌐 Интернет платы</h4>
+      <div class="hint" style="margin-top:0">Плата подключается к Wi-Fi через NetworkManager. Нужен «Вход по ключу». Если плата перейдёт в другую сеть, её адрес может смениться — лаунчер найдёт её сканером.</div>
+      <div class="netbox" id="netBox">состояние ещё не проверялось</div>
+      <div class="row" style="margin-top:10px">
+        <button class="b" id="bNet">Проверить</button>
+        <button class="b p" id="bWifi">Найти Wi-Fi сети</button>
+      </div>
+      <div class="scroll"><table class="wtab"><thead><tr><th>Сеть</th><th>Сигнал</th><th>Защита</th><th></th></tr></thead><tbody id="wb"></tbody></table></div>
+      <div class="row" style="margin-top:8px">
+        <div style="flex:1;min-width:150px"><label>Скрытая сеть (имя)</label><input type="text" id="fSsid"></div>
+        <div style="flex:1;min-width:150px"><label>пароль</label><input type="password" id="fWpass" style="width:100%"></div>
+        <div style="align-self:flex-end"><button class="b" id="bWconn">Подключить</button></div>
+      </div>
+    </div>
+</aside>
+
+<aside class="drawer" id="dWrench">
+  <div class="dhead"><h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg> Сеть и журнал</h3><button class="b" data-close>✕ Закрыть</button></div>
+  <section class="dsec">
+    <h4>Статус подключения</h4>
+    <div class="duo2" style="margin-top:4px">
+      <div class="stat"><span class="dot" id="dC"></span><span><span class="lbl">Облако</span><span id="aC" class="addr">—</span><br><span id="sC">—</span></span></div>
+      <div class="stat"><span class="dot" id="dB"></span><span><span class="lbl">Плата</span><span id="aB" class="addr">—</span><br><span id="sB">—</span></span></div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button class="b" id="bStop">■ Остановить</button>
+      <button class="b" id="bCloud">Открыть облако</button>
+      <button class="b" id="bBoard">Открыть плату</button>
+    </div>
+  </section>
+  <section class="dsec">
+    <h4>🔮 Предсказание адреса платы</h4>
+    <div class="netbox" id="predBox" style="margin-top:0">—</div>
+    <div class="row" style="margin-top:10px"><button class="b p" id="bPredict">Найти плату сейчас</button></div>
+    <div class="hint">Лаунчер помнит все MAC платы — заводской, прямой и перевёрнутый (зеркальный спин) — и какой IP был у каждого. Если плата пропала, он сначала проверяет таблицу ARP и прежние адреса и только потом сканирует всю сеть.</div>
+  </section>
+  <section class="dsec">
+    <h4>📡 Сканер сети</h4>
+    <div class="row">
+      <div style="flex:1;min-width:150px"><label>Порты</label><input type="text" id="fPorts" class="mono"></div>
+      <div style="flex:2;min-width:220px"><label>Диапазон (пусто — своя сеть; можно 192.168.1.0/24, 192.168.1.100-150, список через запятую)</label><input type="text" id="fRange" class="mono"></div>
+      <div style="align-self:flex-end"><button class="b p" id="bScan">Сканировать</button></div>
+    </div>
+    <div class="bar"><i id="pb"></i></div>
+    <div class="hint" id="sS">7000 — приложение платы, 22 — SSH (Debian на плате), 8077 — облако. Одна найденная плата подставляется сама.</div>
+    <div class="scroll"><table><thead><tr><th>Адрес</th><th>Что это</th><th>Порты</th><th>Имя / MAC</th><th></th></tr></thead><tbody id="tb"></tbody></table></div>
+  </section>
+
+  <section class="dsec">
+    <h4>Журнал</h4>
+    <div id="log"></div>
+  </section>
+  <section class="dsec">
+    <h4>📜 Лицензии</h4>
+    <div class="hint" style="margin-top:0">Сторонние программы, библиотеки и нейросеть, из которых собран «Мозг-12» (лаунчер, облако, плата UNO Q, камера ESP32-CAM), — под какой лицензией и что она требует при продаже устройства. Список составлен по файлам LICENSE и страницам проектов; пометка ⚠ — нужно решение или проверка. Это справка, не юридическая консультация.</div>
+    <div id="licBox"></div>
+    <div class="row" style="margin-top:10px"><button class="b" id="bLicCopy">Скопировать список</button></div>
+  </section>
+</aside>
+
+<script>
+const SECRET = "__N12_SECRET__";
+let next = 0, st = {}, editing = null;
+const $ = id => document.getElementById(id);
+async function call(path, body) {
+  const r = await fetch(path, {method: body ? "POST" : "GET", headers: {"X-N12": SECRET, "Content-Type": "application/json"},
+    body: body ? JSON.stringify(body) : undefined});
+  return r.json();
+}
+const act = (d, extra) => call("/api/action", Object.assign({do: d}, extra || {}));
+function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
+
+const fields = {fCloud: "cloud", fApp: "app", fIp: "ip", fUser: "user", fPorts: "ports", fRange: "range"};
+for (const [id, k] of Object.entries(fields)) {
+  const el = $(id);
+  el.addEventListener("focus", () => editing = id);
+  el.addEventListener("blur", () => { editing = null; call("/api/save", {[k]: el.value}); });
+  el.addEventListener("keydown", e => { if (e.key === "Enter") el.blur(); });
+}
+$("cAuto").onchange = e => call("/api/save", {auto_cloud: e.target.checked});
+$("cOpen").onchange = e => call("/api/save", {open_cloud: e.target.checked});
+$("cMacAuto").onchange = e => call("/api/save", {mac_auto: e.target.checked});
+$("cMacPC").onchange = e => call("/api/save", {mac_pc: e.target.checked});
+// v3.153: частота спина. Полный оборот (прямой → перевёрнутый → прямой) = 1/f,
+// смена адреса — каждые 1/(2f). v3.154: чаще раза в минуту спин крутит сама плата
+// с предельной скоростью сети (ограничения в 30 с больше нет).
+const HZMAX = 15e12, FAST = 60;
+const UNITS = [[1e12,"ТГц"],[1e9,"ГГц"],[1e6,"МГц"],[1e3,"кГц"],[1,"Гц"],[1e-3,"мГц"],[1e-6,"мкГц"]];
+function hzOf(c) { return c.mac_hz > 0 ? c.mac_hz : 1 / (2 * (c.mac_every >= 5 ? c.mac_every : 30) * 60); }
+function fmtHz(f) { for (const [k, n] of UNITS) if (f >= k) return +(f / k).toPrecision(6) + " " + n; return +(f * 1e6).toPrecision(6) + " мкГц"; }
+function fmtT(s) {
+  if (s >= 86400) return +(s / 86400).toPrecision(3) + " сут"; if (s >= 3600) return +(s / 3600).toPrecision(3) + " ч";
+  if (s >= 60) return +(s / 60).toPrecision(3) + " мин"; if (s >= 1) return +s.toPrecision(3) + " с";
+  for (const [k, n] of [[1e-3,"мс"],[1e-6,"мкс"],[1e-9,"нс"],[1e-12,"пс"],[1e-15,"фс"]]) if (s >= k) return +(s / k).toPrecision(3) + " " + n;
+  return +(s / 1e-15).toPrecision(3) + " фс";
+}
+function pickUnit(f) { for (const [k] of UNITS) if (f >= k) return k; return 1e-6; }
+function saveHz() {
+  let v = parseFloat($("fHz").value) * parseFloat($("fHzU").value);
+  if (!(v > 0)) return;
+  if (v > HZMAX) { v = HZMAX; $("fHzU").value = "1e12"; $("fHz").value = 15; }
+  call("/api/save", {mac_hz: v}).then(refresh);
+}
+["fHz", "fHzU"].forEach(id => {
+  $(id).addEventListener("focus", () => editing = "fHz");
+  $(id).addEventListener("blur", () => { editing = null; });
+});
+$("fHz").addEventListener("keydown", e => { if (e.key === "Enter") $("fHz").blur(); });
+$("fHz").onchange = saveHz;
+// v3.157: СПИН ЧИСЛОМ — обороты в минуту (1 оборот = 2 смены MAC); частота = спин / 60
+$("fSpin").addEventListener("focus", () => editing = "fSpin");
+$("fSpin").addEventListener("blur", () => { editing = null; });
+$("fSpin").addEventListener("keydown", e => { if (e.key === "Enter") $("fSpin").blur(); });
+$("fSpin").onchange = () => {
+  const sp = parseFloat($("fSpin").value);
+  if (!(sp > 0)) return;
+  call("/api/save", {mac_hz: Math.min(HZMAX, sp / 60)}).then(refresh);
+};
+const fmtSpin = v => (v >= 100 ? Math.round(v) : +v.toPrecision(3)) + " об/мин";
+$("fHzU").onchange = saveHz;
+document.querySelectorAll("[data-pick]").forEach(b => b.onclick = async () => {
+  const r = await call("/api/pick", {which: b.dataset.pick});
+  if (r.path) refresh();
+});
+// v3.155: две выезжающие панели — ⚙ настройки и 🔧 сеть/журнал
+function openDrawer(id) {
+  ["dGear", "dWrench"].forEach(d => $(d).classList.toggle("show", d === id));
+  $("scrim").classList.add("show"); $("stabs").classList.add("open");
+  $("bGear").classList.toggle("on", id === "dGear"); $("bWrench").classList.toggle("on", id === "dWrench");
+  if (id === "dWrench") { const lg = $("log"); lg.scrollTop = lg.scrollHeight; }
+}
+function closeDrawers() {
+  ["dGear", "dWrench"].forEach(d => $(d).classList.remove("show"));
+  $("scrim").classList.remove("show"); $("stabs").classList.remove("open"); $("bGear").classList.remove("on"); $("bWrench").classList.remove("on");
+}
+$("bGear").onclick = () => { if ($("dGear").classList.contains("show")) return closeDrawers(); openDrawer("dGear"); if (!(st.mac && st.mac.board) && $("fIp").value.trim()) act("macshow"); };
+$("bWrench").onclick = () => $("dWrench").classList.contains("show") ? closeDrawers() : openDrawer("dWrench");
+$("scrim").onclick = closeDrawers;
+document.querySelectorAll("[data-close]").forEach(b => b.onclick = closeDrawers);
+document.addEventListener("keydown", e => { if (e.key === "Escape") closeDrawers(); });
+$("bPredict").onclick = () => act("predict");
+// шестерёнка — настоящая, с зубцами (рисуется кодом и крутится)
+(function () {
+  const n = 10, ro = 11, ri = 8.7, w = 0.36; let d = "";
+  for (let i = 0; i < n; i++) {
+    const a = i * 2 * Math.PI / n, pts = [[a - w, ri], [a - w * .62, ro], [a + w * .62, ro], [a + w, ri]];
+    pts.forEach(([t, r], k) => { d += (i === 0 && k === 0 ? "M" : "L") + (12 + r * Math.cos(t)).toFixed(2) + " " + (12 + r * Math.sin(t)).toFixed(2); });
+    const b = (i + 1) * 2 * Math.PI / n - w;
+    d += "A" + ri + " " + ri + " 0 0 1 " + (12 + ri * Math.cos(b)).toFixed(2) + " " + (12 + ri * Math.sin(b)).toFixed(2);
+  }
+  $("gearPath").setAttribute("d", d + "Z");
+})();
+
+function cloudUrl() { return (st.cloud && st.cloud.url) || "http://127.0.0.1:8077/"; }
+// v3.159: страница облака/платы «в этом окне». В Linux окно — браузер, и
+// облако/плата открываются через локальный мост лаунчера (с верхней панелью).
+function cloudView() { return (st.cloud && st.cloud.view) || cloudUrl(); }
+function boardUrl(ip) { return st.bproxy ? "/goboard?ip=" + encodeURIComponent(ip) : "http://" + ip + ":7000/"; }
+async function openCloud() {
+  if (!(st.cloud && st.cloud.ok)) {
+    await act("cloud");
+    $("sC").textContent = "запускаю облако…";
+    for (let i = 0; i < 60; i++) {
+      await new Promise(r => setTimeout(r, 1000));
+      await refresh();
+      if (st.cloud && st.cloud.ok) break;
+    }
+    if (!(st.cloud && st.cloud.ok)) return;
+  }
+  location.href = cloudView();
+}
+function openBoard() {
+  const ip = $("fIp").value.trim();
+  if (!ip) { act("predict"); return; }
+  location.href = boardUrl(ip);
+}
+$("tCloud").onclick = $("bCloud").onclick = openCloud;
+$("tBoard").onclick = $("bBoard").onclick = openBoard;
+$("bCloudStart").onclick = () => act("cloud");
+$("bCloudExt").onclick = () => act("browser", {url: cloudUrl()});
+$("bRun").onclick = async () => { await call("/api/save", {ip: $("fIp").value, user: $("fUser").value, app: $("fApp").value}); act("runall"); };
+$("bFix").onclick = () => act("fixbuild");
+$("bMac").onclick = () => act("mac");
+$("bMacM").onclick = () => act("macmirror");
+$("bMacR").onclick = () => act("macrestore");
+$("bMacS").onclick = () => act("macshow");
+$("bStop").onclick = () => act("stop");
+$("bKey").onclick = () => act("key");
+$("bWd").onclick = () => act("watchdog");
+$("bScan").onclick = async () => { await call("/api/save", {ports: $("fPorts").value, range: $("fRange").value}); act("scan"); };
+$("bNet").onclick = () => act("net");
+$("bWifi").onclick = () => act("wifiscan");
+$("bWconn").onclick = () => {
+  const ss = $("fSsid").value.trim();
+  if (!ss) return;
+  act("wificonnect", {ssid: ss, pass: $("fWpass").value, hidden: true});
+  $("fWpass").value = "";
+};
+
+function renderNet() {
+  const n = st.net || {}, busy = st.busy || {};
+  let h;
+  if (busy.net) h = "проверяю…";
+  else if (!n.ts) h = "состояние ещё не проверялось — нажми «Проверить»";
+  else if (n.err) h = '<span class="pill bad">нет связи</span> ' + esc(n.err);
+  else {
+    h = (n.internet ? '<span class="pill ok">интернет есть</span>' : '<span class="pill bad">интернета нет</span>') + ' ' +
+      (n.dns ? '<span class="pill ok">DNS работает</span>' : '<span class="pill bad">DNS не работает</span>') +
+      (n.nm === false ? ' <span class="pill bad">на плате нет NetworkManager</span>' : '') +
+      '<div style="margin-top:6px">' + (n.devs || []).map(d => esc(d.dev) + " (" + esc(d.type) + "): " + esc(d.state) +
+        (d.conn && d.conn !== "--" ? " — «" + esc(d.conn) + "»" : "")).join("<br>") + '</div>' +
+      (n.route ? '<div class="mono" style="margin-top:4px;font-size:12px">маршрут: ' + esc(n.route) + '</div>' : '') +
+      (n.ips ? '<div class="mono" style="font-size:12px">адреса платы: ' + esc(n.ips) + '</div>' : '');
+  }
+  if ($("netBox").dataset.h !== h) { $("netBox").innerHTML = h; $("netBox").dataset.h = h; }
+  $("bWifi").disabled = !!busy.wifi; $("bWconn").disabled = !!busy.wifi; $("bNet").disabled = !!busy.net;
+  $("bWifi").textContent = busy.wifi ? "Работаю с Wi-Fi…" : "Найти Wi-Fi сети";
+  const wl = st.wifi || [];
+  const html = wl.map((w, i) => '<tr' + (w.active ? ' class="best"' : '') + '><td><b>' + esc(w.ssid) + '</b>' +
+    (w.active ? ' <span class="pill ok">подключена</span>' : '') + '</td><td>' + w.signal + '%</td><td>' + esc(w.security && w.security !== "--" ? w.security : "открытая") +
+    '</td><td>' + (w.active ? '' : '<div class="row" style="gap:6px;flex-wrap:nowrap">' +
+      (w.security && w.security !== "--" ? '<input type="password" placeholder="пароль" data-wp="' + i + '">' : '') +
+      '<button class="b sm" data-wc="' + i + '">Подключить</button></div>') + '</td></tr>').join("");
+  if ($("wb").dataset.h !== html) {
+    $("wb").innerHTML = html; $("wb").dataset.h = html;
+    $("wb").querySelectorAll("[data-wc]").forEach(b => b.onclick = () => {
+      const w = wl[+b.dataset.wc], pw = $("wb").querySelector('[data-wp="' + b.dataset.wc + '"]');
+      act("wificonnect", {ssid: w.ssid, pass: pw ? pw.value : ""});
+    });
+  }
+}
+
+function render() {
+  $("ver").textContent = "лаунчер v" + (st.ver || "?");
+  const c = st.cfg || {};
+  for (const [id, k] of Object.entries(fields)) if (editing !== id && $(id).value !== (c[k] || "")) $(id).value = c[k] || "";
+  $("cAuto").checked = c.auto_cloud !== false;
+  $("cOpen").checked = c.open_cloud !== false;
+  $("cMacAuto").checked = !!c.mac_auto;
+  $("cMacPC").checked = !!c.mac_pc;
+  const hz = hzOf(c);
+  if (editing !== "fHz") { const u = pickUnit(hz); $("fHzU").value = String(u === 1 ? 1 : u.toExponential().replace("+", "").replace(/^1e0$/, "1")); $("fHz").value = +(hz / u).toPrecision(6); }
+  if (editing !== "fSpin") $("fSpin").value = +(hz * 60).toPrecision(6);
+  const half = 1 / (2 * hz), fast = half < FAST, m0 = st.mac || {};
+  // реальный спин: быстрый — измерен циклом на плате; медленный — интервалы поворотов лаунчера
+  const avg = parseFloat(m0.sp_avg), last = parseFloat(m0.sp_last), rg = parseFloat(m0.real_gap);
+  const realGap = m0.spin && avg > 0 ? avg : (!m0.spin && rg > 0 ? rg : 0);
+  const lim = last > 0 ? 60 / (2 * last) : 0;           // предел сети по последней смене
+  const real = realGap ? '<br><b>реальный спин: ' + fmtSpin(60 / (2 * realGap)) + '</b> (смена раз в ' + fmtT(realGap) + ')' +
+    (m0.spin ? ', поворотов ' + esc(m0.sp_count || 0) : '') : '';
+  const over = lim && hz * 60 > lim * 1.05 ? '<br><span style="color:var(--warn)">Заданный спин ' + fmtSpin(hz * 60) +
+    ' выше предела сети ≈ ' + fmtSpin(lim) + ' — плата крутит с предельной скоростью.</span>' : '';
+  const ih = "спин " + fmtSpin(hz * 60) + " = оборот за " + fmtT(1 / hz) + " · смена адреса каждые " + fmtT(half) + real + over +
+    (fast ? '<br><span style="color:var(--warn)">Спин крутит сама плата (чаще раза в минуту лаунчер не успевает). При каждой смене адреса плата на несколько секунд' +
+      ' пропадает из сети (Wi-Fi переподключается). После каждой смены плата минимум 4 с остаётся в сети — окно связи: через него лаунчер меняет спин и останавливает вращение.</span>' : "") +
+    (m0.sp_stopped && !m0.spin ? '<br>последний спин: ' + esc(m0.sp_stopped) : "");
+  if ($("hzInfo").dataset.h !== ih) { $("hzInfo").innerHTML = ih; $("hzInfo").dataset.h = ih; }
+  const m = st.mac || {}, mb = !!(st.busy || {}).mac;
+  const mh = mb ? "меняю MAC…" : (m.board ? (m.spin ? "⟳ спин на плате идёт<br>" : "") + "плата" + (m.iface ? " (" + esc(m.iface) + ")" : "") + ": " + esc(m.board) +
+    (m.step === "1" ? " · перевёрнутый" : m.step === "0" ? " · прямой" : m.step === "R" ? " · заводской" : "") +
+    (m.base && m.base !== m.orig ? "<br>прямой: " + esc(m.base) : "") + (m.orig ? "<br>заводской: " + esc(m.orig) : "") + (m.pc ? "<br>компьютер: " + esc(m.pc) : "") : "MAC ещё не читался — нажми «Обновить»");
+  if ($("macBox").dataset.h !== mh) { $("macBox").innerHTML = mh; $("macBox").dataset.h = mh; }
+  ["bMac", "bMacM", "bMacR", "bMacS"].forEach(id => $(id).disabled = mb || !!(st.busy || {}).run);
+  const cs = st.cloud || {}, bs = st.board || {}, busy = st.busy || {};
+  $("dC").className = "dot " + (cs.ok ? "ok" : busy.cloud ? "warn" : "bad");
+  $("aC").textContent = cs.lan ? cs.lan + "  (здесь: " + (cs.url || "").replace(/\/$/, "") + ")" : (cs.url || "—");
+  $("sC").textContent = cs.ok ? ("работает" + (cs.version ? " · v" + cs.version : ""))
+    : busy.cloud ? "запускается…" : (cs.dir_ok === false ? "папка облака не найдена — выбери её в ⚙" : "не запущено");
+  let bt, bc;
+  $("aB").textContent = bs.ip ? bs.ip + ":7000" : "адрес неизвестен";
+  if (!bs.ip) { bt = "сканер ищет плату / впиши IP в ⚙"; bc = "warn"; }
+  else if (bs.ok) {
+    bc = bs.stuck ? "warn" : "ok";
+    bt = "приложение v" + bs.ver + (bs.sketch_alive ? " · скетч жив" : bs.sketch_seen ? " · скетч молчит" :
+      " · скетч не отвечает (⚙ → «Починить сборку»)") + (bs.stuck ? " · " + bs.stuck : "");
+    if (!bs.sketch_alive) bc = "warn";
+  } else { bc = bs.ssh ? "warn" : "bad"; bt = bs.ssh ? "в сети (SSH), приложение не запущено" : "не отвечает"; }
+  $("dB").className = "dot " + bc; $("sB").textContent = bt;
+  const running = !!busy.run;
+  $("bRun").disabled = running;
+  // v3.155: состояние большой кнопки и цвет сцены
+  const allOk = !!(cs.ok && bs.ok && bs.sketch_alive);
+  const mode = running ? "st-busy" : allOk ? "st-ok" : "";
+  ["runWrap", "stage"].forEach(id => { const el = $(id); el.classList.remove("st-busy", "st-ok"); if (mode) el.classList.add(mode); });
+  $("bRun").title = allOk && !running ? "Всё работает. Нажми, чтобы перезалить приложение на плату и перезапустить" : "Облако → копия приложения на плату → сборка скетча → запуск";
+  $("sRun").textContent = running ? "Идёт запуск…" : allOk ? "Всё работает" : "Запустить всё";
+  // короткие статусы под кнопкой
+  $("mdC").className = $("dC").className; $("mdB").className = $("dB").className;
+  $("msC").textContent = cs.ok ? "работает" + (cs.version ? " · v" + cs.version : "") : busy.cloud ? "запускается…" : "не запущено";
+  $("msB").textContent = !bs.ip ? "ищу в сети…" : bs.ip + " · " + (bs.ok ? (bs.sketch_alive ? "скетч жив" : "приложение работает") : bs.ssh ? "в сети, приложение не запущено" : "не отвечает");
+  const mm = st.mac || {};
+  $("chipSpin").style.display = mm.spin ? "" : "none";
+  if (mm.spin) $("msS").textContent = mm.sp_avg > 0 ? "смена раз в " + fmtT(+mm.sp_avg) : "идёт";
+  $("gearIco").classList.toggle("fast", !!mm.spin || !!busy.mac);
+  // предсказание адреса
+  const pr = st.predict || {}, fam = c.board_macs || [], ips = c.mac_ips || {};
+  const ph = (pr.ip ? "<b>плата: " + esc(pr.ip) + "</b> — " + esc(pr.why || "") + "<br>" : "") +
+    (fam.length ? "известные MAC платы: " + fam.map(m => '<span class="mono">' + esc(m) + (ips[m] ? " → " + esc(ips[m]) : "") + "</span>").join(", ")
+      : "MAC платы ещё не известен — он запомнится, как только плата найдётся (сканер или «Обновить» в ⚙ → Вращение MAC).");
+  if ($("predBox").dataset.h !== ph) { $("predBox").innerHTML = ph; $("predBox").dataset.h = ph; }
+  $("bPredict").disabled = !!busy.predict || !!(st.scan || {}).running;
+  $("sStep").textContent = st.step || (running ? "работаю…" : allOk ? "облако и плата на связи" : "облако → копия на плату → сборка скетча → запуск");
+  const sc = st.scan || {};
+  $("bScan").disabled = !!sc.running;
+  $("bScan").textContent = sc.running ? "Сканирую…" : "Сканировать";
+  $("pb").style.width = sc.total ? Math.round(100 * sc.done / sc.total) + "%" : "0";
+  if (sc.total) $("sS").textContent = (sc.running ? "сканирую: " : "готово: ") + sc.done + " из " + sc.total +
+    " адресов за " + (sc.secs || 0) + " с, найдено устройств: " + (sc.hosts || []).length + (sc.note ? " · " + sc.note : "");
+  const hs = sc.hosts || [];
+  const html = hs.map(h => {
+    const svc = [h.app, h.cloud, h.ssh].filter(Boolean).map(esc).join("<br>");
+    const isB = h.score >= 40;
+    return '<tr class="' + (h.score === 100 ? "best" : "") + '"><td class="mono"><b>' + esc(h.ip) + "</b>" +
+      (h.ip === c.ip ? '<div class="sub">выбрана</div>' : "") + "</td><td>" + esc(h.kind) +
+      (svc ? '<div class="sub">' + svc + "</div>" : "") + '</td><td class="mono">' + (h.ports || []).join(", ") +
+      "</td><td>" + esc(h.name || "—") + '<div class="sub mono">' + esc(h.mac || "") + "</div></td><td>" +
+      (isB ? '<div class="tacts"><button class="b sm" data-use="' + esc(h.ip) + '">Выбрать</button>' +
+        (h.score === 100 ? '<button class="b sm" data-cfg="' + esc(h.ip) + '" title="Прописать плате адрес облака этого компьютера и мозг-токен">Прописать облако</button>' +
+          '<button class="b sm" data-open="' + esc(h.ip) + '">Открыть</button>' : "") + "</div>" : "") + "</td></tr>";
+  }).join("");
+  if ($("tb").dataset.h !== html) {
+    $("tb").innerHTML = html; $("tb").dataset.h = html;
+    $("tb").querySelectorAll("[data-use]").forEach(b => b.onclick = () => act("use", {ip: b.dataset.use}).then(refresh));
+    $("tb").querySelectorAll("[data-cfg]").forEach(b => b.onclick = () => act("configure", {ip: b.dataset.cfg}));
+    $("tb").querySelectorAll("[data-open]").forEach(b => b.onclick = () => location.href = boardUrl(b.dataset.open));
+  }
+  renderNet();
+}
+async function refresh() {
+  try {
+    st = await call("/api/state?since=" + next);
+    if (st.logs && st.logs.length) {
+      const lg = $("log"), atEnd = lg.scrollTop + lg.clientHeight >= lg.scrollHeight - 20;
+      lg.textContent += st.logs.join("\n") + "\n";
+      if (atEnd) lg.scrollTop = lg.scrollHeight;
+    }
+    next = st.next || next;
+    if (st.nav) { location.href = st.nav; return; }
+    render();
+  } catch (e) {}
+}
+(async () => {
+  const go = new URLSearchParams(location.search).get("go");
+  await refresh();
+  if (go) history.replaceState(null, "", "/");
+  if (go === "cloud") openCloud(); else if (go === "board") openBoard();
+})();
+
+// v3.156: ЛИЦЕНЗИИ сторонних компонентов (справка для продажи устройства)
+const LIC = [
+  ["Лаунчер (neuro12-start.exe)", [
+    ["Go — стандартная библиотека", "BSD-3-Clause", "вшита в exe", "сохранить копирайт и текст лицензии"],
+    ["golang.org/x/sys (зеркало github.com/golang/sys v0.30.0)", "BSD-3-Clause", "вшита в exe", "то же"],
+    ["github.com/jchv/go-webview2", "MIT", "вшита в exe", "копирайт John Chadwick + текст MIT"],
+    ["github.com/jchv/go-winloader", "ISC", "вшита в exe", "копирайт John Chadwick + текст ISC"],
+    ["Microsoft Edge WebView2 Runtime", "лицензия Microsoft", "часть Windows 11, в exe не входит", "не распространяем — ничего делать не нужно"],
+  ]],
+  ["Облако (neuro12-cloud)", [
+    ["Python 3", "PSF License", "ставится установщиком (winget)", "не вшит; при поставке вместе — приложить лицензию PSF"],
+    ["NumPy", "BSD-3-Clause", "ставится pip", "сохранить лицензию при поставке"],
+    ["Pillow", "MIT-CMU (HPND)", "ставится pip", "сохранить лицензию при поставке"],
+    ["Vosk (распознавание речи)", "Apache-2.0", "необязательно", "лицензия + NOTICE"],
+    ["Модель vosk-model-small-ru-0.22", "Apache-2.0", "скачивается по запросу", "лицензия + указать источник alphacephei.com"],
+    ["pytesseract + Tesseract OCR", "Apache-2.0", "необязательно", "лицензия + NOTICE"],
+    ["FFmpeg", "LGPL-2.1+ (сборки с GPL-частями — GPL)", "отдельная программа, необязательно", "при поставке вместе — исходники/ссылка на них"],
+    ["eSpeak NG (голос)", "GPL-3.0", "отдельная программа, необязательно", "вызывается отдельно — облако не заражает; при поставке вместе — исходники/ссылка", 1],
+    ["Модуль yolo_core (YOLO)", "зависит от модели", "модуль владельца, в поставке нет", "если это Ultralytics YOLO — AGPL-3.0 или платная лицензия Ultralytics", 1],
+  ]],
+  ["Плата Arduino UNO Q (neuro_12)", [
+    ["Arduino App Lab bricks (arduino.app_utils, web_ui)", "MPL-2.0", "среда приложения", "копилефт по файлам: свои файлы — любая лицензия; изменённые файлы Arduino — открыть"],
+    ["Arduino_RouterBridge", "MPL-2.0", "скетч хаба", "то же; мы библиотеку не меняли"],
+    ["Ядро Arduino для UNO Q (Zephyr)", "Apache-2.0 (Zephyr) + LGPL-2.1 (ядро Arduino)", "прошивка хаба", "LGPL: дать исходники ядра (ссылка) и возможность перелинковать прошивку (объектные файлы скетча)", 1],
+    ["SoftwareWire (Testato)", "GPL-3.0", "в прошивке хаба, ТОЛЬКО если библиотека установлена (LINK_SW_WIRE 1)", "тогда вся прошивка хаба — GPL-3.0: открыть исходник скетча покупателям или заменить на аппаратный I2C/свою реализацию", 1],
+    ["Словари ru_top.json, ru_pos.json", "не указана", "данные мозга", "уточнить, откуда взяты частотные списки (НКРЯ, OpenCorpora и т. п. имеют свои условия)", 1],
+  ]],
+  ["Камера ESP32-CAM (esp32cam_tflite)", [
+    ["Нейросеть person_detect (int8, MobileNetV1)", "Apache-2.0", "вшита в прошивку (n12_model_data.cpp)", "© The TensorFlow Authors; модель не изменена; обучена Google на Visual Wake Words (из COCO)"],
+    ["TensorFlow Lite Micro", "Apache-2.0", "в прошивке", "лицензия + NOTICE"],
+    ["TensorFlowLite_ESP32 1.0.0 (+ FlatBuffers, gemmlowp, ruy)", "Apache-2.0", "в прошивке", "лицензия + NOTICE"],
+    ["Ядро Arduino-ESP32 (Espressif)", "LGPL-2.1", "в прошивке", "дать исходники ядра (ссылка) и возможность перелинковать прошивку", 1],
+    ["ESP-IDF, esp32-camera", "Apache-2.0", "в прошивке", "лицензия + NOTICE"],
+    ["FreeRTOS", "MIT", "в прошивке", "копирайт + текст MIT"],
+  ]],
+];
+const LIC_MUST = [
+  "Приложить к устройству (инструкция, сайт или меню) тексты лицензий: Apache-2.0, MIT, ISC, BSD-3-Clause, MPL-2.0, LGPL-2.1, PSF — и копирайты авторов из списка.",
+  "Apache-2.0: сохранить файлы NOTICE проектов и пометить изменённые файлы (нейросеть не меняли).",
+  "LGPL-2.1 (ядра Arduino на UNO Q и ESP32): указать, где взять исходники ядра, и дать по запросу объектные файлы прошивки, чтобы её можно было перелинковать.",
+  "MPL-2.0 (Arduino App Lab, RouterBridge): если меняете их файлы — открыть изменённые файлы; ссылка на репозитории Arduino.",
+  "⚠ SoftwareWire (GPL-3.0): либо открыть исходник скетча хаба, либо собирать прошивку без неё.",
+  "⚠ Уточнить: источник словарей ru_top/ru_pos и, если подключите YOLO, его лицензию.",
+  "Не использовать товарные знаки (TensorFlow, Arduino, Espressif, Google) так, будто они делают или одобряют устройство.",
+];
+function licText() {
+  let t = "Мозг-12 — сторонние компоненты и лицензии\n";
+  LIC.forEach(([g, rows]) => { t += "\n" + g + "\n"; rows.forEach(r => { t += "- " + r[0] + " — " + r[1] + " (" + r[2] + "): " + r[3] + (r[4] ? " [проверить]" : "") + "\n"; }); });
+  t += "\nЧто сделать при продаже:\n" + LIC_MUST.map((m, i) => (i + 1) + ". " + m).join("\n") + "\n";
+  return t;
+}
+(function () {
+  let h = '<div class="lic">';
+  LIC.forEach(([g, rows]) => {
+    h += "<h5>" + esc(g) + '</h5><div class="scroll"><table class="lt2"><thead><tr><th>Компонент</th><th>Лицензия</th><th>Где</th><th>Что требует</th></tr></thead><tbody>' +
+      rows.map(r => '<tr' + (r[4] ? ' class="warn"' : '') + '><td>' + (r[4] ? "⚠ " : "") + esc(r[0]) + '</td><td class="lt">' + esc(r[1]) +
+        "</td><td>" + esc(r[2]) + "</td><td>" + esc(r[3]) + "</td></tr>").join("") + "</tbody></table></div>";
+  });
+  h += '<div class="must"><b>Что сделать при продаже устройства</b><ol>' + LIC_MUST.map(m => "<li>" + esc(m) + "</li>").join("") + "</ol></div></div>";
+  $("licBox").innerHTML = h;
+  $("bLicCopy").onclick = async () => {
+    try { await navigator.clipboard.writeText(licText()); $("bLicCopy").textContent = "Скопировано ✓"; }
+    catch (e) { $("bLicCopy").textContent = "Не скопировалось"; }
+    setTimeout(() => $("bLicCopy").textContent = "Скопировать список", 1800);
+  };
+})();
+setInterval(refresh, 1000);
+</script>
+</body>
+</html>

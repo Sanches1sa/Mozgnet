@@ -1,0 +1,83 @@
+<!doctype html>
+<!-- neuro_12 v2.10 — страница «Облако»: разговор в стиле ChatGPT.
+     Раздаётся кирпичом arduino:web_ui из assets (http://<плата>:7000/cloud.html).
+     v2.10: ОТВЕЧАЕТ МОЗГ, а не нейросеть — LLM остался только учителем.
+     Режимы: «мой мозг» (зоны + память + файлы + базы знаний) или
+     «другой мозг» (свободное устройство через облако, POST /api/brains/ask).
+     Вложения: фото, PDF, TXT, XLSX, PPTX, DOCX -> POST /api/upload (base64). -->
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>neuro_12 — Облако</title>
+<meta name="theme-color" content="#0f1115">
+<link rel="stylesheet" href="cloud.css">
+<link rel="stylesheet" href="ui12.css">
+<script>(function(){try{var m=localStorage.getItem('n12_theme')||'dark',a=localStorage.getItem('n12_accent');
+var l=m==='light'||(m==='auto'&&matchMedia('(prefers-color-scheme: light)').matches);
+document.documentElement.setAttribute('data-theme',l?'light':'dark');
+if(a&&a!=='teal')document.documentElement.setAttribute('data-accent',a);}catch(e){}})();</script>
+</head>
+<body>
+<div id="app">
+  <aside id="side">
+    <div class="side-head"><span class="logo12">🧠</span><span>Мозг-12 <span class="sub">· облако</span></span></div>
+    <button id="btn-new" class="s-btn primary">＋ Новый разговор</button>
+    <div class="side-cap">Разговоры</div>
+    <div id="chat-list"></div>
+    <div class="side-cap">📎 Файлы (контекст мозга)</div>
+    <div id="doc-list"><div class="hint">пока пусто</div></div>
+    <div class="side-foot">
+      <a href="/" target="_blank">⬅ основной интерфейс мозга</a>
+      <span id="side-ver"></span>
+    </div>
+  </aside>
+
+  <main id="main">
+    <header id="top">
+      <button id="btn-side" title="Показать/скрыть панель">☰</button>
+      <div class="ttl">Облако <span class="sub">мозг отвечает сам — длинно и без нейросети</span></div>
+      <span id="via" class="chip" title="Кто ответил последним">ответчик</span>
+      <button id="btn-theme" class="iconbtn12" type="button" title="Тема (Alt+T)">☾</button>
+    </header>
+
+    <div id="msgs">
+      <div class="hello">
+        <div class="hello-logo">🧠</div>
+        <h1>Разговор с мозгом в облаке</h1>
+        <p>Спрашивай что угодно — мозг ответит развёрнуто. Прикрепляй
+           <b>фото, PDF, текстовые файлы, Excel и презентации</b> (📎): их текст
+           будет извлечён на плате и попадёт в контекст разговора, а новые
+           слова мозг выучит для своего буквогенератора.</p>
+      </div>
+    </div>
+
+    <div id="attach-bar" class="hidden"></div>
+
+    <details id="sys-box">
+      <summary>Кто отвечает (единый мозг)</summary>
+      <select id="route">
+        <option value="local">🧠 мой мозг — это устройство (зоны, память, файлы, базы знаний)</option>
+        <option value="cloud">🌐 другой свободный мозг — через облако (единый мозг)</option>
+      </select>
+      <div class="hint">v2.10: в чатах отвечает МОЗГ — развёрнуто, без нейросети
+        (LLM остался только учителем буквогенератора). «Другой мозг» — вопрос
+        уйдёт свободному онлайн-устройству через облако и вернётся сюда.
+        Выбор сохраняется в браузере.</div>
+    </details>
+
+    <footer id="composer">
+      <button id="btn-attach" class="c-pill" title="Прикрепить фото / PDF / TXT / Excel / презентацию / Word">📎</button>
+      <input id="file-inp" type="file" hidden multiple
+             accept=".png,.jpg,.jpeg,.gif,.bmp,.webp,.pdf,.txt,.md,.csv,.tsv,.log,.py,.js,.json,.yaml,.yml,.xml,.html,.css,.ino,.sh,.c,.cpp,.h,.xlsx,.xlsm,.pptx,.docx">
+      <textarea id="c-inp" rows="1" placeholder="Спроси мозг…  (Enter — отправить, Shift+Enter — перенос строки)"></textarea>
+      <label id="img-opt-wrap" class="chk hidden" title="Приложить последнее фото к следующему запросу (нужна мультимодальная модель)">
+        <input id="opt-img" type="checkbox">🖼 в запрос</label>
+      <button id="btn-send" class="c-pill primary" title="Отправить (Enter)">➤</button>
+    </footer>
+  </main>
+</div>
+<script src="cloud.js"></script>
+<script src="ui12.js"></script>
+</body>
+</html>

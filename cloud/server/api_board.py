@@ -562,7 +562,57 @@ def h_link(req):
             r["game"] = doomgame.info_for_board(str(b.get("board") or ""))
     except Exception:
         pass
+    try:                         # v3.177.2: кванты на D6 (плата v2.92)
+        if isinstance(r, dict) and r.get("ok"):
+            r["particles"] = particles_cfg()
+            if isinstance(b.get("noise"), dict):
+                _NOISE[str(b.get("board") or "?")[:40]] = dict(b["noise"], ts=time.time())
+    except Exception:
+        pass
     return (200 if r.get("ok") else 400), r
+
+
+_NOISE = {}      # плата -> {cap, d6, scale, cfg, ts}: шум конденсатора и шаг весов
+
+
+def particles_cfg():
+    """Галочки «Кванты на D6» (⚙ → Общие) -> строка для скетча платы:
+    grav:1,muon:0,phot:1,gen:0,cpu:0,min:100,max:4.0"""
+    s_ = store.settings()
+
+    def f(k, d):
+        try:
+            return float(s_.get(k, d))
+        except (TypeError, ValueError):
+            return d
+    return "grav:%d,muon:%d,phot:%d,gen:%d,cpu:%d,min:%g,max:%g" % (
+        1 if s_.get("part_grav") else 0, 1 if s_.get("part_muon") else 0,
+        1 if s_.get("part_phot") else 0, int(max(0, f("part_gen_hz", 0))),
+        1 if s_.get("part_cpu_link") else 0, f("part_min_mhz", 100.0), f("part_max_ghz", 4.0))
+
+
+def h_particles(req):
+    """GET: галочки и шум плат; POST: сохранить галочки."""
+    keys = ("part_grav", "part_muon", "part_phot", "part_cpu_link")
+    if req.method == "POST":
+        b = req.body or {}
+        cp = {k: bool(b[k]) for k in keys if k in b}
+        for k, lo, hi in (("part_gen_hz", 0, 20000), ("part_min_mhz", 0, 100000), ("part_max_ghz", 0, 1000)):
+            if k in b:
+                try:
+                    cp[k] = max(lo, min(hi, float(b[k])))
+                except (TypeError, ValueError):
+                    pass
+        if cp:
+            store.update_settings(cp)
+            store.log("КВАНТЫ", "настройки: %s" % particles_cfg())
+    s_ = store.settings()
+    now = time.time()
+    boards = [dict(v, board=k, age=int(now - v.get("ts", now))) for k, v in _NOISE.items()
+              if now - v.get("ts", 0) < 120]
+    return 200, {"ok": True, "cfg": particles_cfg(),
+                 "settings": {k: s_.get(k) for k in keys + ("part_gen_hz", "part_min_mhz", "part_max_ghz")},
+                 "boards": boards}
 
 
 def h_hearing_mic(req):
@@ -1104,6 +1154,8 @@ _r("GET", "api/buffer", h_buffer, auth=True)
 _r("GET", "api/cache", h_buffer, auth=True)
 _r("POST", "api/think", h_think, auth=True)
 _r("POST", "api/link", h_link, auth=True)
+_r("GET", "api/particles", h_particles)          # v3.177.2: кванты на D6
+_r("POST", "api/particles", h_particles)
 
 
 def h_board_read(req):

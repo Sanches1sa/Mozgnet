@@ -67,7 +67,9 @@
   <div class="mut">1. Телефон и плата — в одной сети Wi-Fi (или плата в точке доступа телефона).<br>
   2. «Сканировать сеть» → у платы «Подключить к облаку телефона»: плата получит адрес облака и мозг-токен.<br>
   3. Облако работает, пока включено «Держать облако включённым». На ночь лучше на зарядке.<br>
+  4. MAC платы: «повернуть» — один переворот, «вращать…» — плата сама переворачивает MAC через заданные секунды (как в лаунчере). Нужен логин и пароль платы (SSH). MAC самого телефона приложение менять не может — для него в Android есть «Случайный MAC» в настройках Wi-Fi.<br>
   Облако на компьютере тоже находится сканом — плату можно подключить к нему.</div>
+  <div class="row"><button class="g s" id="macCred">Логин и пароль платы (SSH)</button></div>
   <div class="row" id="upd"></div>
 </div>
 
@@ -108,7 +110,13 @@ function hostHtml(h) {
       '<div class="row"><button class="s" data-open="' + esc(h.board) + '">Открыть плату</button>' +
       '<button class="g s" data-conn="' + esc(h.board) + '">Подключить к облаку телефона</button>' +
       (Object.values(hosts).some(x => x.cloud && !x.me) ? '<button class="g s" data-connpc="' + esc(h.board) + '">…к облаку компьютера</button>' : '') +
-      '</div><div class="mut" id="cr_' + esc(h.ip.replace(/\./g, '_')) + '"></div>';
+      '</div><div class="row"><span class="mut">MAC:</span>' +
+      '<button class="g s" data-mac="show" data-ip="' + esc(h.ip) + '">показать</button>' +
+      '<button class="g s" data-mac="rotate" data-ip="' + esc(h.ip) + '">повернуть</button>' +
+      '<button class="g s" data-mac="spin" data-ip="' + esc(h.ip) + '">вращать…</button>' +
+      '<button class="g s" data-mac="stop" data-ip="' + esc(h.ip) + '">стоп</button>' +
+      '<button class="g s" data-mac="restore" data-ip="' + esc(h.ip) + '">заводской</button></div>' +
+      '<div class="mut" id="cr_' + esc(h.ip.replace(/\./g, '_')) + '"></div>';
   }
   if (h.cloud) {
     s += '<div><span class="tag">облако v' + esc(h.cloud_ver) + '</span></div>' +
@@ -127,6 +135,7 @@ function drawHosts() {
     note(b.dataset.conn, 'подключаю к облаку телефона…');
     M.connectBoard(b.dataset.conn, 'http://' + INFO.ip + ':' + (INFO.port || 8077), INFO.token);
   });
+  document.querySelectorAll('[data-mac]').forEach(b => b.onclick = () => macGo(b.dataset.ip, b.dataset.mac));
   document.querySelectorAll('[data-connpc]').forEach(b => b.onclick = () => {
     const clouds = Object.values(hosts).filter(x => x.cloud && !x.me);
     const c = clouds.length === 1 ? clouds[0] : clouds[(+prompt('Номер облака:\n' + clouds.map((x, i) => (i + 1) + ') ' + x.cloud).join('\n'), '1') || 1) - 1];
@@ -144,6 +153,38 @@ function note(base, txt) {
   const el = document.getElementById('cr_' + ip.replace(/\./g, '_'));
   if (el) el.textContent = txt;
 }
+
+// v1.1: вращение MAC платы с телефона (SSH, как лаунчер на компьютере)
+function macGo(ip, mode) {
+  const u = J(M.boardUser(), {});
+  if (!u.has_pass) {
+    const user = prompt('Логин платы для SSH:', u.user || 'arduino');
+    if (user === null) return;
+    const pass = prompt('Пароль платы (нужен для SSH и sudo; хранится только в приложении):', '');
+    if (!pass) return;
+    M.setBoardUser(user, pass);
+  }
+  let arg = '';
+  if (mode === 'spin') {
+    arg = prompt('Через сколько секунд переворачивать MAC (0 — так быстро, как успевает сеть)?', M.pref('spin_gap') || '60');
+    if (arg === null) return;
+    M.setPref('spin_gap', arg);
+  }
+  if ((mode === 'rotate' || mode === 'restore') && !confirm('Плата переподключится к Wi-Fi с новым MAC и может получить новый адрес. Продолжить?')) return;
+  note('http://' + ip, {show: 'читаю MAC…', rotate: 'поворачиваю MAC…', restore: 'возвращаю заводской MAC…', spin: 'запускаю вращение на плате…', stop: 'останавливаю вращение…'}[mode]);
+  M.mac(ip, mode, arg);
+}
+window.onMac = (ip, mode, r) => {
+  const k = r.kv || {};
+  let t;
+  if (!r.ok) t = '⚠️ MAC: ' + (k.ERR || r.out || 'не вышло');
+  else if (mode === 'show') t = 'MAC ' + (k.IFACE || '') + ': ' + (k.NOW || k.CUR || k.WAS || '?') + (k.ORIG ? ' · заводской ' + k.ORIG : '') + (k.SPIN ? ' · вращение: ' + (k.SPIN === 'on' ? 'идёт' : 'нет') : '');
+  else if (mode === 'rotate' || mode === 'restore') { t = '✅ MAC: ' + (k.WAS ? k.WAS + ' → ' : '') + (k.NEW || 'меняется') + ' — ищу плату заново…'; setTimeout(() => $('#scan').click(), 12000); }
+  else if (mode === 'spin') t = '✅ вращение идёт на самой плате' + (r.sudo ? ' (через sudo)' : '') + ' — её адрес будет меняться, сканируй сеть';
+  else t = '✅ вращение остановлено — плата вернётся на прямой MAC';
+  if (/неверный логин/.test(r.out || '')) M.setBoardUser('', '');
+  note('http://' + ip, t);
+};
 
 window.onScan = (done, total, h, fin) => {
   if (h) { hosts[h.ip] = h; drawHosts(); }
@@ -164,6 +205,12 @@ window.onConnect = (base, res) => {
   note(base, res === 'ok' ? '✅ плата подключена — через пару секунд она появится в облаке' : '⚠️ не вышло: ' + res);
 };
 
+$('#macCred').onclick = () => {
+  const u = J(M.boardUser(), {});
+  const user = prompt('Логин платы для SSH:', u.user || 'arduino'); if (user === null) return;
+  const pass = prompt('Пароль платы:', ''); if (pass === null) return;
+  M.setBoardUser(user, pass); alert('Сохранено');
+};
 $('#scan').onclick = () => { if (!M) return; $('#scan').disabled = true; $('#scanBar').style.width = '0'; $('#scanTxt').textContent = 'ищу…'; M.scan(); };
 $('#manGo').onclick = () => { const ip = $('#manIp').value.trim(); if (!ip || !M) return; $('#manGo').disabled = true; M.probe(ip); };
 $('#lOn').onchange = () => { M.setLocal($('#lOn').checked); setTimeout(refresh, 600); };
