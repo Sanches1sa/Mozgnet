@@ -3524,4 +3524,16 @@ void loop() {
   loopStage = 11; bridgeSync();        camUartTick();   // 6. обмен с Linux-стороной (val_b, chat_out, teach, speak / total_val_c)
   loopStage = 12; analyzeAndPrint();   camUartTick();   // 7. анализ val_c (+val_b, звук) -> частота и total_val_c
   loopStage = 0;
+  /* v2.94.5: ДАТЬ ПОТОКУ МОСТА ПРОЦЕССОР. loop() на Zephyr — обычный поток;
+   * если он не спит, поток RouterBridge (приём вызовов от Linux) не получает
+   * времени: от скетча уведомления уходят, а ВСЕ вызовы из Python (diag,
+   * cam_frame_info, say_wave…) — «timed out». До v2.93 спать заставляли
+   * 8 analogRead за проход (АЦП ждёт семафор); с v2.93 АЦП читается редко —
+   * и мост задыхался. Теперь — сон 1 мс каждые 3 мс (кадры камеры копит
+   * драйвер UART по прерыванию). */
+  static uint32_t yieldMs = 0;
+  if ((uint32_t)(millis() - yieldMs) >= 3) {
+    yieldMs = millis();
+    delay(1);
+  }
 }
