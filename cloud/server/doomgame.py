@@ -32,6 +32,8 @@ import math
 import random
 import threading
 import time
+
+import store
 from collections import deque
 
 TICK = 0.05                      # 20 тиков в секунду
@@ -703,6 +705,8 @@ def bot_call(body):
                 _event(p, "мозг платы вышел из игры: %s" % (info["why"] or "не хочет"),
                        "leave")
                 del _G["players"][pid]
+                _TIRED["ts"] = 0.0
+                _tired_check(board, now)          # v3.179: плата ушла — LLM тоже
             return {"ok": True, "playing": False,
                     "invite": bool(_G["invite"].get(board) or _G["invite"].get("*"))}
         if not p:
@@ -719,9 +723,81 @@ def bot_call(body):
         thoughts = body.get("say")
         if thoughts:
             _event(p, "💭 " + str(thoughts)[:160], "thought")
-        return {"ok": True, "playing": True, "obs": obs, "reward": rw,
+        tired = _tired_check(board, now)         # v3.179: устала плата — зовём свою LLM
+        return {"ok": True, "playing": True, "obs": obs, "reward": rw, "tired": tired,
                 "events": ev, "level": _G["level"], "paused": _G["paused"],
                 "invite": bool(_G["invite"].get(board) or _G["invite"].get("*"))}
+
+
+# ---------------------------------------------------------------------------
+# v3.179: «УСТАЛОСТЬ» ПЛАТЫ -> СВОЯ LLM ВХОДИТ В ИГРУ
+# Частота генератора платы (связь мозгов, hz) падает, когда мозг устал.
+# Пока плата играет и её частота <= порога (⚙ → doom_tired_hz, 483 Гц),
+# своя LLM облака входит в игру вторым игроком и играет вместе с ней.
+# Плата отдохнула (частота выше порога на 10 % дольше минуты) или вышла
+# из игры — LLM выходит сама (если её звали не кнопкой вручную).
+# ---------------------------------------------------------------------------
+_TIRED = {"ts": 0.0, "hz": {}, "auto": False, "rested_since": 0.0, "why": ""}
+
+
+def _board_hz(board):
+    try:
+        import boardlink
+        with boardlink._LOCK:
+            b = boardlink._ST["boards"].get(board) or {}
+            if time.time() - float(b.get("ts") or 0) > 60:
+                return None
+            return float(b.get("hz") or 0) or None
+    except Exception:
+        return None
+
+
+def _tired_cfg():
+    try:
+        s_ = store.settings()
+        return bool(s_.get("doom_llm_tired", True)), float(s_.get("doom_tired_hz") or 483)
+    except Exception:
+        return True, 483.0
+
+
+def _tired_check(board, now):
+    """Вызывается на каждом ходе платы. -> True, если плата «устала»."""
+    on, thr = _tired_cfg()
+    hz = _board_hz(board)
+    _TIRED["hz"][board] = hz
+    tired = bool(on and hz is not None and 0 < hz <= thr)
+    if now - _TIRED["ts"] < 2.0:
+        return tired
+    _TIRED["ts"] = now
+    if not on:
+        return False
+    playing = [b for b in _G["bots"] if _bot_pid(b) in _G["players"]]
+    any_tired = any(0 < (_TIRED["hz"].get(b) or 0) <= thr for b in playing)
+    if any_tired and not _LLM["on"]:
+        _TIRED.update(auto=True, rested_since=0.0,
+                      why="плата %s устала: %.0f Гц ≤ %.0f Гц" % (board, hz or 0, thr))
+        threading.Thread(target=_tired_join, daemon=True).start()
+    elif _TIRED["auto"] and _LLM["on"]:
+        rested = all((_TIRED["hz"].get(b) or 0) > thr * 1.1 for b in playing)
+        if not playing or rested:
+            if not _TIRED["rested_since"]:
+                _TIRED["rested_since"] = now
+            if not playing or now - _TIRED["rested_since"] > 60:
+                _TIRED.update(auto=False, why="плата отдохнула" if playing else "плата вышла из игры")
+                threading.Thread(target=llm_leave, daemon=True).start()
+        else:
+            _TIRED["rested_since"] = 0.0
+    return tired
+
+
+def _tired_join():
+    llm_join()
+    with _LOCK:
+        _event(_G["players"].get(LLM_PID), "своя LLM пришла на помощь — %s" % _TIRED["why"], "join")
+    try:
+        store.log("РОК-12", "своя LLM вошла в игру: %s" % _TIRED["why"])
+    except Exception:
+        pass
 
 
 def info_for_board(board):
@@ -780,7 +856,22 @@ def control(body):
             _G["invite"].pop(who, None)
             _event(None, "приглашение снято")
         elif act == "llm_join":          # v3.169: своя LLM — второй игрок
+            _TIRED["auto"] = False           # позвали вручную — сама не уйдёт
             return llm_join()
+        elif act == "tired_cfg":         # v3.179: LLM приходит, когда плата устала
+            cp = {}
+            if "on" in body:
+                cp["doom_llm_tired"] = bool(body.get("on"))
+            try:
+                if body.get("hz") is not None:
+                    cp["doom_tired_hz"] = max(1.0, min(20000.0, float(body.get("hz"))))
+            except (TypeError, ValueError):
+                pass
+            if cp:
+                store.update_settings(cp)
+                _event(None, "своя LLM приходит, когда плата устала: %s" % (
+                    "≤ %.0f Гц" % _tired_cfg()[1] if _tired_cfg()[0] else "выкл"))
+            return {"ok": True}
         elif act == "llm_leave":
             return llm_leave()
         elif act == "pause":
@@ -1031,6 +1122,15 @@ def _llm_loop():
                     _LLM["on"] = False
                     break
                 p["seen_ts"] = now
+                if _TIRED["auto"] and not any(q["kind"] == "bot" for q in _G["players"].values()):
+                    if not _TIRED["rested_since"]:
+                        _TIRED["rested_since"] = now
+                    elif now - _TIRED["rested_since"] > 60:   # плат в игре нет минуту
+                        _TIRED.update(auto=False, why="плата не в игре")
+                        _G["players"].pop(LLM_PID, None)
+                        _event(None, "своя LLM вышла: плата больше не играет")
+                        _LLM["on"] = False
+                        break
                 o = observe(p)
                 _LLM["rw_acc"] += p["rw"]
                 p["rw"] = 0.0
@@ -1094,6 +1194,9 @@ def llm_leave():
 
 def llm_status():
     _llm_q_load()
+    on, thr = _tired_cfg()
     return {"on": _LLM["on"], "tactic": _LLM["tactic"], "src": _LLM["src"],
+            "auto": _TIRED["auto"], "auto_why": _TIRED["why"], "tired_on": on, "tired_hz": thr,
+            "boards_hz": {k: (round(v) if v else None) for k, v in _TIRED["hz"].items()},
             "decisions": _LLM["decisions"],
             "q": {k: round(v, 2) for k, v in _LLM["q"].items()}}

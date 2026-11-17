@@ -59,6 +59,9 @@
       <button id="b-restart">↺ Новая игра</button>
       <button id="b-map" class="on">🗺 Карта</button>
     </div>
+    <div class="dim" id="tiredBar">🤖 Своя LLM приходит играть, когда плата устала:
+      <label><input type="checkbox" id="t-on"> вкл</label> · частота платы ≤ <input type="number" id="t-hz" min="1" step="1" style="width:70px"> Гц
+      <span id="t-st"></span></div>
     <div class="dim">Управление: <kbd>W</kbd><kbd>S</kbd> вперёд/назад, <kbd>A</kbd><kbd>D</kbd> шаг вбок,
       <kbd>←</kbd><kbd>→</kbd> или мышь — поворот (щёлкни по картинке), <kbd>Пробел</kbd>/<kbd>Ctrl</kbd>/кнопка мыши — огонь,
       <kbd>1</kbd> бластер, <kbd>2</kbd> дробовик, <kbd>M</kbd> карта. Цель — зелёная площадка «ВЫХОД».</div>
@@ -357,6 +360,10 @@ function ui() {
   $("b-llm").textContent = L.on ? "🤖 LLM играет: " + (L.tactic || "") + " (убрать)" : "🤖 Позвать свою LLM";
   $("b-llm").title = L.on ? "тактику выбирает: " + (L.src || "") + " · решений " + (L.decisions || 0) : "своя LLM облака — второй игрок";
   $("b-llm").classList.toggle("on", !!L.on);
+  if (document.activeElement !== $("t-hz")) $("t-hz").value = Math.round(L.tired_hz || 483);
+  $("t-on").checked = L.tired_on !== false;
+  const bh = Object.entries(L.boards_hz || {}).map(([b, h]) => b + ": " + (h == null ? "—" : h + " Гц" + (h <= (L.tired_hz || 483) ? " (устала)" : ""))).join(", ");
+  $("t-st").textContent = (bh ? " · " + bh : "") + (L.auto && L.on ? " · LLM играет: " + (L.auto_why || "") : "");
   const lk = S.log.map((e) => e.ts).join(",");
   if (lk !== lastLog) {
     lastLog = lk;
@@ -372,6 +379,11 @@ async function ctl(action) {
 $("b-invite").onclick = () => ctl((S && S.invite && S.invite.length) ? "uninvite" : "invite");
 $("b-pause").onclick = () => ctl("pause");
 $("b-llm").onclick = () => ctl(S && S.llm && S.llm.on ? "llm_leave" : "llm_join");
+async function tiredSave() {
+  await fetch("/api/doom/control", { method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "tired_cfg", on: $("t-on").checked, hz: +$("t-hz").value || 483 }) });
+}
+$("t-on").onchange = tiredSave; $("t-hz").onchange = tiredSave;
 $("b-restart").onclick = () => { if (confirm("Начать игру заново с уровня 1?")) ctl("restart"); };
 $("b-next").onclick = () => ctl("next");
 $("b-map").onclick = () => { showMap = !showMap; $("b-map").classList.toggle("on", showMap); };
