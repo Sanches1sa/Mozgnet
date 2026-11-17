@@ -93,7 +93,45 @@ _NORM = {"py": "python", "python3": "python", "js": "javascript",
          "c++": "arduino", "sh": "bash", "shell": "bash"}
 
 
+def _board_check(code, cloud_ok):
+    """v3.178: проверка кода НА ПЛАТЕ (v2.93+): запуск Python на настоящем
+    железе. (None, "") — платы нет/выключено; иначе (ok, текст)."""
+    try:
+        if not store.settings().get("code_board_check", True):
+            return None, ""
+        import boardcode
+        bd = boardcode.pick_board("code")
+        if not bd:
+            return None, ""
+        activity.update("Проверяю код на плате %s…" % bd)
+        r = boardcode.run(code, "py_run", bd, timeout=12, wait_s=25)
+        if r.get("error"):
+            return None, ""
+        out = str(r.get("out") or "").strip()[-160:].replace("\n", " ⏎ ")
+        if r.get("ok"):
+            return True, "на плате %s (Python %s, %s) тоже работает%s" % (
+                bd, r.get("py") or "?", r.get("machine") or "?", ("; вывод: " + out) if out else "")
+        return False, "на плате %s ошибка (rc=%s): %s" % (bd, r.get("rc"), out or "без вывода")
+    except Exception:
+        return None, ""
+
+
 def _check(lang, code):
+    """(ok, текст проверки | причина, критично). Python — песочница."""
+    ok, what, crit = _check_cloud(lang, code)
+    if lang == "python" and ok:
+        bok, btxt = _board_check(code, ok)
+        if bok is not None:
+            if bok:
+                what += "; " + btxt
+            elif "синтаксис верный" in what:        # облако не запускало — решает плата
+                return False, btxt, True
+            else:
+                what += "; " + btxt
+    return ok, what, crit
+
+
+def _check_cloud(lang, code):
     """(ok, текст проверки | причина, критично). Python — песочница."""
     activity.update("Проверяю сгенерированный код…")
     import codegen

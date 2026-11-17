@@ -46,7 +46,13 @@ def ffmpeg_path():
 
 
 def model_dir():
-    return store.p("models", "vosk-ru")
+    d = store.p("models", "vosk-ru")
+    if os.path.isdir(d):
+        return d
+    # v3.178: пакет Windows несёт модель с собой (runtime/vosk-ru) — без скачивания
+    rt = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                      "runtime", "vosk-ru")
+    return rt if os.path.isdir(rt) else d
 
 
 def have_vosk():

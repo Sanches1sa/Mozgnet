@@ -78,9 +78,12 @@ func launchCloud(dir string) bool {
 		logf("Облако запускается (cloud_bg.vbs, как при установке)…")
 		return true
 	}
-	py := findPythonW()
+	py := filepath.Join(dir, "runtime", "pythonw.exe") // v3.160: свой Python пакета Windows
+	if !exists(py) {
+		py = findPythonW()
+	}
 	if py == "" {
-		logf("Python 3 не найден. Установи облако через install.exe (он ставит Python) или python.org с галочкой Add to PATH.")
+		logf("Python 3 не найден. Поставь облако пакетом neuro12-windows-*.zip (в нём свой Python) через install.exe.")
 		return false
 	}
 	cmd := hidden(exec.Command(py, filepath.Join(dir, "server", "app.py")))

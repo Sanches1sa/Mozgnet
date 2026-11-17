@@ -27,7 +27,7 @@
     шагов потоков, потом сохраняет модель.
 
 Настройки: llm_code_stream (все потоки), llm_stream_code / llm_stream_max /
-llm_stream_talk (каждый), llm_code_mix (шаг потока на каждый N-й шаг текста).
+llm_stream_talk / llm_stream_admin (каждый), llm_code_mix (шаг потока на каждый N-й шаг текста).
 """
 import collections
 import hashlib
@@ -41,8 +41,10 @@ STREAMS = [
     {"key": "code", "title": "Код из репозиториев", "zones": ("Кирпичики",), "base": 1.0},
     {"key": "max", "title": "Чаты МАКС", "zones": ("Помощь", "Память"), "base": 0.8},
     {"key": "talk", "title": "Разговор и ответы", "zones": ("Приветствие", "Вопросы"), "base": 0.8},
+    # v3.178: отдельный поток — администрирование серверов и плат (окно «Серверы»)
+    {"key": "admin", "title": "Администрирование серверов", "zones": ("Помощь", "Кирпичики"), "base": 0.6},
 ]
-TEXT_KEYS = ("max", "talk")
+TEXT_KEYS = ("max", "talk", "admin")
 _FILE = "llm_streams.json"
 _MAX_SEEN = 30000
 
@@ -131,6 +133,12 @@ def texts(key):
                 if len(t) >= 20:
                     head = str(it.get("title") or "").strip()
                     out.append((it.get("id") or _sig(t), (head + "\n" if head else "") + t[:2500]))
+        except Exception:
+            pass
+    elif key == "admin":                   # v3.178: уроки + опыт агента «Серверы»
+        try:
+            import admincorpus
+            out = admincorpus.texts()
         except Exception:
             pass
     elif key == "talk":

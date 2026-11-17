@@ -59,7 +59,7 @@ class StreamsTests(unittest.TestCase):
             self.assertTrue(all(st[k] > 0 for k in ("code", "max", "talk")), st)
             llmstreams._flush()
             stat = llmstreams.status()
-        self.assertEqual({x["key"] for x in stat["streams"]}, {"code", "max", "talk"})
+        self.assertEqual({x["key"] for x in stat["streams"]}, {"code", "max", "talk", "admin"})
 
     def test_share_follows_brain(self):
         breath.note_will("b1", {"Кирпичики": 1.0, "Помощь": 0.0, "Память": 0.0,
@@ -73,9 +73,10 @@ class StreamsTests(unittest.TestCase):
             for _ in range(300):
                 llmstreams.interleave(M(), 1e-3)
         st = llmstreams._LIVE["steps"]
-        # доли 1.5 : 0.8*0.5 : 0.8*1.0  ->  ≈ 55 % : 15 % : 30 %
-        self.assertAlmostEqual(st["code"] / 300, 1.5 / 2.7, delta=0.03)
-        self.assertAlmostEqual(st["max"] / 300, 0.4 / 2.7, delta=0.03)
+        # доли 1.5 : 0.8*0.5 : 0.8*1.0 : 0.6*1.0 (админ: Помощь 0 + Кирпичики 1)
+        self.assertAlmostEqual(st["code"] / 300, 1.5 / 3.3, delta=0.03)
+        self.assertAlmostEqual(st["max"] / 300, 0.4 / 3.3, delta=0.03)
+        self.assertAlmostEqual(st["admin"] / 300, 0.6 / 3.3, delta=0.03)
 
     def test_stream_off_and_revive(self):
         class M:

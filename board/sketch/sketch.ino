@@ -1455,6 +1455,9 @@ static uint16_t camLen = 0;        // его длина
 static uint8_t  camFrameSeq = 0;   // seq последнего целого кадра
 static uint32_t camLastMs = 0;     // когда кадр положили
 static uint32_t camOk = 0, camBad = 0;          // счётчики целых/битых
+static uint32_t camBytes = 0;      // v2.93: сколько байт пришло по UART вообще (0 = провод/питание)
+static uint32_t camByteMs = 0;     // v2.93: когда пришёл последний байт
+static uint32_t camLost = 0;       // v2.93: пакеты, оборванные паузой (переполнение приёмника)
 static uint8_t  camPkt[8];         // заголовок принимаемого кадра
 static uint8_t  camPktGot = 0;
 static uint16_t camPktLen = 0, camPktGotData = 0;
@@ -1500,8 +1503,12 @@ static String camB64(const uint8_t *d, int n) {
 
 /* Неблокирующий приём байтов камеры — вызывать из loop() каждую итерацию */
 void camUartTick() {
+  /* v2.93: пакет оборвался (байты потеряны, пока loop был занят) — не ждём
+   * его вечно, иначе съедим заголовок следующего кадра и испортим и его */
+  if (camState >= 2 && (uint32_t)(millis() - camByteMs) > 60) { camState = 0; camLost++; }
   while (CAMRX.available()) {
     uint8_t b = (uint8_t)CAMRX.read();
+    camBytes++; camByteMs = millis();
     if (camState == 0) {                  // сканируем магию A5 5C
       if (b == 0xA5) camState = 1;
     } else if (camState == 1) {
@@ -1557,11 +1564,14 @@ void camUartTick() {
 /* RPC cam_frame_info: параметры последнего кадра + счётчики (для мозга) */
 String rpcCamFrameInfo() {
   if (!camLen)
-    return "len=0;ok=" + String(camOk) + ";bad=" + String(camBad);
+    return "len=0;ok=" + String(camOk) + ";bad=" + String(camBad) +
+           ";bytes=" + String(camBytes) + ";lost=" + String(camLost) +
+           ";baud=" + String(CAMRX_BAUD);
   return "len=" + String(camLen) + ";seq=" + String(camFrameSeq) +
          ";ok=" + String(camOk) + ";bad=" + String(camBad) +
          ";age_ms=" + String(millis() - camLastMs) +
-         ";baud=" + String(CAMRX_BAUD);
+         ";baud=" + String(CAMRX_BAUD) +
+         ";bytes=" + String(camBytes) + ";lost=" + String(camLost);
 }
 
 /* RPC cam_chunk("seq:off"): base64-кусок кадра; "" — кадр уже сменился
@@ -2177,16 +2187,24 @@ void d6ImgTick() {
   }
 }
 
+/* v2.93: раньше 8 analogRead на КАЖДЫЙ проход loop — АЦП Zephyr медленный,
+ * и UART камеры (460800 бод, маленький приёмный буфер) за это время
+ * переполнялся: кадры приходили битыми и не доходили до облака. Теперь одна
+ * выборка раз в 4 мс, размах считается по окну из 8 выборок (~32 мс). */
+static uint16_t capMn = 1023, capMx = 0;
+static uint8_t  capN = 0;
+static uint32_t capNextMs = 0;
 void sampleCapNoise() {
-  /* Несколько быстрых выборок, шум = размах (max-min) */
-  uint16_t mn = 1023, mx = 0;
-  for (uint8_t i = 0; i < 8; i++) {
-    uint16_t v = analogRead(CAP_NOISE_PIN);
-    if (v < mn) mn = v;
-    if (v > mx) mx = v;
-  }
-  uint16_t span = mx - mn;
+  uint32_t now = millis();
+  if ((int32_t)(now - capNextMs) < 0) return;
+  capNextMs = now + 4;
+  uint16_t v = analogRead(CAP_NOISE_PIN);
+  if (v < capMn) capMn = v;
+  if (v > capMx) capMx = v;
+  if (++capN < 8) return;
+  uint16_t span = capMx - capMn;
   capNoise = (uint8_t)min(255U, span / 2);   // грубая нормализация
+  capMn = 1023; capMx = 0; capN = 0;
 }
 
 void noiseAsStim() {
@@ -2199,11 +2217,20 @@ void noiseAsStim() {
   if (capNoise > 120) snprintf(stim, sizeof(stim), "STIM;NOISEHI");
   else if (capNoise > 60) snprintf(stim, sizeof(stim), "STIM;NOISE");
   else snprintf(stim, sizeof(stim), "STIM;NOISELO");
+  camUartTick();                             // v2.93: UART камеры не ждёт I2C
   broadcastStimWord(stim + 5);               // без префикса, функция сама добавляет
+  camUartTick();
 #if USE_RB
-  Bridge.notify("cap_noise", (int)capNoise);
-  Bridge.notify("d6_act", (int)d6Activity);
-  Bridge.notify("learn_scale", (int)learningScale);
+  /* v2.93: три RPC в Linux — не чаще раза в секунду (было 2.5 Гц) */
+  static uint32_t noiseNotifyMs = 0;
+  if ((int32_t)(now - noiseNotifyMs) >= 1000) {
+    noiseNotifyMs = now;
+    Bridge.notify("cap_noise", (int)capNoise);
+    camUartTick();
+    Bridge.notify("d6_act", (int)d6Activity);
+    camUartTick();
+    Bridge.notify("learn_scale", (int)learningScale);
+  }
 #endif
   /* Временный подъём частоты генератора — нейроны сильнее пластичны */
   if (genHz < GEN_MAX_HZ - 100) genHz += 40;
@@ -3325,21 +3352,24 @@ void setup() {
 
 void loop() {
   loopCount++;                       // v2.68: шаг loop() — для diag
-  loopStage = 1;  d4fTick();           // v2.50: кадр камеры на D4 (если есть)
-  loopStage = 2;  freqTick();          // 1. генератор: меандр genHz на D4 -> A0 всех нейронов
-  loopStage = 3;  voiceTick();         // 2. динамик (v1.9): голос мозга / мотивация говорить
-  loopStage = 4;  micTick();           // 3. микрофон: звук на D12/D13 -> micLevel
-  loopStage = 5;  pollNext();          // 4. опрос нейронов -> val_c
-  loopStage = 6;  letterTick();        // 5. буквогенератор (v2.3): нейросеть 1..33 -> буквы -> слова
-  loopStage = 7;  d6Tick();            // 5a. v2.22: проигрывание буфера слов на D6 (PWM)
+  /* v2.93: приёмник камеры опрашиваем МЕЖДУ всеми этапами: на 460800 бод
+   * аппаратный буфер Serial1 заполняется за ~1-2 мс, и любой медленный этап
+   * (I2C нейронов, АЦП, RPC) раньше рвал кадры (bad растёт, ok стоит). */
+  loopStage = 1;  d4fTick();           camUartTick();   // v2.50: кадр камеры на D4 (если есть)
+  loopStage = 2;  freqTick();          camUartTick();   // 1. генератор: меандр genHz на D4 -> A0 всех нейронов
+  loopStage = 3;  voiceTick();         camUartTick();   // 2. динамик (v1.9): голос мозга / мотивация говорить
+  loopStage = 4;  micTick();           camUartTick();   // 3. микрофон: звук на D12/D13 -> micLevel
+  loopStage = 5;  pollNext();          camUartTick();   // 4. опрос нейронов -> val_c
+  loopStage = 6;  letterTick();        camUartTick();   // 5. буквогенератор (v2.3): нейросеть 1..33 -> буквы -> слова
+  loopStage = 7;  d6Tick();            camUartTick();   // 5a. v2.22: проигрывание буфера слов на D6 (PWM)
   particleTick();          // v2.92: дискретные кванты частиц, если включены
-  sampleCapNoise();        // v2.93: шум конденсатора
+  sampleCapNoise();        // v2.93: шум конденсатора (1 выборка / 4 мс)
   noiseAsStim();           // шум -> STIM нейронам + подъём genHz
   updateLearningScale();   // частота D6 + шум -> скорость весов
   loopStage = 8;  camUartTick();       // 5b. v2.30: приём кадров камеры по UART (ESP32-CAM)
-  loopStage = 9;  neuroAssignTick();   // 5c. v2.33: назначение нейронов — один шаг, БЕЗ delay()
-  loopStage = 10; eePumpTick();        // 5d. v2.67: веса в EEPROM — по 2 байта за проход
-  loopStage = 11; bridgeSync();        // 6. обмен с Linux-стороной (val_b, chat_out, teach, speak / total_val_c)
-  loopStage = 12; analyzeAndPrint();   // 7. анализ val_c (+val_b, звук) -> частота и total_val_c
+  loopStage = 9;  neuroAssignTick();   camUartTick();   // 5c. v2.33: назначение нейронов — один шаг, БЕЗ delay()
+  loopStage = 10; eePumpTick();        camUartTick();   // 5d. v2.67: веса в EEPROM — по 2 байта за проход
+  loopStage = 11; bridgeSync();        camUartTick();   // 6. обмен с Linux-стороной (val_b, chat_out, teach, speak / total_val_c)
+  loopStage = 12; analyzeAndPrint();   camUartTick();   // 7. анализ val_c (+val_b, звук) -> частота и total_val_c
   loopStage = 0;
 }

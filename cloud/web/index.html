@@ -87,6 +87,7 @@ document.addEventListener('DOMContentLoaded',function(){document.body.classList.
                  accept=".zip,.rar,.txt,.md,.csv,.json,.html,.xml,.pdf,.docx,.xlsx,.pptx,.py,.ino,.log,.yaml,.yml">
           <textarea id="input" rows="1" placeholder="Спроси мозг-12…"
                     autocomplete="off"></textarea>
+          <button class="iconbtn" id="btnVoice" title="Голосовой ввод: нажми, говори, нажми ещё раз. Правый клик / долгое нажатие — выбрать микрофон">🎙</button>
           <button class="iconbtn" id="btnTTS" title="Озвучивать ответы">🔊</button>
           <button class="send" id="btnSend" title="Отправить">➤</button>
         </div>
@@ -115,6 +116,11 @@ document.addEventListener('DOMContentLoaded',function(){document.body.classList.
       <div class="panel-wrap"><div class="inner" id="desktopBox"></div></div>
     </section>
 
+    <!-- вид: серверы (v3.178) -->
+    <section id="viewServers" class="view">
+      <div class="panel-wrap"><div class="inner" id="serversBox"></div></div>
+    </section>
+
     <!-- вид: зрение -->
     <section id="viewVision" class="view">
       <div class="panel-wrap"><div class="inner" id="visionBox"></div></div>
@@ -130,6 +136,7 @@ document.addEventListener('DOMContentLoaded',function(){document.body.classList.
       <button data-view="vision">📷 Зрение</button>
       <button data-view="thoughts">💭 Мысли плат</button>
       <button data-view="desktop">🖥 Рабочий стол</button>
+      <button data-view="servers">🗄 Серверы</button>
       <div class="sep"></div>
       <button id="btnCmdkSide">⌘ Команды <span class="kbd" style="margin-left:auto">Ctrl+K</span></button>
       <button id="btnSettings">⚙ Настройки</button>

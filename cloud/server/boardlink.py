@@ -468,7 +468,7 @@ def link(board, hz=0, shz=None, ema=0, phrases=None, answers=None,
                 pass
         if isinstance(cam, dict):            # v3.130: состояние камеры платы
             b["cam"] = {k: cam.get(k) for k in ("state", "err", "up_err", "kb",
-                                                 "ok_age", "sent_age", "url", "on")}
+                                                 "ok_age", "sent_age", "url", "on", "uart")}
         if isinstance(net, str) and len(net) == 12 and set(net) <= set("01"):
             b["net"] = net                   # v3.129: карта связи с 12 нейронами
             b["net_ts"] = now

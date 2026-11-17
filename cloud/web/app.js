@@ -954,6 +954,153 @@ async function renderDesktop() {
   }, 2000);
 }
 
+/* v3.178: ОКНО «СЕРВЕРЫ» — серверы и платы, включение по сети, консоль,
+ * агент-администратор (с разрешениями), код на сервере, рабочий стол. */
+const SRV = { tg: '', job: '', timer: null };
+async function renderServers() {
+  const box = $('#serversBox');
+  let r;
+  try { r = await api('/api/servers'); } catch (e) { box.textContent = 'нет связи с облаком: ' + e.message; return; }
+  const ts = r.targets || [];
+  if (!SRV.tg && ts.length) SRV.tg = ts[0].target;
+  const opt = ts.map(t => '<option value="' + esc(t.target) + '"' + (t.target === SRV.tg ? ' selected' : '') + '>' +
+    esc((t.via === 'board' ? '📟 ' : '🗄 ') + t.name + (t.host ? ' (' + t.host + ')' : '')) + '</option>').join('');
+  const key = r.key || {};
+  let h = '<h2 style="margin-top:0">🗄 Серверы</h2>' +
+    '<div class="mini">Серверы по SSH (ключ облака) и платы на связи. Читающие команды выполняются сразу, изменяющие — после подтверждения, опасные — всегда с подтверждением.</div>' +
+    '<div class="card" style="margin:10px 0"><h3 style="margin-top:0">Цели</h3>';
+  if (!ts.length) h += '<div class="muted">Пока пусто. Добавь сервер в ⚙ Настройки → SSH-серверы, или подключи плату v2.93+.</div>';
+  ts.forEach(t => {
+    h += '<div style="border-top:1px solid var(--line,#333);padding:6px 0" data-t="' + esc(t.target) + '">' +
+      '<b>' + (t.via === 'board' ? '📟 ' : '🗄 ') + esc(t.name) + '</b> <span class="muted">' + esc((t.user ? t.user + '@' : '') + (t.host || '')) +
+      (t.via === 'board' ? ' · плата v' + esc(t.ver || '?') + ', связь ' + t.age + ' с назад' + (t.admin ? '' : ' · команды запрещены на плате') : ' · SSH') +
+      (t.mac ? ' · MAC ' + esc(t.mac) : '') + '</span> <span class="srvst" data-st="' + esc(t.target) + '"></span><div style="margin-top:4px">' +
+      '<button class="btn" data-sa="check">🔍 Проверить</button> ' +
+      (t.via === 'ssh' ? '<button class="btn" data-sa="wake">⚡ Включить</button> <button class="btn" data-sa="mac">MAC</button> ' : '') +
+      (t.via === 'board' && t.host ? '<button class="btn" data-sa="addb" data-host="' + esc(t.host) + '" data-name="' + esc(t.name) + '">➕ Linux платы как SSH-сервер</button> ' : '') +
+      '<button class="btn" data-sa="use">⌨ Выбрать</button></div></div>';
+  });
+  h += '</div>';
+  h += '<div class="card" style="margin:10px 0"><h3 style="margin-top:0">🔑 Ключ облака</h3>' +
+    (key.ok ? '<div class="mini">Положи эту строку в <code>~/.ssh/authorized_keys</code> на сервере (на плате — пользователь <code>arduino</code>):</div>' +
+      '<textarea readonly style="width:100%;height:58px;font-size:12px">' + esc(key.pub) + '</textarea>' +
+      '<div class="mini">Одной командой на сервере:</div><textarea readonly style="width:100%;height:58px;font-size:12px">' + esc(key.hint) + '</textarea>'
+      : '<div class="mini">Ключа ещё нет. ' + esc(key.missing ? '' : (key.error || '')) + '</div><button class="btn" id="srvKey">Создать ключ облака</button>') + '</div>';
+  h += '<div class="card" style="margin:10px 0"><h3 style="margin-top:0">🤖 Агент-администратор</h3>' +
+    '<div class="frow"><div class="fgroup" style="flex:1"><label>Цель</label><select id="srvTg"><option value="">— агент выберет сам —</option>' + opt + '</select></div></div>' +
+    '<textarea id="srvTask" rows="2" style="width:100%" placeholder="Например: покажи состояние сервера · почему не открывается сайт · перезапусти nginx · установи htop на плату · включи backup · напиши скрипт, который пишет свободную память в файл"></textarea>' +
+    '<div style="margin:4px 0"><label class="switch-inline"><input type="checkbox" id="srvAuto"' + (r.auto_ok ? ' checked' : '') + '> разрешать изменения без вопросов (опасные — всё равно спросит)</label></div>' +
+    '<button class="btn" id="srvGo">▶ Выполнить задачу</button> <button class="btn" id="srvSeed">📚 Уроки админа в базу знаний</button>' +
+    '<div id="srvJob" class="mini" style="margin-top:8px"></div></div>';
+  h += '<div class="card" style="margin:10px 0"><h3 style="margin-top:0">⌨ Консоль</h3>' +
+    '<div class="frow"><div class="fgroup" style="flex:1"><select id="srvTg2">' + opt + '</select></div></div>' +
+    '<div style="display:flex;gap:6px"><input type="text" id="srvCmd" style="flex:1" placeholder="uptime; df -h"><button class="btn" id="srvRun">Выполнить</button></div>' +
+    '<pre id="srvOut" style="max-height:340px;overflow:auto;white-space:pre-wrap;font-size:12px;margin-top:6px"></pre></div>';
+  h += '<div class="card" style="margin:10px 0"><h3 style="margin-top:0">🧩 Код на сервере</h3>' +
+    '<div class="mini">Пиши сам или попроси мозг (раздел «Код»: своя LLM, модель, изученные примеры). Файл кладётся через base64 и проверяется (py_compile / bash -n).</div>' +
+    '<div class="frow"><div class="fgroup" style="flex:1"><select id="srvTg3">' + opt + '</select></div><div class="fgroup" style="flex:2"><input type="text" id="srvPath" value="~/neuro12-agent/task.py"></div></div>' +
+    '<div style="display:flex;gap:6px;margin-bottom:4px"><input type="text" id="srvAsk" style="flex:1" placeholder="что должен делать код"><button class="btn" id="srvGen">✨ Написать</button></div>' +
+    '<textarea id="srvCode" rows="10" style="width:100%;font-family:monospace;font-size:12px"></textarea>' +
+    '<button class="btn" id="srvWrite">💾 Записать</button> <button class="btn" id="srvWriteRun">▶ Записать и запустить</button>' +
+    '<pre id="srvCodeOut" style="max-height:260px;overflow:auto;white-space:pre-wrap;font-size:12px"></pre></div>';
+  h += '<div class="card" style="margin:10px 0"><h3 style="margin-top:0">🖥 Рабочий стол</h3>' +
+    '<div class="mini">Удалённое управление рабочим столом компьютера, где работает облако: снимок экрана, клики, ввод, окна.</div>' +
+    '<button class="btn" id="srvDesk">Открыть рабочий стол</button></div>';
+  h += '<div class="card" style="margin:10px 0"><h3 style="margin-top:0">📜 Журнал команд</h3>' +
+    ((r.history || []).map(x => '<div class="mini">' + new Date((x.ts || 0) * 1000).toLocaleString('ru') + ' · ' + esc(x.server || '') + ' · <code>' + esc(x.cmd || '') + '</code> → ' + esc(String(x.code)) + '</div>').join('') || '<div class="muted">пусто</div>') +
+    ((r.board_jobs || []).length ? '<div class="mini" style="margin-top:6px"><b>Задания плат:</b></div>' + r.board_jobs.map(j => '<div class="mini">' + esc(j.board) + ' · ' + esc(j.mode) + ' · ' + esc(j.status) + ' · <code>' + esc((j.code || '').slice(0, 80)) + '</code></div>').join('') : '') + '</div>';
+  box.innerHTML = h;
+
+  box.querySelectorAll('[data-sa]').forEach(b => b.onclick = async () => {
+    const tg = b.closest('[data-t]').dataset.t, a = b.dataset.sa, st = box.querySelector('[data-st="' + CSS.escape(tg) + '"]');
+    if (a === 'use') { SRV.tg = tg; ['#srvTg', '#srvTg2', '#srvTg3'].forEach(s => { if ($(s)) $(s).value = tg; }); $('#srvCmd').focus(); return; }
+    if (a === 'mac') {
+      const mac = prompt('MAC-адрес сетевой карты сервера (для включения по сети), например 3c:7c:3f:12:34:56');
+      if (mac === null) return;
+      await api('/api/servers', { body: { action: 'mac', target: tg, mac } }); return renderServers();
+    }
+    if (a === 'addb') {
+      const x = await api('/api/servers', { body: { action: 'add_board', name: b.dataset.name + '-linux', host: b.dataset.host } });
+      toast(x.ok ? 'Добавлено: arduino@' + b.dataset.host + ' — положи ключ облака на плату' : (x.error || 'ошибка'), x.ok ? 'ok' : 'err');
+      return renderServers();
+    }
+    st.textContent = '⏳';
+    const x = await api('/api/servers', { body: { action: a, target: tg, wait: a === 'wake' ? 90 : 0 } });
+    st.innerHTML = (x.ok ? '🟢 ' : '🔴 ') + esc(x.out || x.error || '');
+  });
+  if ($('#srvKey')) $('#srvKey').onclick = async () => { const x = await api('/api/servers', { body: { action: 'key' } });
+    if (!x.ok) toast(x.error, 'err'); renderServers(); };
+  $('#srvAuto').onchange = () => api('/api/servers', { body: { action: 'auto_ok', on: $('#srvAuto').checked } });
+  $('#srvSeed').onclick = async () => { const x = await api('/api/ssh/agent', { body: { action: 'seed' } });
+    toast(x.ok ? 'Уроков в базе знаний: ' + x.added : x.error, x.ok ? 'ok' : 'err'); };
+  $('#srvDesk').onclick = () => showView('desktop');
+  $('#srvGo').onclick = async () => {
+    const task = $('#srvTask').value.trim(); if (!task) return;
+    const x = await api('/api/ssh/agent', { body: { action: 'start', task, target: $('#srvTg').value, auto_ok: $('#srvAuto').checked } });
+    if (!x.ok) { toast(x.error || 'ошибка', 'err'); return; }
+    SRV.job = x.job_id; srvPoll();
+  };
+  const run = async (confirmed) => {
+    const cmd = $('#srvCmd').value.trim(); if (!cmd) return;
+    $('#srvOut').textContent = '⏳ ' + cmd;
+    const x = await api('/api/servers', { body: { action: 'exec', target: $('#srvTg2').value, command: cmd, confirmed } });
+    if (x.need_confirm) {
+      if (confirm((x.kind === 'danger' ? '⚠ ОПАСНАЯ команда' : 'Команда меняет систему') + ':\n' + cmd + '\n\nВыполнить?')) return run(true);
+      $('#srvOut').textContent = 'отменено'; return;
+    }
+    $('#srvOut').textContent = '$ ' + cmd + '\n' + (x.out || x.error || '') + (x.code != null && x.code !== 0 ? '\n[код выхода ' + x.code + ']' : '');
+  };
+  $('#srvRun').onclick = () => run(false);
+  $('#srvCmd').onkeydown = e => { if (e.key === 'Enter') run(false); };
+  $('#srvGen').onclick = async () => {
+    const ask = $('#srvAsk').value.trim(); if (!ask) return;
+    $('#srvCodeOut').textContent = '⏳ мозг пишет код…';
+    const lang = /\.sh$/.test($('#srvPath').value) ? 'bash' : 'python';
+    const x = await api('/api/code/write', { body: { task: ask, lang } }).catch(e => ({ ok: false, error: e.message }));
+    const m = /```[\w+#.-]*\s*\n([\s\S]*?)```/.exec(x.reply || x.text || '');
+    if (m) { $('#srvCode').value = m[1]; $('#srvCodeOut').textContent = (x.reply || '').replace(m[0], '').trim().slice(0, 600); }
+    else $('#srvCodeOut').textContent = x.reply || x.error || 'кода нет';
+  };
+  const wr = async (runIt) => {
+    $('#srvCodeOut').textContent = '⏳';
+    const x = await api('/api/servers', { body: { action: 'write', target: $('#srvTg3').value, path: $('#srvPath').value.trim(), content: $('#srvCode').value, run: runIt } });
+    $('#srvCodeOut').textContent = (x.written ? 'записано: ' + x.written + '\n' : '') + (x.out || x.error || '') + (x.code ? '\n[код выхода ' + x.code + ']' : '');
+  };
+  $('#srvWrite').onclick = () => { if (confirm('Записать файл на сервер?')) wr(false); };
+  $('#srvWriteRun').onclick = () => { if (confirm('Записать и запустить код на сервере?')) wr(true); };
+  if (SRV.job) srvPoll();
+}
+async function srvPoll() {
+  clearTimeout(SRV.timer);
+  const box = $('#srvJob');
+  if (!box || !SRV.job || !$('#viewServers').classList.contains('on')) return;
+  const r = await api('/api/ssh/agent?id=' + encodeURIComponent(SRV.job)).catch(() => null);
+  const j = r && r.job;
+  if (!j) { box.textContent = 'задание не найдено'; return; }
+  let h = '<div><b>' + esc(j.task) + '</b> — ' + esc(j.status) + ' <span class="muted">(' + esc(j.planner || '') + ')</span>' +
+    (j.status === 'работает' || j.status === 'ждёт разрешения' ? ' <button class="btn" id="srvStop">⏹</button>' : '') + '</div>';
+  (j.steps || []).forEach(s => {
+    const a = s.act || {}, res = s.result || {};
+    h += '<div style="border-top:1px solid var(--line,#333);padding:4px 0">' + (res.ok ? '✓' : '✗') + ' <b>' + esc(a.tool) + '</b> ' +
+      esc(a.server || '') + ' <code>' + esc(a.command || a.path || '') + '</code>' +
+      '<pre style="white-space:pre-wrap;max-height:200px;overflow:auto;font-size:12px;margin:2px 0">' + esc(String(res.out || res.error || '').slice(-3000)) + '</pre></div>';
+  });
+  if (j.pending) {
+    const a = j.pending.act || {};
+    h += '<div class="card" style="border:1px solid ' + (j.pending.kind === 'danger' ? '#e55' : '#ca4') + ';padding:8px;margin:6px 0">' +
+      (j.pending.kind === 'danger' ? '⚠ ' : '❓ ') + esc(j.pending.why) + ':<pre style="white-space:pre-wrap">' +
+      esc(a.command || (a.tool === 'write' ? 'запись ' + a.path + '\n' + String(a.content || '').slice(0, 1500) : a.tool)) + '</pre>' +
+      '<button class="btn" id="srvYes">✅ Разрешить</button> <button class="btn" id="srvNo">❌ Отклонить</button></div>';
+  }
+  if (j.result) h += '<div style="margin-top:6px;white-space:pre-wrap"><b>Итог:</b> ' + esc(j.result) + '</div>';
+  if (j.own_note) h += '<div class="muted" style="margin-top:4px">Своя LLM (учится в потоке «Администрирование серверов»): ' + esc(j.own_note) + '</div>';
+  box.innerHTML = h;
+  const dec = yes => api('/api/ssh/agent', { body: { action: 'approve', id: j.id, yes } }).then(srvPoll);
+  if ($('#srvYes')) { $('#srvYes').onclick = () => dec(true); $('#srvNo').onclick = () => dec(false); }
+  if ($('#srvStop')) $('#srvStop').onclick = () => api('/api/ssh/agent', { body: { action: 'stop', id: j.id } }).then(srvPoll);
+  if (j.status === 'работает' || j.status === 'ждёт разрешения') SRV.timer = setTimeout(srvPoll, 1500);
+}
+
 /* ------------------------------- виды ------------------------------------ */
 function showView(name) {
   const vEl = $('#view' + name.charAt(0).toUpperCase() + name.slice(1));
@@ -964,6 +1111,7 @@ function showView(name) {
   if (name === 'vision') renderVision();
   if (name === 'applab') renderAppLab();
   if (name === 'desktop') renderDesktop(); else DESK.on = false;
+  if (name === 'servers') renderServers();
   if (name === 'pulse' && window.N12UI) window.N12UI.renderPulse();
   if (name === 'chat') { $('#chatTitle').textContent = chatTitleFrom(S.chat || { title: 'Новый чат' }); }
   else $('#chatTitle').textContent =
@@ -971,6 +1119,7 @@ function showView(name) {
     name === 'vision' ? 'Зрение плат' :
     name === 'applab' ? 'App Lab · приложения на Python' :
     name === 'desktop' ? 'Рабочий стол компьютера' :
+    name === 'servers' ? 'Серверы · администрирование' :
     name === 'pulse' ? 'Пульс мозга' : 'Новый чат';
   if (window.N12UI) window.N12UI.onView(name);
   // v3.149.15: из любого раздела — назад в чат (кнопка «← Чат», пункт «💬 Чат», Esc)
@@ -1621,6 +1770,18 @@ async function tabAiApi() {
         out.textContent = 'Пишу…';
         const rr = await api('/api/code/try', { body: { task: t } });
         out.innerHTML = '<pre style="white-space:pre-wrap">' + esc(rr.reply || rr.error || '—') + '</pre>';
+        const cm = /```(?:python|py)?\s*\n([\s\S]*?)```/.exec(rr.reply || '');
+        if (cm) {                                   // v3.178: проверка кода на плате
+          const b = document.createElement('button'); b.className = 'btn'; b.textContent = '🧪 Запустить на плате';
+          const o = document.createElement('pre'); o.style.whiteSpace = 'pre-wrap';
+          b.onclick = async () => {
+            o.textContent = '⏳ отправляю плате (связь раз в 5 с)…';
+            const x = await api('/api/code/board', { body: { code: cm[1], mode: 'py_run', timeout: 20 } });
+            o.textContent = x.error ? '✗ ' + x.error : ((x.ok ? '✓' : '✗') + ' плата ' + (x.board || '') + ' · Python ' + (x.py || '?') + ' · ' + (x.machine || '') +
+              ' · ' + (x.ms || 0) + ' мс · код выхода ' + x.rc + '\n' + (x.out || ''));
+          };
+          out.appendChild(b); out.appendChild(o);
+        }
       };
     }).catch(() => {});
     api('/api/hearing').then(h => {
@@ -1974,6 +2135,86 @@ async function partWire() {
   box.querySelectorAll('input').forEach(i => i.onchange = save);
 }
 
+/* v3.178: 🎤 Микрофон и 📷 камера плат — проверка ушей и глаз из облака */
+let MIC_T = null, MIC_PLAY = null;
+async function micWire() {
+  const box = $('#micForm');
+  if (!box) { clearTimeout(MIC_T); MIC_T = null; clearInterval(MIC_PLAY); MIC_PLAY = null; return; }
+  let r;
+  try { r = await api('/api/hearing/live'); } catch (e) { box.textContent = 'нет связи с облаком'; MIC_T = setTimeout(micWire, 4000); return; }
+  const bs = r.boards || [];
+  const bar = (v, max) => { const w = Math.max(0, Math.min(100, Math.round(100 * (+v || 0) / max)));
+    return '<span style="display:inline-block;width:120px;height:8px;background:var(--line,#333);border-radius:4px;vertical-align:middle">' +
+      '<span style="display:block;width:' + w + '%;height:100%;background:' + (w > 70 ? '#e55' : w > 25 ? '#4c8' : '#888') + ';border-radius:4px"></span></span>'; };
+  let h = '';
+  if (!bs.length) h += '<div class="muted">Платы ещё не прислали состояние микрофона и камеры (нужна плата v2.93+, связь мозгов каждые ~5 с).</div>';
+  bs.forEach(b => {
+    const m = b.mic, c = b.cam, lv = b.live;
+    h += '<div style="border-top:1px solid var(--line,#333);padding:6px 0"><b>📟 ' + esc(b.board) + '</b>';
+    if (m) {
+      h += '<div>🎤 ' + esc(m.state || '?') + (m.on === false ? ' (выключен в настройках платы)' : '') + ' · уровень ' + bar(m.rms, 3000) + ' ' + (m.rms ?? '—') +
+        ' (фон ' + (m.floor ?? '—') + ') · фраз ' + (m.phrases || 0) + ', отправлено ' + (m.sent || 0) + ', понято ' + (m.heard || 0) +
+        ' · устройство <code>' + esc(m.dev || 'default') + '</code> <span class="muted">(' + m.age + ' с назад)</span></div>';
+      if (m.err) h += '<div style="color:#e88">⚠ ' + esc(m.err) + '</div>';
+      if (m.last) h += '<div class="muted">последнее: «' + esc(m.last) + '»</div>';
+      if (m.live_err) h += '<div style="color:#e88">живой звук: ' + esc(m.live_err) + '</div>';
+    } else h += '<div class="muted">🎤 плата не прислала состояние микрофона (обнови плату до v2.93)</div>';
+    if (lv) h += '<div>🔊 живой звук: ' + lv.sec + ' с в буфере, ' + lv.kb + ' КБ, кусков ' + lv.chunks + ', пик ' + bar(lv.peak, 32767) +
+      ' <span class="muted">(' + (lv.age ?? '—') + ' с назад)</span></div>';
+    h += '<div style="margin:4px 0">' + (b.want ? '<button class="btn" data-mic-stop="' + esc(b.board) + '">⏹ Стоп</button> <span class="muted">слушаю… звук играет кусками по 3 с</span>'
+      : '<button class="btn" data-mic-go="' + esc(b.board) + '">🎧 Слушать 60 с</button>') +
+      ' <button class="btn" data-mic-clip="' + esc(b.board) + '">▶ Последние 10 с</button>' +
+      ' <button class="btn" data-mic-phrase="' + esc(b.board) + '">▶ Последняя фраза</button></div>';
+    if (c) {
+      h += '<div>📷 ' + esc(c.state || '?') + (c.on ? '' : ' (камера выключена: cam_on)') + ' · адрес <code>' + esc(c.url || '—') + '</code>' +
+        (c.ok_age != null ? ' · последний кадр ' + c.ok_age + ' с назад' : '') + (c.sent_age != null ? ' · в облако ' + c.sent_age + ' с назад' : '') + '</div>';
+      if (c.err) h += '<div style="color:#e88">⚠ ' + esc(c.err) + '</div>';
+      if (c.up_err) h += '<div style="color:#e88">⚠ отправка: ' + esc(c.up_err) + '</div>';
+      const u = c.uart;
+      if (u) h += '<div>UART: байт <b>' + (u.bytes ?? '?') + '</b> · целых кадров <b>' + (u.ok ?? '?') + '</b> · битых ' + (u.bad ?? '?') +
+        ' · оборванных ' + (u.lost ?? '?') + ' · ' + (u.baud ?? '?') + ' бод' + (u.why ? '<div style="color:#e88">→ ' + esc(u.why) + '</div>' : '') + '</div>';
+    } else h += '<div class="muted">📷 плата не прислала состояние камеры</div>';
+    h += '</div>';
+  });
+  h += '<div style="margin-top:6px"><img id="micCamImg" alt="" style="max-width:320px;max-height:240px;border-radius:6px;display:none"> ' +
+    '<button class="btn" id="micCamBtn">📷 Последний кадр в облаке</button> <button class="btn" id="micPick">🎙 Микрофон для голосового ввода в чате</button></div>' +
+    '<audio id="micAudio" controls style="width:100%;margin-top:6px"></audio>';
+  const heard = r.heard || [];
+  if (heard.length) h += '<div class="mini" style="margin-top:6px"><b>Что облако услышало:</b>' + heard.map(x =>
+    '<div>' + new Date((x.ts || 0) * 1000).toLocaleTimeString() + ' · ' + esc(x.board || '') + ': ' +
+    (x.text ? '«' + esc(x.text) + '»' : x.reply ? '↩ ' + esc(x.reply) : '<span class="muted">' + esc((x.kind || 'звук') + '; ' + (x.why || '')) + '</span>') + '</div>').join('') + '</div>';
+  const keepSrc = $('#micAudio') && $('#micAudio').src, keepImg = $('#micCamImg') && $('#micCamImg').src;
+  box.innerHTML = h;
+  const au = $('#micAudio');
+  if (keepSrc) au.src = keepSrc;
+  if (keepImg) { $('#micCamImg').src = keepImg; $('#micCamImg').style.display = ''; }
+  const play = (url) => { au.src = url + (url.includes('?') ? '&' : '?') + 't=' + Date.now(); au.play().catch(() => toast('Звука ещё нет', 'warn')); };
+  box.querySelectorAll('[data-mic-go]').forEach(x => x.onclick = async () => {
+    const bd = x.dataset.micGo;
+    await api('/api/hearing/live', { body: { board: bd, on: true, sec: 60 } });
+    toast('Плата начнёт слать звук за ~5 с', 'ok');
+    clearInterval(MIC_PLAY);
+    MIC_PLAY = setInterval(() => { if (!$('#micAudio')) { clearInterval(MIC_PLAY); return; }
+      play('/api/hearing/live.wav?board=' + encodeURIComponent(bd) + '&sec=3'); }, 3000);
+    micWire();
+  });
+  box.querySelectorAll('[data-mic-stop]').forEach(x => x.onclick = async () => {
+    clearInterval(MIC_PLAY); MIC_PLAY = null;
+    await api('/api/hearing/live', { body: { board: x.dataset.micStop, on: false } });
+    micWire();
+  });
+  box.querySelectorAll('[data-mic-clip]').forEach(x => x.onclick = () => { clearInterval(MIC_PLAY); MIC_PLAY = null;
+    play('/api/hearing/live.wav?board=' + encodeURIComponent(x.dataset.micClip) + '&sec=10'); });
+  box.querySelectorAll('[data-mic-phrase]').forEach(x => x.onclick = () => { clearInterval(MIC_PLAY); MIC_PLAY = null;
+    play('/api/hearing/phrase.wav?board=' + encodeURIComponent(x.dataset.micPhrase)); });
+  $('#micPick').onclick = voicePick;
+  $('#micCamBtn').onclick = () => { const im = $('#micCamImg'); im.style.display = '';
+    im.onerror = () => { im.style.display = 'none'; toast('Кадров в облаке нет', 'warn'); };
+    im.src = '/api/vision/last.jpg?t=' + Date.now(); };
+  clearTimeout(MIC_T);
+  MIC_T = setTimeout(micWire, 2500);
+}
+
 /* ------------------------- Общие (вкладка) ------------------------------- */
 function tabCommon() {
   const p = $('[data-pane="common"]');
@@ -1981,6 +2222,7 @@ function tabCommon() {
   const rset = SETTINGS || {};
   const L = st.load || {};
   setTimeout(partWire, 60);            // v3.177.2: кванты на D6 — свой блок
+  clearTimeout(MIC_T); MIC_T = setTimeout(micWire, 80);   // v3.178: уши и глаза плат
   p.innerHTML = '<h2>Общие</h2>' +
     /* v3.173.1: блок Pillow был два раза (одинаковые id — второй вечно «Проверка…») */
     '<div class="fgroup" style="margin-bottom:12px"><label><b>Зрение — Pillow</b></label>' +
@@ -2004,6 +2246,10 @@ function tabCommon() {
     '<div class="mini">Скетч платы выдаёт на пин D6 дискретные уровни ШИМ: короткие вспышки, пакеты и низкий фон. ' +
     'Шум конденсатора на A4 становится стимулом нейронам и ускоряет подбор весов. Это имитация квантов: настоящие частицы конденсатор не рождает.</div>' +
     '<div id="partForm" class="mini" style="margin-top:6px">загрузка…</div></div>' +
+    '<div class="card" id="micBox" style="margin:8px 0 12px"><h3 style="margin-top:0">🎤 Микрофон и 📷 камера плат (плата v2.93+)</h3>' +
+    '<div class="mini">Уровень микрофона, распознанные фразы и живой звук с платы — нажми «Слушать», и плата начнёт слать звук в облако на ПК; ' +
+    'для камеры по проводу (UART) видны счётчики приёмника: сколько байт и целых кадров дошло и почему нет кадра.</div>' +
+    '<div id="micForm" class="mini" style="margin-top:6px">загрузка…</div></div>' +
     '<div class="fgroup" id="setMode"><label><b>Как мозг отвечает на вопрос</b> (v3.129)</label>' +
     '<div class="mini">1) Команды и точные вещи: расчёт, время, заметки, камера и микрофон, код. ' +
     '2) Подтверждённый ответ из памяти диалогов (👍 или «правильный ответ: …»). 3) Статья базы знаний — по контексту вопроса (эпоха, что спрашивают). ' +
@@ -4481,6 +4727,115 @@ function closeSidebar() {
   $('#sideVeil').classList.remove('on');
 }
 
+/* v3.178: ГОЛОСОВОЙ ВВОД В ЧАТЕ. Источник: микрофон этого устройства
+ * (встроенный или подключённый — выбирается из списка браузера) или
+ * микрофон платы. Звук пишется в WAV 16 кГц прямо в браузере, облако
+ * распознаёт его Vosk-ом (/api/hearing/voice) и ставит текст в поле ввода. */
+const VOICE = { rec: null, busy: false };
+function voiceSrc() { try { return localStorage.getItem('n12_mic_src') || ''; } catch (e) { return ''; } }
+function voiceSetSrc(v) { try { localStorage.setItem('n12_mic_src', v || ''); } catch (e) {} }
+async function voiceSources() {
+  const out = [{ v: '', t: '🎙 Микрофон этого устройства (по умолчанию)' }];
+  try {
+    if (navigator.mediaDevices && navigator.mediaDevices.enumerateDevices) {
+      const ds = await navigator.mediaDevices.enumerateDevices();
+      ds.filter(d => d.kind === 'audioinput' && d.deviceId && d.deviceId !== 'default').forEach((d, i) =>
+        out.push({ v: 'dev:' + d.deviceId, t: '🎧 ' + (d.label || ('Микрофон ' + (i + 1) + ' (разреши доступ, чтобы увидеть имя)')) }));
+    }
+  } catch (e) {}
+  try {
+    const r = await api('/api/hearing/live');
+    (r.boards || []).filter(b => b.mic).forEach(b => out.push({ v: 'board:' + b.board, t: '📟 Микрофон платы ' + b.board }));
+  } catch (e) {}
+  return out;
+}
+function wavEncode(chunks, inRate) {
+  let n = 0; chunks.forEach(c => n += c.length);
+  const all = new Float32Array(n); let o = 0; chunks.forEach(c => { all.set(c, o); o += c.length; });
+  const ratio = inRate / 16000, m = Math.floor(all.length / ratio);
+  const buf = new ArrayBuffer(44 + m * 2), dv = new DataView(buf);
+  const w = (p, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(p + i, s.charCodeAt(i)); };
+  w(0, 'RIFF'); dv.setUint32(4, 36 + m * 2, true); w(8, 'WAVE'); w(12, 'fmt ');
+  dv.setUint32(16, 16, true); dv.setUint16(20, 1, true); dv.setUint16(22, 1, true);
+  dv.setUint32(24, 16000, true); dv.setUint32(28, 32000, true); dv.setUint16(32, 2, true); dv.setUint16(34, 16, true);
+  w(36, 'data'); dv.setUint32(40, m * 2, true);
+  for (let i = 0; i < m; i++) {            // среднее по окну — простой антиалиасинг
+    const a = Math.floor(i * ratio), b = Math.max(a + 1, Math.floor((i + 1) * ratio));
+    let sum = 0; for (let k = a; k < b && k < all.length; k++) sum += all[k];
+    const v = Math.max(-1, Math.min(1, sum / (b - a)));
+    dv.setInt16(44 + i * 2, v < 0 ? v * 0x8000 : v * 0x7fff, true);
+  }
+  let bin = ''; const u8 = new Uint8Array(buf);
+  for (let i = 0; i < u8.length; i += 0x8000) bin += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+function voicePut(text) {
+  const inp = $('#input');
+  inp.value = (inp.value ? inp.value.replace(/\s*$/, ' ') : '') + text;
+  inp.dispatchEvent(new Event('input'));
+  inp.focus();
+}
+async function voiceSend(body, btn) {
+  VOICE.busy = true; btn.textContent = '⏳';
+  try {
+    const r = await api('/api/hearing/voice', { body });
+    if (r.ok) { voicePut(r.text); toast('🎙 Распознано', 'ok'); }
+    else toast('🎙 ' + (r.error || 'не распознано'), 'warn');
+  } catch (e) { toast('🎙 ' + e.message, 'err'); }
+  VOICE.busy = false; btn.textContent = '🎙'; btn.classList.remove('on');
+}
+async function voiceClick() {
+  const btn = $('#btnVoice');
+  if (VOICE.busy) return;
+  const src = voiceSrc();
+  if (src.indexOf('board:') === 0) {               // микрофон платы: 5 с с её микрофона
+    btn.classList.add('on'); toast('🎙 Говори в микрофон платы — пишу 5 с (плата начнёт слать звук за ~5 с)');
+    return voiceSend({ board: src.slice(6), sec: 5 }, btn);
+  }
+  if (VOICE.rec) {                                  // второе нажатие — стоп
+    const R = VOICE.rec; VOICE.rec = null; clearTimeout(R.t);
+    try { R.proc.disconnect(); R.srcN.disconnect(); } catch (e) {}
+    R.stream.getTracks().forEach(t => t.stop());
+    try { R.ctx.close(); } catch (e) {}
+    const sec = R.chunks.reduce((n, c) => n + c.length, 0) / R.rate;
+    if (sec < 0.4) { btn.textContent = '🎙'; btn.classList.remove('on'); toast('🎙 Слишком коротко', 'warn'); return; }
+    return voiceSend({ wav: wavEncode(R.chunks, R.rate) }, btn);
+  }
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    toast('🎙 Браузер не даёт микрофон по http с другого адреса. Открой облако через лаунчер/localhost или выбери микрофон платы (правый клик по 🎙)', 'warn');
+    return;
+  }
+  let stream;
+  try {
+    const dev = src.indexOf('dev:') === 0 ? src.slice(4) : '';
+    stream = await navigator.mediaDevices.getUserMedia({ audio: dev ? { deviceId: { exact: dev } } : { echoCancellation: true, noiseSuppression: true } });
+  } catch (e) { toast('🎙 Нет доступа к микрофону: ' + e.message, 'err'); return; }
+  const ctx = new (window.AudioContext || window.webkitAudioContext)();
+  const srcN = ctx.createMediaStreamSource(stream);
+  const proc = ctx.createScriptProcessor(4096, 1, 1);
+  const R = { stream, ctx, srcN, proc, chunks: [], rate: ctx.sampleRate };
+  proc.onaudioprocess = e => { R.chunks.push(new Float32Array(e.inputBuffer.getChannelData(0))); };
+  srcN.connect(proc); proc.connect(ctx.destination);
+  R.t = setTimeout(() => { if (VOICE.rec === R) voiceClick(); }, 30000);   // потолок 30 с
+  VOICE.rec = R;
+  btn.textContent = '⏺'; btn.classList.add('on');
+  toast('🎙 Говори… нажми ⏺ ещё раз, чтобы закончить');
+}
+async function voicePick(ev) {
+  if (ev) ev.preventDefault();
+  document.querySelectorAll('.voicepick').forEach(x => x.remove());
+  const list = await voiceSources(), cur = voiceSrc();
+  const d = document.createElement('div');
+  d.className = 'voicepick card';
+  d.style.cssText = 'position:fixed;z-index:9999;right:12px;bottom:90px;max-width:92vw;padding:8px;box-shadow:0 6px 24px rgba(0,0,0,.4)';
+  d.innerHTML = '<div class="mini" style="margin-bottom:4px"><b>Микрофон для голосового ввода</b></div>' +
+    list.map(o => '<div><label style="cursor:pointer"><input type="radio" name="vsrc" value="' + esc(o.v) + '"' + (o.v === cur ? ' checked' : '') + '> ' + esc(o.t) + '</label></div>').join('') +
+    '<div style="margin-top:6px"><button class="btn" id="vpClose">Готово</button></div>';
+  document.body.appendChild(d);
+  d.querySelectorAll('input').forEach(i => i.onchange = () => { voiceSetSrc(i.value); toast('🎙 Источник: ' + list.find(o => o.v === i.value).t); });
+  $('#vpClose').onclick = () => d.remove();
+}
+
 function boot() {
   startActivityTriangles();
   setRoute(S.route);
@@ -4506,6 +4861,14 @@ function boot() {
     $('#sideVeil').classList.toggle('on', rm.classList.contains('open'));
   };
   $('#chatSearch').oninput = renderChatList;
+  const vb = $('#btnVoice');                       // v3.178: голосовой ввод
+  if (vb) {
+    vb.onclick = voiceClick;
+    vb.oncontextmenu = voicePick;
+    let lp = null;
+    vb.addEventListener('touchstart', () => { lp = setTimeout(() => { lp = 'done'; voicePick(); }, 650); }, { passive: true });
+    vb.addEventListener('touchend', e => { if (lp === 'done') e.preventDefault(); clearTimeout(lp); lp = null; });
+  }
   $('#btnTTS').onclick = () => {
     S.tts = !S.tts;
     localStorage.setItem('n12_tts', S.tts ? '1' : '0');

@@ -277,7 +277,7 @@ except Exception:
 # App Lab отсутствует (из-за него приложение не запускалось), arduino:tts
 # тоже не подключён. LLM и TTS работают ЧЕРЕЗ ОБЛАКО — см. секции [4] и [6].
 
-APP_VERSION = "2.92.0"
+APP_VERSION = "2.93.0"
 
 # ---------------------------------------------------------------------------
 #   v2.33 (2026): МОСТ-КАНАЛ БЕЗ ТАЙМАУТОВ — фикс «word_push не работает,
@@ -389,6 +389,9 @@ DEFAULT_CFG = {
     "game_on": True,            # v2.69: мозгу можно играть в «РОК-12» облака (сам решает)
     "mic_on": True,             # v2.70: уши мозга — USB-микрофон платы -> речь в облако
     "mic_dev": "default",       # v2.70: устройство ALSA для arecord (default, plughw:1,0 …)
+    "mic_board_asr": True,      # v2.93: Vosk НА ПЛАТЕ — речь в текст прямо на плате
+    "code_from_cloud": True,    # v2.93: облако может проверять/запускать код на плате (раздел «Код»)
+    "admin_from_cloud": True,   # v2.93: окно «Серверы» облака может выполнять команды в контейнере платы
     "mic_min_rms": 350,         # v2.70: порог громкости начала фразы (минимум)
     "grav_g": 1.0,              # v2.66: сила тяги (0 — выкл., до 3)
                                 # (по тому, что знает: память/файлы/наставник)
@@ -1041,6 +1044,35 @@ def _cam_local_summary(jpeg):
     return pct
 
 
+_CAM_UART = {"info": "", "ts": 0.0}
+
+
+def _cam_uart_diag():
+    """v2.93: разбор счётчиков приёмника UART скетча -> понятная причина."""
+    d = {}
+    for part in str(_CAM_UART.get("info") or "").split(";"):
+        k, _, v = part.partition("=")
+        try:
+            d[k.strip()] = int(v)
+        except Exception:
+            pass
+    if not _CAM_UART.get("info"):
+        why = "скетч не ответил на cam_frame_info (мост/скетч старый?)"
+    elif not d.get("bytes") and "bytes" in d:
+        why = ("по проводу не пришло НИ ОДНОГО байта: проверь TX ESP32-CAM (GPIO1/U0TXD "
+               "или пин из esp32cam_uart) → D0/RX платы, общий GND и питание камеры 5 В")
+    elif d.get("ok", 0) == 0 and (d.get("bad", 0) or d.get("lost", 0)):
+        why = ("байты идут (%d), но все кадры битые (bad=%d, lost=%d): скорость камеры "
+               "не %s бод или помехи на проводе" % (d.get("bytes", 0), d.get("bad", 0),
+                                                       d.get("lost", 0), d.get("baud", "?")))
+    elif d.get("len", 0) == 0:
+        why = "кадров ещё не было"
+    else:
+        why = ""
+    d["why"] = why
+    return d
+
+
 def _cam_uart_frame():
     """v2.30: кадр из ПРИЁМНИКА UART в скетче хаба (cam_url = "uart").
     Протокол приёмника: RPC cam_frame_info -> "len=N;seq=S;ok=..;bad=..;
@@ -1050,7 +1082,9 @@ def _cam_uart_frame():
     следующий период. Возвращает JPEG-байты или b""."""
     info = _bridge_call("cam_frame_info", timeout=4)
     if not info:
+        _CAM_UART.update(info="", ts=time.time())
         return b""
+    _CAM_UART.update(info=str(info)[:200], ts=time.time())   # v2.93: счётчики UART -> облако
     ln = sq = -1
     try:
         for part in str(info).split(";"):
@@ -1236,8 +1270,9 @@ def cam_worker():
                 # UART скетча (RPC cam_frame_info/cam_chunk)
                 jpeg = _cam_uart_frame()
                 if len(jpeg) < 500 or not jpeg.startswith(b"\xff\xd8"):
-                    _cam_state("нет кадра", "по проводу (UART) кадр не пришёл: "
-                               "скетч не принял ни одного JPEG (проверь TX камеры → RX платы и скорость)")
+                    _cam_state("нет кадра", "по проводу (UART) кадр не пришёл: " +
+                               (_cam_uart_diag().get("why") or
+                                "скетч не принял ни одного JPEG (проверь TX камеры → RX платы и скорость)"))
                     continue
                 if not _jpeg_complete(jpeg):
                     _cam_state("битый кадр", "по проводу пришёл оборванный JPEG "
@@ -2140,7 +2175,12 @@ def _link_extras(payload):
         "ok_age": int(time.time() - _CAM_ST["ok_ts"]) if _CAM_ST["ok_ts"] else None,
         "sent_age": int(time.time() - _CAM_ST["sent_ts"]) if _CAM_ST["sent_ts"] else None,
         "url": str(CFG.get("cam_url") or "")[:80], "on": bool(CFG.get("cam_on")),
+        "uart": _cam_uart_diag() if str(CFG.get("cam_url") or "").strip().lower()
+        in ("uart", "uart:", "serial", "провод") else None,      # v2.93
         "ai": camai_status()})
+    _put("mic", mic_status)             # v2.93: уши платы видны в облаке
+    _put("codejobs", lambda: dict(_CODEJOBS, code=bool(CFG.get("code_from_cloud", True)),
+                                  admin=bool(CFG.get("admin_from_cloud", True))))
 
 
 def link_once():
@@ -2214,6 +2254,17 @@ def link_once():
                         "run": [str(x)[:40] for x in (r["ctl"].get("run") or [])][:30],
                         "stop": [str(x)[:40] for x in (r["ctl"].get("stop") or [])][:30],
                         "ts": time.time()}
+    if r.get("mic_live"):                # v2.93: облако просит живой звук микрофона
+        try:
+            _MIC["live_until"] = time.time() + min(30.0, float(r.get("mic_live") or 0))
+        except Exception:
+            pass
+    if r.get("code_jobs"):               # v2.93: код/команды из облака
+        _LINK["fast_until"] = time.time() + 60.0
+        threading.Thread(target=_code_jobs_run, args=(list(r["code_jobs"]),),
+                         daemon=True).start()
+    if r.get("code_wait"):               # облако ждёт ответа — чаще на связь
+        _LINK["fast_until"] = time.time() + 30.0
     if r.get("particles"):               # v2.92: галочки квантов на D6 из облака
         _part_apply(r.get("particles"))
     if isinstance(r.get("game"), dict):  # v2.69: в облаке есть игра «РОК-12»
@@ -11769,6 +11820,9 @@ def api_get_settings():
             "sync_on": bool(CFG.get("sync_on", True)),      # v2.67
             "game_on": bool(CFG.get("game_on", True)),      # v2.69
             "mic_on": bool(CFG.get("mic_on", True)),        # v2.70
+            "mic_board_asr": bool(CFG.get("mic_board_asr", True)),      # v2.93
+            "code_from_cloud": bool(CFG.get("code_from_cloud", True)),  # v2.93
+            "admin_from_cloud": bool(CFG.get("admin_from_cloud", True)),
             "mic_dev": str(CFG.get("mic_dev") or "default"),
             "cam_on": bool(CFG.get("cam_on", True)),        # v2.73
             "cam_ai": bool(CFG.get("cam_ai", True)),        # v2.88
@@ -11797,7 +11851,8 @@ def api_set_settings(data: dict):
     for k in ("tts_on", "teach_on", "whisper_hint", "mem_sync",
               "dictate_on", "curious_on", "brain_on", "long_answers",
               "advice_on", "gen_on", "words_to_board", "dict_sync",
-              "grav_on", "sync_on", "game_on", "mic_on", "cam_on", "cam_ai"):
+              "grav_on", "sync_on", "game_on", "mic_on", "cam_on", "cam_ai",
+              "mic_board_asr", "code_from_cloud", "admin_from_cloud"):
         if k in d:
             CFG[k] = bool(d.get(k))
     if "cam_ai_w" in d:                    # v2.88: вес голоса камеры
@@ -12780,8 +12835,9 @@ def game_worker():
 # ===========================================================================
 _MIC = {"state": "выкл", "err": "", "phrases": 0, "sent": 0, "heard": 0,
         "last": "", "last_ts": 0.0, "rms": 0, "floor": 0.0, "mute_until": 0.0,
-        "reply": ""}
+        "reply": "", "live_until": 0.0, "live_sent": 0, "live_err": ""}
 _MIC_Q = deque(maxlen=6)
+_MIC_LIVE = deque(maxlen=200)     # v2.93: свежие куски по 30 мс для живого звука (~6 с)
 MIC_SR = 16000
 MIC_FRAME = 480                   # 30 мс
 MIC_END_FR = 27                   # 0.8 с тишины — конец фразы
@@ -12790,10 +12846,12 @@ MIC_MIN_VOICED = 10               # 0.3 с голоса — иначе щелч�
 
 
 def mic_status():
-    d = {k: v for k, v in _MIC.items() if k != "mute_until"}
+    d = {k: v for k, v in _MIC.items() if k not in ("mute_until", "live_until")}
+    d["live"] = time.time() < _MIC.get("live_until", 0)
     d["on"] = bool(CFG.get("mic_on", True))
     d["dev"] = str(CFG.get("mic_dev") or "default")
     d["queue"] = len(_MIC_Q)
+    d["vosk"] = dict(_VOSK_ST)            # v2.93: распознавание на плате
     return d
 
 
@@ -12857,6 +12915,8 @@ def mic_listen_worker():
                     break
                 rms = _mic_rms(chunk)
                 _MIC["rms"] = int(rms)
+                if time.time() < _MIC["live_until"]:
+                    _MIC_LIVE.append(chunk)          # v2.93: живой звук в облако
                 if time.time() < _MIC["mute_until"]:
                     speech, silent, voiced = None, 0, 0     # сама говорит
                     pre.clear()
@@ -12907,11 +12967,17 @@ def mic_send_worker():
             time.sleep(0.3)
             continue
         pcm, lvl, ts = _MIC_Q.popleft()
+        tb = vosk_text(pcm)                 # v2.93: плата сама переводит речь в текст
+        if tb:
+            _MIC["board_text"] = tb
+            _MIC["board_heard"] = int(_MIC.get("board_heard") or 0) + 1
         url, token = _cloud_base()
         if not url:
+            if tb:
+                add_message("system", "🎤 Слышу (Vosk на плате): «%s»" % tb, "Слух")
             continue
         r, err = _http_json_err(url + "/api/hearing/mic", {
-            "board": _hostname(), "level": lvl,
+            "board": _hostname(), "level": lvl, "text_board": tb,
             "wav": base64.b64encode(_mic_wav(pcm)).decode("ascii")},
             token=token, timeout=60)
         if not r or not r.get("ok"):
@@ -12939,6 +13005,248 @@ def mic_send_worker():
             add_message("bot", rep, "Слух")
             threading.Thread(target=tts_say, args=(rep,), daemon=True).start()
 
+
+
+# ===========================================================================
+# v2.93: VOSK НА ПЛАТЕ. Распознаватель речи ставится на плату сам (в фоне,
+# один раз): pip install vosk, русская малая модель (~45 МБ) — сначала из
+# облака (/api/hearing/vosk-model.zip, интернет не нужен), иначе с сайта
+# alphacephei. Каждая фраза микрофона переводится в текст ПРЯМО НА ПЛАТЕ и
+# уходит в облако вместе со звуком (text_board): облако берёт её, если само
+# не разобрало слова или у него нет Vosk.
+# ===========================================================================
+_VOSK_ST = {"state": "нет", "err": "", "model": "", "texts": 0}
+_VOSK_M = [None]
+_VOSK_URL = "https://alphacephei.com/vosk/models/vosk-model-small-ru-0.22.zip"
+
+
+def _vosk_dir():
+    return os.path.join(_base_dirs()[0], "vosk-ru")
+
+
+def _vosk_have_model():
+    d = _vosk_dir()
+    return os.path.isdir(d) and os.path.isfile(os.path.join(d, "am", "final.mdl"))
+
+
+def vosk_text(pcm):
+    """PCM 16 кГц mono -> текст (Vosk на плате) | ""."""
+    if not CFG.get("mic_board_asr", True) or _VOSK_ST["state"] != "готов":
+        return ""
+    try:
+        import vosk
+        if _VOSK_M[0] is None:
+            vosk.SetLogLevel(-1)
+            _VOSK_M[0] = vosk.Model(_vosk_dir())
+        rec = vosk.KaldiRecognizer(_VOSK_M[0], MIC_SR)
+        parts = []
+        for i in range(0, len(pcm), 8000):
+            if rec.AcceptWaveform(pcm[i:i + 8000]):
+                t = json.loads(rec.Result()).get("text") or ""
+                if t:
+                    parts.append(t)
+        t = json.loads(rec.FinalResult()).get("text") or ""
+        if t:
+            parts.append(t)
+        text = " ".join(" ".join(parts).split())
+        if text:
+            _VOSK_ST["texts"] += 1
+        return text
+    except Exception as e:
+        _VOSK_ST["err"] = "распознавание: %s: %s" % (type(e).__name__, str(e)[:100])
+        return ""
+
+
+def vosk_install_worker():
+    """Поставить Vosk на плату (один раз, в фоне)."""
+    import subprocess
+    import sys
+    import zipfile
+    time.sleep(40)                      # сперва пусть поднимется всё остальное
+    while True:
+        if not CFG.get("mic_board_asr", True):
+            _VOSK_ST["state"] = "выкл"
+            time.sleep(60)
+            continue
+        try:
+            try:
+                import vosk  # noqa: F401
+            except Exception:
+                _VOSK_ST.update(state="ставлю vosk", err="")
+                log("СЛУХ", "ставлю распознаватель речи Vosk на плату (pip install vosk)…")
+                ok = False
+                for extra in ([], ["--user"], ["--break-system-packages"]):
+                    r = subprocess.run([sys.executable, "-m", "pip", "install",
+                                        "--disable-pip-version-check", "-q", "vosk"] + extra,
+                                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                       timeout=1200)
+                    if r.returncode == 0:
+                        ok = True
+                        break
+                    _VOSK_ST["err"] = r.stdout.decode("utf-8", "replace").strip()[-200:]
+                if not ok:
+                    _VOSK_ST["state"] = "ошибка pip"
+                    time.sleep(1800)
+                    continue
+                import importlib
+                import site
+                importlib.invalidate_caches()
+                try:
+                    sys.path.append(site.getusersitepackages())
+                except Exception:
+                    pass
+                import vosk  # noqa: F401,F811
+            if not _vosk_have_model():
+                _VOSK_ST.update(state="качаю модель", err="")
+                data, src = b"", ""
+                url, token = _cloud_base()
+                if url:
+                    try:
+                        req = urllib.request.Request(url + "/api/hearing/vosk-model.zip",
+                                                     headers={"X-Mozg-Token": token or ""})
+                        with urllib.request.urlopen(req, timeout=600) as rr:
+                            data, src = rr.read(), "облака"
+                    except Exception as e:
+                        _VOSK_ST["err"] = "из облака: %s" % str(e)[:80]
+                if not data[:2] == b"PK":
+                    with urllib.request.urlopen(_VOSK_URL, timeout=900) as rr:
+                        data, src = rr.read(), "alphacephei.com"
+                tmp = _vosk_dir() + "_tmp"
+                import shutil
+                shutil.rmtree(tmp, ignore_errors=True)
+                os.makedirs(tmp, exist_ok=True)
+                import io
+                with zipfile.ZipFile(io.BytesIO(data)) as z:
+                    for n in z.namelist():           # без «..» и абсолютных путей
+                        if n.startswith("/") or ".." in n.split("/"):
+                            raise ValueError("плохой путь в архиве модели: %s" % n[:60])
+                    z.extractall(tmp)
+                root = tmp
+                for dp, dn, fn in os.walk(tmp):      # папка, где лежит am/final.mdl
+                    if os.path.isfile(os.path.join(dp, "am", "final.mdl")):
+                        root = dp
+                        break
+                shutil.rmtree(_vosk_dir(), ignore_errors=True)
+                shutil.move(root, _vosk_dir())
+                shutil.rmtree(tmp, ignore_errors=True)
+                _VOSK_ST["model"] = "vosk-model-small-ru (из %s)" % src
+                log("СЛУХ", "модель Vosk установлена на плату (из %s)" % src)
+            _VOSK_ST["model"] = _VOSK_ST["model"] or "vosk-model-small-ru"
+            _VOSK_ST.update(state="готов", err="")
+            return
+        except Exception as e:
+            _VOSK_ST.update(state="ошибка", err="%s: %s" % (type(e).__name__, str(e)[:150]))
+            log("СЛУХ", "Vosk на плату не встал: %s" % _VOSK_ST["err"])
+            time.sleep(1800)
+
+
+# ===========================================================================
+# v2.93: КОД И АДМИНИСТРИРОВАНИЕ ЧЕРЕЗ СВЯЗЬ С ОБЛАКОМ. В ответе /api/link
+# облако может прислать code_jobs: [{id, mode, code, timeout}]:
+#   py_check — проверить синтаксис Python на плате (py_compile);
+#   py_run   — запустить Python-код на плате (раздел «Код»: проверка на
+#              настоящем железе, отдельная папка, таймаут);
+#   sh       — команда в контейнере приложения платы (окно «Серверы»).
+# Выключается настройками code_from_cloud / admin_from_cloud. Результат —
+# POST /api/board/codejob.
+# ===========================================================================
+_CODEJOBS = {"done": 0, "last": "", "busy": False}
+
+
+def _code_job(j):
+    import subprocess
+    import sys
+    import tempfile
+    mode = str(j.get("mode") or "py_check")
+    code = str(j.get("code") or "")
+    try:
+        tmo = max(2, min(120, int(j.get("timeout") or 20)))
+    except Exception:
+        tmo = 20
+    if mode == "sh":
+        if not CFG.get("admin_from_cloud", True):
+            return {"ok": False, "rc": -1, "out": "на плате выключено admin_from_cloud"}
+    elif not CFG.get("code_from_cloud", True):
+        return {"ok": False, "rc": -1, "out": "на плате выключено code_from_cloud"}
+    work = tempfile.mkdtemp(prefix="n12code_")
+    try:
+        if mode == "sh":
+            cmd = ["sh", "-c", code]
+        else:
+            f = os.path.join(work, "job.py")
+            with open(f, "w", encoding="utf-8") as fh:
+                fh.write(code)
+            cmd = [sys.executable, "-m", "py_compile", f] if mode == "py_check" \
+                else [sys.executable, "-I", f]
+        r = subprocess.run(cmd, cwd=work, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+                           stderr=subprocess.STDOUT, timeout=tmo)
+        out = r.stdout.decode("utf-8", "replace")
+        return {"ok": r.returncode == 0, "rc": r.returncode, "out": out[-6000:]}
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "rc": -9, "out": "таймаут %d с" % tmo}
+    except Exception as e:
+        return {"ok": False, "rc": -1, "out": "%s: %s" % (type(e).__name__, str(e)[:200])}
+    finally:
+        import shutil
+        shutil.rmtree(work, ignore_errors=True)
+
+
+def _code_jobs_run(jobs):
+    import platform
+    url, token = _cloud_base()
+    _CODEJOBS["busy"] = True
+    try:
+        for j in jobs[:4]:
+            if not isinstance(j, dict) or not j.get("id"):
+                continue
+            t0 = time.time()
+            res = _code_job(j)
+            res.update(id=str(j["id"])[:40], board=_hostname(), mode=j.get("mode"),
+                       ms=int((time.time() - t0) * 1000),
+                       py=platform.python_version(), machine=platform.machine())
+            _CODEJOBS["done"] += 1
+            _CODEJOBS["last"] = "%s: %s" % (j.get("mode"), "ок" if res["ok"] else "ошибка")
+            log("КОД", "задание облака %s (%s): %s за %d мс" % (
+                res["id"], j.get("mode"), "ок" if res["ok"] else "rc=%s" % res["rc"], res["ms"]))
+            if url:
+                _http_json_err(url + "/api/board/codejob", res, token=token, timeout=20)
+    finally:
+        _CODEJOBS["busy"] = False
+
+
+def mic_live_worker():
+    """v2.93: живой звук. Пока облако держит mic_live (кнопка «Слушать» в
+    облаке), каждые ~0.5 с шлём накопленный PCM 16 кГц в /api/hearing/stream;
+    облако склеивает поток и даёт послушать его в браузере."""
+    import base64
+    seq = 0
+    while True:
+        if time.time() >= _MIC.get("live_until", 0) or not _MIC_LIVE:
+            if time.time() >= _MIC.get("live_until", 0):
+                _MIC_LIVE.clear()
+            time.sleep(0.25)
+            continue
+        time.sleep(0.5)
+        parts = []
+        while _MIC_LIVE:
+            parts.append(_MIC_LIVE.popleft())
+        pcm = b"".join(parts)
+        url, token = _cloud_base()
+        if not url or not pcm:
+            continue
+        seq += 1
+        r, err = _http_json_err(url + "/api/hearing/stream", {
+            "board": _hostname(), "seq": seq, "sr": MIC_SR, "rms": _MIC.get("rms", 0),
+            "pcm": base64.b64encode(pcm).decode("ascii")}, token=token, timeout=10)
+        if r and r.get("ok"):
+            _MIC["live_sent"] += 1
+            _MIC["live_err"] = ""
+            if r.get("stop"):
+                _MIC["live_until"] = 0.0
+        else:
+            _MIC["live_err"] = str(err or (r or {}).get("error") or "?")[:120]
+            if "404" in _MIC["live_err"]:
+                _MIC["live_until"] = 0.0
 
 
 def register_web():
@@ -13142,6 +13450,8 @@ def main():
     threading.Thread(target=game_worker, daemon=True).start()     # v2.69: игра
     threading.Thread(target=mic_listen_worker, daemon=True).start()  # v2.70: уши
     threading.Thread(target=mic_send_worker, daemon=True).start()
+    threading.Thread(target=mic_live_worker, daemon=True).start()     # v2.93: живой звук
+    threading.Thread(target=vosk_install_worker, daemon=True).start() # v2.93: Vosk на плате
     try:
         _crash_hooks()                                            # v2.61
     except Exception:

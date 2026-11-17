@@ -15,6 +15,7 @@
 # Форматы ответов согласованы с тем, что читает мозг (v2.30).
 # ===========================================================================
 import json
+import re
 import time
 
 import brain
@@ -569,6 +570,24 @@ def h_link(req):
                 _NOISE[str(b.get("board") or "?")[:40]] = dict(b["noise"], ts=time.time())
     except Exception:
         pass
+    try:                         # v3.178: уши и глаза платы + живой звук по кнопке
+        import micstream
+        if isinstance(r, dict) and r.get("ok"):
+            micstream.note_link(b.get("board"), b.get("mic"), b.get("cam"))
+            lv = micstream.want_for(b.get("board"))
+            if lv:
+                r["mic_live"] = lv
+    except Exception:
+        pass
+    try:                         # v3.178: код и команды для платы (раздел «Код», «Серверы»)
+        import boardcode
+        if isinstance(r, dict) and r.get("ok"):
+            boardcode.note_link(b.get("board"), b.get("ver"), b.get("codejobs"))
+            cj = boardcode.take(b.get("board"))
+            if cj:
+                r["code_jobs"] = cj
+    except Exception:
+        pass
     return (200 if r.get("ok") else 400), r
 
 
@@ -620,8 +639,119 @@ def h_hearing_mic(req):
     обращённая к мозгу — вопрос, ответ плата произносит."""
     import senses
     b = req.body or {}
-    r = senses.mic_in(b.get("board"), b.get("wav"), b.get("level"))
+    r = senses.mic_in(b.get("board"), b.get("wav"), b.get("level"),
+                      text_board=b.get("text_board"))
     return (200 if r.get("ok") else 400), r
+
+
+def h_hearing_stream(req):
+    """v3.178: живой звук с платы — сырой PCM 16 кГц кусками."""
+    import micstream
+    b = req.body or {}
+    r = micstream.stream_in(b.get("board"), b.get("pcm"), b.get("sr"), b.get("seq"), b.get("rms"))
+    return (200 if r.get("ok") else 400), r
+
+
+def h_hearing_live(req):
+    """v3.178: GET — состояние ушей/глаз плат; POST {board?, on, sec?} —
+    попросить плату слать живой звук (кнопка «Слушать»)."""
+    import micstream
+    if req.method == "POST":
+        b = req.body or {}
+        micstream.set_want(b.get("board") or "*", bool(b.get("on")), b.get("sec") or 60)
+    return 200, micstream.status()
+
+
+def h_hearing_voice(req):
+    """v3.178: ГОЛОСОВОЙ ВВОД В ЧАТЕ. POST {wav: base64} — звук с микрофона
+    устройства (браузер записал WAV), или {board, sec} — записать с микрофона
+    платы. Ответ {ok, text} — текст ставится в поле ввода чата."""
+    import base64
+    import hearing
+    import micstream
+    b = req.body or {}
+    if b.get("board"):
+        data, why = micstream.record_board(b.get("board"), b.get("sec") or 5)
+        if not data:
+            return 200, {"ok": False, "error": why}
+    else:
+        try:
+            data = base64.b64decode(re.sub(r"^data:[^,]*,", "", str(b.get("wav") or "")))
+        except Exception:
+            return 400, {"ok": False, "error": "звук не в base64"}
+    if len(data) < 1000:
+        return 200, {"ok": False, "error": "слишком короткая запись"}
+    a, why = hearing.decode(data, 60)
+    if a is None:
+        return 200, {"ok": False, "error": why}
+    text, why2 = hearing.transcribe(a)
+    text = " ".join(str(text or "").split())
+    store.log("СЛУХ", "голосовой ввод%s: %s" % (
+        " с платы " + str(b.get("board"))[:40] if b.get("board") else "",
+        text[:120] or "(" + (why2 or "слов нет") + ")"))
+    if not text:
+        return 200, {"ok": False, "error": why2 or "слов не разобрано — скажи громче и ближе",
+                     "asr": hearing.status()}
+    return 200, {"ok": True, "text": text}
+
+
+def h_board_codejob(req):
+    """v3.178: плата вернула результат задания (код/команда)."""
+    import boardcode
+    r = boardcode.result_in(req.body or {})
+    return (200 if r.get("ok") else 404), r
+
+
+def h_code_board(req):
+    """v3.178: владелец — проверить/запустить код или команду на плате.
+    GET — платы и журнал заданий; POST {code, mode, board?, timeout?}."""
+    import boardcode
+    if req.method == "GET":
+        return 200, {"ok": True, "boards": boardcode.boards(), "jobs": boardcode.jobs()}
+    b = req.body or {}
+    r = boardcode.run(b.get("code"), b.get("mode") or "py_check", b.get("board") or "",
+                      b.get("timeout") or 20)
+    return 200, r
+
+
+_VOSK_ZIP = {"data": None, "ts": 0.0}
+
+
+def h_vosk_model_zip(req):
+    """v3.178: русская модель Vosk для платы — из облака, без интернета."""
+    import hearing
+    import io
+    import os
+    import zipfile
+    if not hearing.have_model():
+        return 404, {"ok": False, "error": "в облаке нет модели Vosk"}
+    if _VOSK_ZIP["data"] is None:
+        d = hearing.model_dir()
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+            for dp, _dn, fn in os.walk(d):
+                for f in fn:
+                    full = os.path.join(dp, f)
+                    z.write(full, os.path.join("vosk-ru", os.path.relpath(full, d)).replace(os.sep, "/"))
+        _VOSK_ZIP["data"] = buf.getvalue()
+        store.log("СЛУХ", "модель Vosk упакована для плат: %d МБ" % (len(_VOSK_ZIP["data"]) >> 20))
+    return 200, "raw", (_VOSK_ZIP["data"], "application/zip", "vosk-ru.zip")
+
+
+def h_hearing_live_wav(req):
+    import micstream
+    data = micstream.live_wav(req.query.get("board") or None, req.query.get("sec") or 5)
+    if not data:
+        return 404, {"ok": False, "error": "живого звука ещё нет"}
+    return 200, "wav", data
+
+
+def h_hearing_phrase_wav(req):
+    import micstream
+    data = micstream.phrase_wav(req.query.get("board") or None)
+    if not data:
+        return 404, {"ok": False, "error": "фраз с микрофона ещё не было"}
+    return 200, "wav", data
 
 
 def h_worddict_sync(req):
@@ -1191,6 +1321,16 @@ def h_board_read(req):
 _r("POST", "api/board/read", h_board_read, auth=True)
 _r("POST", "api/doom/bot", h_doom_bot, auth=True)
 _r("POST", "api/worddict/sync", h_worddict_sync, auth=True)  # v3.133: общий словарь
+_r("POST", "api/hearing/stream", h_hearing_stream, auth=True)   # v3.178: живой звук
+_r("GET", "api/hearing/live", h_hearing_live, "panel")
+_r("POST", "api/hearing/live", h_hearing_live, "panel")
+_r("GET", "api/hearing/live.wav", h_hearing_live_wav, "panel")
+_r("POST", "api/hearing/voice", h_hearing_voice)
+_r("POST", "api/board/codejob", h_board_codejob, auth=True)      # v3.178: результат задания платы
+_r("GET", "api/code/board", h_code_board)                          # v3.178: код на плате (владелец)
+_r("POST", "api/code/board", h_code_board)
+_r("GET", "api/hearing/vosk-model.zip", h_vosk_model_zip, auth=True)                # v3.178: голосовой ввод (владелец)
+_r("GET", "api/hearing/phrase.wav", h_hearing_phrase_wav, "panel")
 _r("POST", "api/hearing/mic", h_hearing_mic, auth=True)    # v3.128: уши мозга          # v3.127: игра мозга                  # v3.102: связь мозгов
 _r("GET", "api/thoughts", h_thoughts)
 _r("POST", "api/chat/thought", h_chat_thought_post, auth=True)

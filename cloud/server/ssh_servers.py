@@ -39,6 +39,8 @@ def list_servers():
             "port": s.get("port", 22),
             "has_key": bool(s.get("key_path")),
             "note": s.get("note", "")[:200],
+            "mac": s.get("mac", ""),                   # v3.178: для включения по сети
+            "kind": s.get("kind", "ssh"),
         })
     return out
 
@@ -63,6 +65,23 @@ def add_server(name, host, user="root", port=22, key_path="", password="", note=
     servers.append(rec)
     _save(servers)
     return {"ok": True, "id": sid, "name": rec["name"]}
+
+
+def set_field(sid, **kw):
+    """v3.178: поменять поле сервера (mac, note, user, port)."""
+    servers = _load()
+    for s_ in servers:
+        if s_.get("id") == sid:
+            for k, v in kw.items():
+                if k in ("mac", "note", "user", "port", "kind"):
+                    s_[k] = v
+            _save(servers)
+            return {"ok": True}
+    return {"ok": False, "error": "сервер не найден"}
+
+
+def get(sid):
+    return next((s_ for s_ in _load() if s_.get("id") == sid), None)
 
 
 def remove_server(sid):
@@ -104,6 +123,9 @@ def run(sid, command, timeout=60):
     ssh_parts = ["ssh", "-o", "StrictHostKeyChecking=accept-new",
                  "-o", "BatchMode=yes", "-o", "ConnectTimeout=15",
                  "-p", str(port)]
+    if not (key and os.path.isfile(key)):          # v3.178: свой ключ облака
+        own = store.p("ssh", "id_ed25519")
+        key = own if os.path.isfile(own) else ""
     if key and os.path.isfile(key):
         ssh_parts += ["-i", key]
     target = f"{user}@{host}"

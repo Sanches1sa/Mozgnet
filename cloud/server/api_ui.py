@@ -2929,7 +2929,7 @@ def h_github(req):
         import codestream
         import llmstreams
         cp = {}
-        for k_ in ("llm_code_stream", "llm_stream_code", "llm_stream_max", "llm_stream_talk"):
+        for k_ in ("llm_code_stream", "llm_stream_code", "llm_stream_max", "llm_stream_talk", "llm_stream_admin"):
             if k_ in b:
                 cp[k_] = bool(b.get(k_))
                 if cp[k_]:              # включили вручную — снять самовыключение
@@ -3116,10 +3116,66 @@ def h_ssh_agent(req):
     action = b.get("action", "start")
     if action == "start":
         r = ssh_agent.start_job(b.get("task", ""), owner=getattr(req, "client_ip", ""),
-                                use_own_llm=bool(b.get("own_llm", True)))
+                                use_own_llm=bool(b.get("own_llm", True)),
+                                auto_ok=b.get("auto_ok"), target=b.get("target") or "")
         return 200, r
+    if action == "approve":                 # v3.178: «Разрешить» / «Отклонить»
+        return 200, ssh_agent.approve(b.get("id"), bool(b.get("yes")))
+    if action == "stop":
+        return 200, ssh_agent.stop(b.get("id"))
     if action == "seed":
         return 200, ssh_agent.seed_admin_knowledge()
+    return 400, {"ok": False, "error": "неизвестное действие"}
+
+
+def h_servers(req):
+    """v3.178: окно «Серверы» (только владелец). GET — цели, ключ облака,
+    задания плат, журнал. POST {action: check|wake|mac|exec|write|key|
+    add_board|classify|auto_ok, ...}."""
+    import servers
+    import ssh_servers
+    if req.method == "GET":
+        import boardcode
+        return 200, {"ok": True, "targets": servers.targets(), "key": servers.cloud_key(),
+                     "history": servers.history(40), "board_jobs": boardcode.jobs(15),
+                     "auto_ok": bool(store.settings().get("srv_auto_ok"))}
+    b = req.body or {}
+    act = b.get("action")
+    tg = str(b.get("target") or "")
+    if act == "check":
+        return 200, servers.check(tg)
+    if act == "wake":
+        return 200, servers.wake(tg, wait=int(b.get("wait") or 0))
+    if act == "mac":
+        return 200, ssh_servers.set_field(tg, mac=str(b.get("mac") or "").strip()[:40])
+    if act == "classify":
+        return 200, {"ok": True, "kind": servers.classify(b.get("command"))}
+    if act == "exec":
+        cmd = str(b.get("command") or "").strip()
+        if not cmd:
+            return 400, {"ok": False, "error": "пустая команда"}
+        kind = servers.classify(cmd)
+        if kind != "read" and not b.get("confirmed"):
+            return 200, {"ok": False, "need_confirm": True, "kind": kind}
+        store.log("СЕРВЕРЫ", "консоль %s: %s" % (tg, cmd[:200]))
+        return 200, dict(servers.run(tg, cmd, timeout=int(b.get("timeout") or 90)), kind=kind)
+    if act == "write":
+        r = servers.write_file(tg, b.get("path"), b.get("content") or "")
+        if r.get("ok") and b.get("run"):
+            path = str(b.get("path"))
+            runner = "bash" if path.endswith(".sh") else "python3"
+            r2 = servers.run(tg, "timeout 60 %s \"%s\"" % (runner, path.replace("~/", "$HOME/", 1)), timeout=90)
+            r = dict(r2, written=r.get("out"))
+        return 200, r
+    if act == "key":
+        return 200, servers.cloud_key(create=True)
+    if act == "add_board":                  # Linux платы — как SSH-сервер (arduino@ip)
+        return 200, ssh_servers.add_server(name=str(b.get("name") or "плата")[:60], host=b.get("host"),
+                                           user=b.get("user") or "arduino", port=22,
+                                           note="плата Arduino UNO Q (добавлена из окна «Серверы»)")
+    if act == "auto_ok":
+        store.update_settings({"srv_auto_ok": bool(b.get("on"))})
+        return 200, {"ok": True}
     return 400, {"ok": False, "error": "неизвестное действие"}
 
 
@@ -3128,6 +3184,21 @@ _r("POST", "api/ssh/servers", h_ssh_servers)
 _r("POST", "api/ssh/run", h_ssh_run)
 _r("GET", "api/ssh/agent", h_ssh_agent)
 _r("POST", "api/ssh/agent", h_ssh_agent)
+def h_code_write(req):
+    """v3.178: окно «Серверы» — код от раздела «Код» (своя LLM, модель, примеры)."""
+    import codewrite
+    b = req.body or {}
+    task = str(b.get("task") or "").strip()[:2000]
+    if not task:
+        return 400, {"ok": False, "error": "пустая задача"}
+    lang = b.get("lang") if b.get("lang") in ("python", "bash") else "python"
+    rep = codewrite.compose(task, lang)
+    return 200, {"ok": bool(rep), "reply": rep or "не получилось написать код"}
+
+
+_r("POST", "api/code/write", h_code_write)
+_r("GET", "api/servers", h_servers)                        # v3.178: окно «Серверы»
+_r("POST", "api/servers", h_servers)
 
 
 # ===== Память облака и LLM (JSON) =====

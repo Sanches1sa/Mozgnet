@@ -47,6 +47,15 @@ Write-Host "  ===========================================================" -Fore
 # ------------------------------- 1. Python ----------------------------------
 Say "ПОИСК PYTHON 3.8+"
 $PyExe = $null; $PyArgs = @()
+# v3.178: ВСТРОЕННЫЙ PYTHON. Пакет для Windows (neuro12-windows-*.zip) несёт
+# свой Python 3.12 с numpy и Pillow в папке runtime — ставить Python не нужно,
+# и облако не зависит от того, какой Python стоит (или не стоит) в системе.
+$Bundled = Join-Path $Root "runtime\python.exe"
+if (Test-Path $Bundled) {
+  $PyExe = $Bundled
+  Ok ("встроенный Python пакета: {0}" -f $Bundled)
+}
+if (-not $PyExe) {
 foreach ($c in @(@{exe="py"; a=@("-3")}, @{exe="python"; a=@()},
                  @{exe="python3"; a=@()})) {
   $cmd = Get-Command $c.exe -ErrorAction SilentlyContinue
@@ -65,6 +74,7 @@ foreach ($c in @(@{exe="py"; a=@("-3")}, @{exe="python"; a=@()},
       }
     }
   }
+}
 }
 if (-not $PyExe) {
   Warn "Python не найден. Установи его одним из способов:"
@@ -118,7 +128,7 @@ try {
 } catch {}
 New-Item -ItemType Directory -Force -Path $Dir | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $Dir "data") | Out-Null
-foreach ($f in @("server", "web", "launcher")) {
+foreach ($f in @("server", "web", "launcher", "runtime", "docs")) {
   if (Test-Path (Join-Path $Root $f)) {
     Copy-Item -Recurse -Force -Path (Join-Path $Root $f) -Destination $Dir
   }
@@ -138,6 +148,13 @@ foreach ($f in @("VERSION", "README.md")) {
   }
 }
 Ok ("платформа скопирована: {0}" -f $Dir)
+if (Test-Path (Join-Path $Dir "runtime\python.exe")) {
+  # дальше — встроенный Python УЖЕ из папки установки (пакет можно удалить)
+  $PyExe = Join-Path $Dir "runtime\python.exe"; $PyArgs = @()
+  $PyReal = $PyExe
+  $PyWin = Join-Path $Dir "runtime\pythonw.exe"
+  Ok "облако работает на своём Python (runtime) — системный Python не нужен"
+}
 
 # v3.30: ПОЛНЫЙ АРХИВ облака («Скачать облако целиком»: код + база знаний +
 # файлы + обученная сеть). Его data переносится в установку: в пустую —

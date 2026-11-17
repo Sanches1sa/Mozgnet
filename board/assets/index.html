@@ -87,6 +87,9 @@ if(a&&a!=='teal')document.documentElement.setAttribute('data-accent',a);}catch(e
       <label class="chk"><input id="s-cam" type="checkbox"> камера (v2.73): кадры ESP32-CAM → облако (раздел «Зрение», /cam, «что ты видишь?»). Адрес: <input id="s-camurl" type="text" style="width:170px" placeholder="192.168.1.50 или uart"></label>
       <label class="chk"><input id="s-camai" type="checkbox"> камера с нейросетью выбирает слова вместе с мозгом (v2.88, скетч esp32cam_tflite, адрес камеры — uart). Вес голоса камеры: <input id="s-camaiw" type="number" min="0" max="1" step="0.05" style="width:64px"></label>
       <label class="chk"><input id="s-mic" type="checkbox"> микрофон (v2.70): мозг слушает USB-микрофон платы и шлёт фразы в облако (речь в текст; «мозг, …» — вопрос, ответ голосом). Устройство ALSA: <input id="s-micdev" type="text" style="width:120px" placeholder="default"></label>
+      <label class="chk"><input id="s-vosk" type="checkbox"> Vosk на плате (v2.93): плата сама переводит речь с микрофона в текст (ставится сама, ~45 МБ)</label>
+      <label class="chk"><input id="s-codecloud" type="checkbox"> код из облака (v2.93): раздел «Код» облака проверяет и запускает Python на плате</label>
+      <label class="chk"><input id="s-admincloud" type="checkbox"> администрирование из облака (v2.93): окно «Серверы» выполняет команды в контейнере платы</label>
       <label class="chk"><input id="s-game" type="checkbox"> игра «РОК-12» (v2.69): мозгу можно играть в DOOM-подобную игру облака — играет, только когда сам захочет (скука, напряжение сети, приглашение владельца)</label>
       <label class="chk"><input id="s-sync" type="checkbox"> синхронизация с платформой (v2.67): генератор скетча подтягивается к общему ритму плат и облака (нужен пересобранный скетч)</label>
     </div>

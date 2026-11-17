@@ -273,7 +273,7 @@ def _addressed(text):
     return None
 
 
-def mic_in(board, wav_b64, level=None):
+def mic_in(board, wav_b64, level=None, text_board=None):
     """Фраза с микрофона платы -> распознать, запомнить, ответить, если к мозгу."""
     import base64
     import hearing
@@ -283,17 +283,26 @@ def mic_in(board, wav_b64, level=None):
         return {"ok": False, "error": "WAV не в base64"}
     if len(data) < 1000:
         return {"ok": False, "error": "слишком короткий звук"}
+    try:                 # v3.178: последнюю фразу можно переслушать в облаке
+        import micstream
+        micstream.save_phrase(board, data)
+    except Exception:
+        pass
     a, why = hearing.decode(data, 30)
     if a is None:
         return {"ok": False, "error": why}
     props = hearing.analyze(a)
     text, why2 = hearing.transcribe(a)
     text = " ".join(str(text or "").split())
+    tb = " ".join(str(text_board or "").split())[:600]
+    if not text and tb:              # v3.178: Vosk на плате разобрал, облако — нет
+        text, why2 = tb, ""
     board = str(board or "плата")[:40]
     item = {"ts": time.time(), "board": board, "text": text[:600],
             "kind": props.get("kind"), "sec": props.get("sec"),
             "loud_db": props.get("loud_db"), "level": level,
-            "why": "" if text else (why2 or "слов не разобрано")}
+            "why": "" if text else (why2 or "слов не разобрано"),
+            "board_text": tb}
     _heard_add(item)
     out = {"ok": True, "text": text, "kind": props.get("kind"),
            "props": props.get("text"), "asr_why": item["why"]}

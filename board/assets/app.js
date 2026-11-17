@@ -799,6 +799,9 @@ async function loadSettings() {
     if ($("s-sync")) $("s-sync").checked = s.sync_on !== false;   /* v2.67 */
     if ($("s-game")) $("s-game").checked = s.game_on !== false;   /* v2.69 */
     if ($("s-mic")) $("s-mic").checked = s.mic_on !== false;      /* v2.70 */
+    if ($("s-vosk")) $("s-vosk").checked = s.mic_board_asr !== false;          /* v2.93 */
+    if ($("s-codecloud")) $("s-codecloud").checked = s.code_from_cloud !== false;
+    if ($("s-admincloud")) $("s-admincloud").checked = s.admin_from_cloud !== false;
     if ($("s-cam")) $("s-cam").checked = s.cam_on !== false;      /* v2.73 */
     if ($("s-camurl")) $("s-camurl").value = s.cam_url || "";
     if ($("s-camai")) $("s-camai").checked = s.cam_ai !== false;       /* v2.88 */
@@ -828,6 +831,9 @@ async function saveSettings() {
     sync_on: $("s-sync") ? $("s-sync").checked : true,
     game_on: $("s-game") ? $("s-game").checked : true,
     mic_on: $("s-mic") ? $("s-mic").checked : true,
+    mic_board_asr: $("s-vosk") ? $("s-vosk").checked : true,
+    code_from_cloud: $("s-codecloud") ? $("s-codecloud").checked : true,
+    admin_from_cloud: $("s-admincloud") ? $("s-admincloud").checked : true,
     cam_on: $("s-cam") ? $("s-cam").checked : true,
     cam_url: $("s-camurl") ? $("s-camurl").value.trim() : "",
     cam_ai: $("s-camai") ? $("s-camai").checked : true,                /* v2.88 */
