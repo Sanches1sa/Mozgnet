@@ -277,7 +277,7 @@ except Exception:
 # App Lab отсутствует (из-за него приложение не запускалось), arduino:tts
 # тоже не подключён. LLM и TTS работают ЧЕРЕЗ ОБЛАКО — см. секции [4] и [6].
 
-APP_VERSION = "2.94.8"
+APP_VERSION = "2.95.0"
 
 # ---------------------------------------------------------------------------
 #   v2.33 (2026): МОСТ-КАНАЛ БЕЗ ТАЙМАУТОВ — фикс «word_push не работает,
@@ -487,6 +487,10 @@ def _mem_path():
         if os.access(d, os.W_OK):
             return os.path.join(d, _MEM_NAME)
     return os.path.join(_base_dirs()[0], _MEM_NAME)
+
+
+# v2.95: свежая установка? (App Lab при обновлении стирает папку — памяти нет)
+FRESH_INSTALL = not any(os.path.exists(os.path.join(_d, _MEM_NAME)) for _d in _base_dirs())
 
 
 def load_memory():
@@ -2199,6 +2203,7 @@ def _link_extras(payload):
         in ("uart", "uart:", "serial", "провод") else None,      # v2.93
         "ai": camai_status()})
     _put("mic", mic_status)             # v2.93: уши платы видны в облаке
+    _put("safe", lambda: {k: v for k, v in _SAFE.items() if k != "hash"})   # v2.95
     _put("sketch", lambda: {             # v2.94.4: скетч и мост — для облака
         "boot": _SKETCH["boot"], "boot_name": BOOT_STAGES.get(_SKETCH["boot"], ""),
         "diag": _SKETCH["diag"], "diag_err": _SKETCH["diag_err"],
@@ -13477,6 +13482,209 @@ def api_vr(data: dict = None):
     return {"ok": True, "vr": vr_status()}
 
 
+# ===========================================================================
+# v2.95: СЕЙФ ПАМЯТИ В ОБЛАКЕ. App Lab при обновлении приложения заменяет его
+# папку целиком, а контейнер видит только её — все JSON (память, словари,
+# веса, настройки, адрес облака) пропадали. Теперь:
+#   * раз в 10 минут все JSON платы уходят сжатым пакетом в облако
+#     (POST /api/board/backup, облако хранит 5 последних копий);
+#   * свежая установка (памяти нет) сама берёт копию из облака
+#     (POST /api/board/restore) и перезапускает Python уже с памятью;
+#   * если стёрт и адрес облака — плата ищет облако в сети и просит
+#     подключения с кодом; владелец жмёт «Подключить» в облаке.
+# ===========================================================================
+_SAFE = {"state": "", "last": 0.0, "hash": "", "err": "", "restored": "", "pair_code": "",
+         "pair_state": "", "found": ""}
+_SAFE_SKIP = ("neuro12_watchdog.json",)
+
+
+def _safe_files():
+    """{относительный путь: текст} — все JSON платы (кроме словарей из пакета)."""
+    out = {}
+    root = _base_dirs()[0]
+    for sub in ("", "python"):
+        d = os.path.join(root, sub)
+        try:
+            names = os.listdir(d)
+        except Exception:
+            continue
+        for n in names:
+            if not n.endswith(".json") or n in _SAFE_SKIP:
+                continue
+            p = os.path.join(d, n)
+            try:
+                if os.path.getsize(p) > 30 * 1024 * 1024:
+                    continue
+                with open(p, "r", encoding="utf-8") as f:
+                    out[(sub + "/" if sub else "") + n] = f.read()
+            except Exception:
+                continue
+    return out
+
+
+def safe_backup_now():
+    import base64
+    import gzip
+    import hashlib
+    url, token = _cloud_base()
+    if not url:
+        return False
+    files = _safe_files()
+    if not files:
+        return False
+    raw = json.dumps(files, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    h = hashlib.sha1(raw).hexdigest()
+    if h == _SAFE["hash"]:
+        return True                      # ничего не изменилось
+    blob = base64.b64encode(gzip.compress(raw, 6)).decode("ascii")
+    r, err = _http_json_err(url + "/api/board/backup", {"board": _hostname(), "blob": blob,
+                                                         "n": len(files)}, token=token, timeout=120)
+    if r and r.get("ok"):
+        _SAFE.update(hash=h, last=time.time(), err="", state="копия в облаке")
+        return True
+    _SAFE["err"] = str(err or (r or {}).get("error") or "?")[:120]
+    return False
+
+
+def _safe_restore():
+    """Свежая установка: забрать память из облака и перезапустить Python."""
+    import base64
+    import gzip
+    url, token = _cloud_base()
+    if not url:
+        return False
+    root = _base_dirs()[0]
+    marker = os.path.join(root, ".n12_restored")
+    if os.path.exists(marker):
+        return False
+    r, err = _http_json_err(url + "/api/board/restore", {"board": _hostname(), "fresh": True},
+                            token=token, timeout=120)
+    if not (r and r.get("ok") and r.get("blob")):
+        _SAFE["restored"] = "копии нет: %s" % ((r or {}).get("error") or err or "?")
+        return False
+    try:
+        files = json.loads(gzip.decompress(base64.b64decode(r["blob"])).decode("utf-8"))
+    except Exception as e:
+        _SAFE["restored"] = "копия битая: %s" % e
+        return False
+    keep = {"cloud_url": CFG.get("cloud_url"), "token": CFG.get("token")}
+    n = 0
+    for rel, text in files.items():
+        if ".." in rel or rel.startswith("/") or not rel.endswith(".json"):
+            continue
+        p = os.path.join(root, rel)
+        try:
+            os.makedirs(os.path.dirname(p), exist_ok=True)
+            if rel.endswith(_CFG_NAME):          # адрес облака и токен — нынешние
+                d = json.loads(text)
+                d.update({k: v for k, v in keep.items() if v})
+                text = json.dumps(d, ensure_ascii=False, indent=2)
+            with open(p + ".tmp", "w", encoding="utf-8") as f:
+                f.write(text)
+            os.replace(p + ".tmp", p)
+            n += 1
+        except Exception:
+            continue
+    with open(marker, "w") as f:
+        f.write(str(time.time()))
+    log("СЕЙФ", "память восстановлена из копии «%s»: %d файлов — перезапускаю Python" % (r.get("from"), n))
+    add_message("system", "🛟 Память восстановлена из облака (копия «%s», %d файлов). Перезапускаюсь…"
+                % (r.get("from"), n), "Сейф")
+    time.sleep(2)
+    import sys
+    os.execv(sys.executable, [sys.executable] + sys.argv)     # тот же процесс — уже с памятью
+
+
+_PAIR_NETS = ("192.168.1", "192.168.0", "192.168.2", "192.168.3", "192.168.31", "192.168.43",
+              "192.168.88", "192.168.100", "10.0.0", "10.0.1", "172.16.0")
+
+
+def _find_cloud():
+    """Ищем облако «мозг-12» (порт 8077, /api/health) в типичных домашних сетях."""
+    import socket
+    from concurrent.futures import ThreadPoolExecutor
+    nets = list(_PAIR_NETS)
+    try:                                   # своя подсеть, если видна из контейнера
+        so = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        so.connect(("8.8.8.8", 80))
+        mine = so.getsockname()[0].rsplit(".", 1)[0]
+        so.close()
+        if not mine.startswith("172.") and mine not in nets:
+            nets.insert(0, mine)
+    except Exception:
+        pass
+
+    def probe(ip):
+        try:
+            with socket.create_connection((ip, 8077), timeout=0.3):
+                pass
+        except Exception:
+            return None
+        try:
+            with urllib.request.urlopen("http://%s:8077/api/health" % ip, timeout=3) as rr:
+                d = json.loads(rr.read().decode("utf-8", "replace") or "{}")
+            return ip if d.get("service") == "neuro12-cloud" else None
+        except Exception:
+            return None
+
+    for net in nets:
+        with ThreadPoolExecutor(max_workers=96) as ex:
+            for ip in ex.map(probe, ["%s.%d" % (net, i) for i in range(1, 255)]):
+                if ip:
+                    return ip
+    return None
+
+
+def safe_worker():
+    import random
+    time.sleep(30)
+    if FRESH_INSTALL:
+        _SAFE["state"] = "свежая установка — ищу копию памяти"
+    while True:
+        try:
+            url, token = _cloud_base()
+            if not url:                                   # адреса облака нет — подключаемся
+                if not _SAFE["found"]:
+                    _SAFE["state"] = "ищу облако в сети…"
+                    ip = _find_cloud()
+                    if not ip:
+                        _SAFE["state"] = "облако в сети не найдено (впиши адрес в ⚙ платы)"
+                        time.sleep(120)
+                        continue
+                    _SAFE["found"] = ip
+                    _SAFE["pair_code"] = "%04d" % random.randint(0, 9999)
+                    add_message("system", "🛟 Нашла облако %s. Код подключения: %s — нажми «Подключить» "
+                                "в облаке (⚙ → Общие → «Сейф памяти плат»)" % (ip, _SAFE["pair_code"]), "Сейф")
+                ip = _SAFE["found"]
+                try:
+                    with urllib.request.urlopen("http://%s:8077/api/board/pair?board=%s&code=%s&ver=%s" % (
+                            ip, urllib.parse.quote(_hostname()), _SAFE["pair_code"], APP_VERSION), timeout=10) as rr:
+                        d = json.loads(rr.read().decode("utf-8", "replace") or "{}")
+                except Exception as e:
+                    d = {"error": str(e)[:80]}
+                if d.get("token"):
+                    CFG["cloud_url"], CFG["token"] = "http://%s:8077" % ip, d["token"]
+                    save_cfg(CFG)
+                    _SAFE.update(state="подключена к облаку %s" % ip, pair_state="подключена")
+                    add_message("system", "🛟 Подключилась к облаку %s" % ip, "Сейф")
+                    continue
+                if d.get("denied"):
+                    _SAFE.update(pair_state="отклонена", found="")
+                    time.sleep(600)
+                    continue
+                _SAFE.update(pair_state="ждёт кнопки владельца (код %s)" % _SAFE["pair_code"],
+                             state="жду подключения в облаке %s" % ip)
+                time.sleep(10)
+                continue
+            if FRESH_INSTALL and not _SAFE["restored"]:
+                _safe_restore()                         # при успехе процесс перезапустится
+            if time.time() - _SAFE["last"] > 600:
+                safe_backup_now()
+        except Exception as e:
+            _SAFE["err"] = "%s: %s" % (type(e).__name__, str(e)[:100])
+        time.sleep(30)
+
+
 def mic_live_worker():
     """v2.93: живой звук. Пока облако держит mic_live (кнопка «Слушать» в
     облаке), каждые ~0.5 с шлём накопленный PCM 16 кГц в /api/hearing/stream;
@@ -13718,6 +13926,7 @@ def main():
     threading.Thread(target=mic_live_worker, daemon=True).start()     # v2.93: живой звук
     threading.Thread(target=vosk_install_worker, daemon=True).start() # v2.93: Vosk на плате
     threading.Thread(target=vr_worker, daemon=True).start()           # v2.94: голосовой модуль VR3
+    threading.Thread(target=safe_worker, daemon=True).start()         # v2.95: сейф памяти в облаке
     try:
         _crash_hooks()                                            # v2.61
     except Exception:

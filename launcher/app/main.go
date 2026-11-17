@@ -35,7 +35,7 @@ import (
 	"time"
 )
 
-const VER = "3.162.1"
+const VER = "3.162.2"
 
 //go:embed ui.html
 var uiHTML string

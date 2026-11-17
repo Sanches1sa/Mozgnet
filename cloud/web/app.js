@@ -2229,6 +2229,50 @@ async function micWire() {
   MIC_T = setTimeout(micWire, 2500);
 }
 
+/* v3.180: СЕЙФ ПАМЯТИ ПЛАТ и подключение новой платы по кнопке */
+async function safeWire() {
+  const box = $('#safeForm');
+  if (!box) return;
+  let r;
+  try { r = await api('/api/board/safe'); } catch (e) { box.textContent = e.message; return; }
+  const bs = r.backups || [], onl = bs.filter(b => b.online).map(b => b.board);
+  let h = '<label class="switch-inline"><input type="checkbox" id="safeAuto"' + (r.auto ? ' checked' : '') + '> новая установка платы (пустая память) сама берёт последнюю копию</label>';
+  (r.pairs || []).forEach(p => {
+    h += '<div class="card" style="border:1px solid #ca4;padding:8px;margin:6px 0">📟 Плата <b>' + esc(p.board) + '</b> (' + esc(p.ip) + ', v' + esc(p.ver || '?') + ') просит подключиться. Код на плате: <b style="font-size:18px">' + esc(p.code) + '</b> ' +
+      '<button class="btn" data-pair="1" data-b="' + esc(p.board) + '" data-c="' + esc(p.code) + '">✅ Подключить</button> <button class="btn" data-pair="0" data-b="' + esc(p.board) + '" data-c="' + esc(p.code) + '">❌ Отклонить</button></div>';
+  });
+  if (!bs.length) h += '<div class="muted">Копий пока нет: плата v2.95+ присылает копию раз в 10 минут.</div>';
+  bs.forEach(b => {
+    h += '<div style="border-top:1px solid var(--line,#333);padding:5px 0">' + (b.online ? '🟢' : '⚪') + ' <b>' + esc(b.board) + '</b> · копия ' + new Date((b.ts || 0) * 1000).toLocaleString('ru') +
+      ' · ' + (b.kb || 0) + ' КБ · файлов ' + (b.files || []).length + ' · копий ' + b.copies +
+      (onl.filter(x => x !== b.board).length ? ' · <select data-rto="' + esc(b.board) + '"><option value="">восстановить на плату…</option>' + onl.filter(x => x !== b.board).map(x => '<option>' + esc(x) + '</option>').join('') + '</select>' : '') + '</div>';
+  });
+  box.innerHTML = h;
+  $('#safeAuto').onchange = () => api('/api/board/safe', { body: { action: 'auto', on: $('#safeAuto').checked } });
+  box.querySelectorAll('[data-pair]').forEach(x => x.onclick = async () => {
+    await api('/api/board/safe', { body: { action: 'pair', board: x.dataset.b, code: x.dataset.c, approve: x.dataset.pair === '1' } });
+    toast(x.dataset.pair === '1' ? 'Плата подключится за ~10 с' : 'Отклонено', 'ok'); safeWire();
+  });
+  box.querySelectorAll('[data-rto]').forEach(x => x.onchange = async () => {
+    if (!x.value || !confirm('Плата ' + x.value + ' заменит свою память копией «' + x.dataset.rto + '» после перезапуска приложения. Продолжить?')) return;
+    await api('/api/board/safe', { body: { action: 'restore_to', to: x.value, from: x.dataset.rto } });
+    toast('Готово: перезапусти приложение на плате ' + x.value, 'ok');
+  });
+}
+/* запросы подключения плат — заметны на любой вкладке */
+setInterval(async () => {
+  try {
+    const r = await api('/api/board/safe');
+    const n = (r.pairs || []).length;
+    let bn = document.getElementById('pairBanner');
+    if (!n) { if (bn) bn.remove(); return; }
+    if (!bn) { bn = document.createElement('div'); bn.id = 'pairBanner'; bn.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);top:10px;z-index:9999;background:#2a2410;border:1px solid #ca4;border-radius:10px;padding:8px 14px;cursor:pointer'; document.body.appendChild(bn); }
+    const p = r.pairs[0];
+    bn.textContent = '📟 Плата ' + p.board + ' просит подключиться (код ' + p.code + ') — нажми, чтобы решить';
+    bn.onclick = () => { if (typeof openSettings === 'function') openSettings('common'); setTimeout(() => { const c = $('#safeBox'); if (c) c.scrollIntoView({ block: 'center' }); }, 400); };
+  } catch (e) {}
+}, 15000);
+
 /* ------------------------- Общие (вкладка) ------------------------------- */
 function tabCommon() {
   const p = $('[data-pane="common"]');
@@ -2237,6 +2281,7 @@ function tabCommon() {
   const L = st.load || {};
   setTimeout(partWire, 60);            // v3.177.2: кванты на D6 — свой блок
   clearTimeout(MIC_T); MIC_T = setTimeout(micWire, 80);   // v3.178: уши и глаза плат
+  setTimeout(safeWire, 100);                               // v3.180: сейф памяти плат
   p.innerHTML = '<h2>Общие</h2>' +
     /* v3.173.1: блок Pillow был два раза (одинаковые id — второй вечно «Проверка…») */
     '<div class="fgroup" style="margin-bottom:12px"><label><b>Зрение — Pillow</b></label>' +
@@ -2260,6 +2305,9 @@ function tabCommon() {
     '<div class="mini">Скетч платы выдаёт на пин D6 дискретные уровни ШИМ: короткие вспышки, пакеты и низкий фон. ' +
     'Шум конденсатора на A4 становится стимулом нейронам и ускоряет подбор весов. Это имитация квантов: настоящие частицы конденсатор не рождает.</div>' +
     '<div id="partForm" class="mini" style="margin-top:6px">загрузка…</div></div>' +
+    '<div class="card" id="safeBox" style="margin:8px 0 12px"><h3 style="margin-top:0">🛟 Сейф памяти плат и подключение</h3>' +
+    '<div class="mini">App Lab при обновлении стирает папку приложения платы — вместе с памятью и настройками. Плата v2.95+ сама присылает сюда копию всех своих JSON раз в 10 минут; после переустановки она сама находит облако в сети, просит подключения (кнопка ниже) и забирает память из копии.</div>' +
+    '<div id="safeForm" class="mini" style="margin-top:6px">загрузка…</div></div>' +
     '<div class="card" id="micBox" style="margin:8px 0 12px"><h3 style="margin-top:0">🎤 Микрофон и 📷 камера плат (плата v2.93+)</h3>' +
     '<div class="mini">Уровень микрофона, распознанные фразы и живой звук с платы — нажми «Слушать», и плата начнёт слать звук в облако на ПК; ' +
     'для камеры по проводу (UART) видны счётчики приёмника: сколько байт и целых кадров дошло и почему нет кадра.</div>' +

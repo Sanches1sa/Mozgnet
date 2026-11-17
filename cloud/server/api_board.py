@@ -738,6 +738,48 @@ def h_vosk_model_zip(req):
     return 200, "raw", (_VOSK_ZIP["data"], "application/zip", "vosk-ru.zip")
 
 
+def h_board_backup(req):
+    """v3.180: копия памяти платы (все её JSON сжатым пакетом)."""
+    import boardsafe
+    b = req.body or {}
+    r = boardsafe.backup_in(b.get("board"), b.get("blob"), b.get("n"))
+    return (200 if r.get("ok") else 400), r
+
+
+def h_board_restore(req):
+    import boardsafe
+    b = req.body or {}
+    return 200, boardsafe.restore_for(b.get("board"), bool(b.get("fresh")))
+
+
+def h_board_pair(req):
+    """v3.180: плата без адреса облака просит подключения (без токена)."""
+    import boardsafe
+    if req.method == "GET":
+        q = req.query
+        return 200, boardsafe.pair_request(q.get("board"), q.get("code"), req.client_ip, q.get("ver"))
+    b = req.body or {}
+    return 200, boardsafe.pair_request(b.get("board"), b.get("code"), req.client_ip, b.get("ver"))
+
+
+def h_board_safe(req):
+    """v3.180: владелец — копии плат и запросы подключения."""
+    import boardsafe
+    if req.method == "GET":
+        return 200, {"ok": True, "backups": boardsafe.list_backups(), "pairs": boardsafe.pairs(),
+                     "auto": store.settings().get("board_auto_restore", True) is not False}
+    b = req.body or {}
+    act = b.get("action")
+    if act == "pair":
+        return 200, boardsafe.pair_decide(b.get("board"), b.get("code"), bool(b.get("approve")))
+    if act == "restore_to":
+        return 200, boardsafe.force_restore(b.get("to"), b.get("from"))
+    if act == "auto":
+        store.update_settings({"board_auto_restore": bool(b.get("on"))})
+        return 200, {"ok": True}
+    return 400, {"ok": False, "error": "неизвестное действие"}
+
+
 def h_hearing_live_wav(req):
     import micstream
     data = micstream.live_wav(req.query.get("board") or None, req.query.get("sec") or 5)
@@ -1326,7 +1368,13 @@ _r("GET", "api/hearing/live", h_hearing_live, "panel")
 _r("POST", "api/hearing/live", h_hearing_live, "panel")
 _r("GET", "api/hearing/live.wav", h_hearing_live_wav, "panel")
 _r("POST", "api/hearing/voice", h_hearing_voice)
-_r("POST", "api/board/codejob", h_board_codejob, auth=True)      # v3.178: результат задания платы
+_r("POST", "api/board/codejob", h_board_codejob, auth=True)
+_r("POST", "api/board/backup", h_board_backup, auth=True)      # v3.180: сейф памяти плат
+_r("POST", "api/board/restore", h_board_restore, auth=True)
+_r("GET", "api/board/pair", h_board_pair, "open")               # плата без токена: подключение
+_r("POST", "api/board/pair", h_board_pair, "open")
+_r("GET", "api/board/safe", h_board_safe)                       # владелец
+_r("POST", "api/board/safe", h_board_safe)      # v3.178: результат задания платы
 _r("GET", "api/code/board", h_code_board)                          # v3.178: код на плате (владелец)
 _r("POST", "api/code/board", h_code_board)
 _r("GET", "api/hearing/vosk-model.zip", h_vosk_model_zip, auth=True)                # v3.178: голосовой ввод (владелец)

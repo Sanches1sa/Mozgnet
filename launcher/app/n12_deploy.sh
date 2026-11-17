@@ -40,10 +40,13 @@ pause_wd
 if [ -d neuro_12.old ]; then          # память платы — из прежней копии
   # v3.152: память платы ПЕРЕКРЫВАЕТ файлы из копии с компьютера (раньше cp -n
   # оставлял файлы с компьютера, и накопленная память платы терялась)
-  for f in neuro_12.old/neuro12_*.json neuro_12.old/mozgnet.json neuro_12.old/*.log; do
+  # v3.162.2: ВСЕ JSON платы (память, словари, веса, буферы…), а не только
+  # neuro12_*.json — раньше words_memory.json, selfcode_state.json и др. терялись.
+  # Файлы, которые приходят С ПАКЕТОМ (словари python/dicts), берутся из пакета.
+  for f in neuro_12.old/*.json neuro_12.old/*.log neuro_12.old/.n12_restored; do
     [ -f "$f" ] && cp -f "$f" neuro_12/
   done
-  for f in neuro_12.old/python/neuro12_*.json neuro_12.old/python/mozgnet.json; do
+  for f in neuro_12.old/python/*.json; do
     [ -f "$f" ] && mkdir -p neuro_12/python && cp -f "$f" neuro_12/python/
   done
   rm -rf neuro_12.old/.cache          # кэш старой сборки — только место занимает
