@@ -168,6 +168,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: arduino-cli и ядро UNO Q
         run: |
+          mkdir -p $HOME/bin
           curl -fsSL https://raw.githubusercontent.com/arduino/arduino-cli/master/install.sh | BINDIR=$HOME/bin sh
           echo "$HOME/bin" >> $GITHUB_PATH
           $HOME/bin/arduino-cli core update-index
