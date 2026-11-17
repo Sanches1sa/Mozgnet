@@ -1971,10 +1971,16 @@ void broadcastStimWord(const char *w) {
   utf8Fix(stim);   /* v2.24: %.28s резал по байтам — нейрону не сеем битую
                     * букву, иначе он возвращает её в словах вечно */
 #if LINK_SW_WIRE
+  /* v2.94.7: только ЖИВЫМ нейронам и с передышкой: программный I2C на 20 кГц
+   * — до 15 мс на нейрон; 12 подряд без сна душили поток моста (вызовы из
+   * Linux — «timed out», в журнале «нейроны заняли MCU») */
   for (uint8_t i = 0; i < NEURONS; i++) {
+    if (!ns[i].alive) continue;
     NeuroBus.beginTransmission((uint8_t)(I2C_BASE_ADDR + i));
     NeuroBus.write((const uint8_t *)stim, (uint8_t)min((size_t)31, strlen(stim)));
     NeuroBus.endTransmission();
+    camUartTick();
+    delay(1);
   }
 #else
   NeuroSer.print(stim); NeuroSer.print('\n');
@@ -2348,10 +2354,16 @@ void sampleCapNoise() {
   capMn = 1023; capMx = 0; capN = 0;
 }
 
+static uint32_t capSatSince = 0;              // v2.94.7: A4 «в воздухе» (всегда 255)
 void noiseAsStim() {
-  if (capNoise < 30) return;                 // порог
   uint32_t now = millis();
-  if ((int32_t)(now - noiseStimMs) < 400) return;  // не чаще 2.5 Гц
+  if (capNoise >= 250) { if (!capSatSince) capSatSince = now; }
+  else capSatSince = 0;
+  /* шум на пределе дольше 10 с — вход A4 ни к чему не подключён: такой
+   * «шум» не стимул (раньше он каждые 0,4 с гнал STIM всем нейронам) */
+  if (capSatSince && (uint32_t)(now - capSatSince) > 10000) return;
+  if (capNoise < 30) return;                 // порог
+  if ((int32_t)(now - noiseStimMs) < 2000) return;  // v2.94.7: не чаще 0,5 Гц (было 2,5 Гц)
   noiseStimMs = now;
   /* Стимул нейронам: чем сильнее шум — тем «ярче» слово-стимул */
   char stim[20];
@@ -2908,10 +2920,16 @@ void broadcastStim(const char *text) {
   snprintf(stim, sizeof(stim), "STIM;%s", clean);   // иначе нейрон не узнает "STIM;"
   utf8Fix(stim);                       /* v2.24: в мост/нейронам — целый UTF-8 */
 #if LINK_SW_WIRE
+  /* v2.94.7: только ЖИВЫМ нейронам и с передышкой: программный I2C на 20 кГц
+   * — до 15 мс на нейрон; 12 подряд без сна душили поток моста (вызовы из
+   * Linux — «timed out», в журнале «нейроны заняли MCU») */
   for (uint8_t i = 0; i < NEURONS; i++) {
+    if (!ns[i].alive) continue;
     NeuroBus.beginTransmission((uint8_t)(I2C_BASE_ADDR + i));
     NeuroBus.write((const uint8_t *)stim, (uint8_t)min((size_t)31, strlen(stim)));
     NeuroBus.endTransmission();
+    camUartTick();
+    delay(1);
   }
 #else
   NeuroSer.print(stim); NeuroSer.print('\n');
@@ -3535,7 +3553,7 @@ void loop() {
   static uint32_t sverMs = 0;            // v2.94.6: версия СКЕТЧА — видно, залился ли новый
   if ((uint32_t)(millis() - sverMs) >= 10000) {
     sverMs = millis();
-    Bridge.notify("on_sver", String("2.94.6;up=") + String(millis() / 1000UL) + ";loops=" + String((unsigned long)loopCount));
+    Bridge.notify("on_sver", String("2.94.7;up=") + String(millis() / 1000UL) + ";loops=" + String((unsigned long)loopCount));
   }
 #endif
   static uint32_t yieldMs = 0;
