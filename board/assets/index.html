@@ -90,6 +90,14 @@ if(a&&a!=='teal')document.documentElement.setAttribute('data-accent',a);}catch(e
       <label class="chk"><input id="s-vosk" type="checkbox"> Vosk на плате (v2.93): плата сама переводит речь с микрофона в текст (ставится сама, ~45 МБ)</label>
       <label class="chk"><input id="s-codecloud" type="checkbox"> код из облака (v2.93): раздел «Код» облака проверяет и запускает Python на плате</label>
       <label class="chk"><input id="s-admincloud" type="checkbox"> администрирование из облака (v2.93): окно «Серверы» выполняет команды в контейнере платы</label>
+      <div id="vrBox" style="border:1px solid #2a3344;border-radius:10px;padding:8px 10px;margin:8px 0">
+        <b>🗣 Голосовой модуль ELECHOUSE VR3 (v2.94)</b> — TXD→делитель 1к/2к→D12, RXD←D13, VCC 5V, GND.
+        <label class="chk"><input id="s-vr" type="checkbox"> включён</label>
+        <label class="chk"><input id="s-vrbrain" type="checkbox"> узнанная команда — реплика мозгу</label>
+        <div>Записи в распознавателе (до 7, 0..79): <input id="s-vrload" type="text" style="width:140px" placeholder="0,1,2,3,4,5,6"> <button type="button" id="vrLoad">Загрузить</button> <button type="button" id="vrCheck">Проверить модуль</button></div>
+        <div>Обучить: запись <input id="vrRec" type="number" min="0" max="79" value="0" style="width:56px"> слово <input id="vrSig" type="text" style="width:140px" placeholder="свет"> <button type="button" id="vrTrain">🎙 Обучить</button> <span class="muted">(говори по подсказке 2 раза)</span></div>
+        <pre id="vrState" style="white-space:pre-wrap;font-size:12px;max-height:180px;overflow:auto;margin:6px 0 0">—</pre>
+      </div>
       <label class="chk"><input id="s-game" type="checkbox"> игра «РОК-12» (v2.69): мозгу можно играть в DOOM-подобную игру облака — играет, только когда сам захочет (скука, напряжение сети, приглашение владельца)</label>
       <label class="chk"><input id="s-sync" type="checkbox"> синхронизация с платформой (v2.67): генератор скетча подтягивается к общему ритму плат и облака (нужен пересобранный скетч)</label>
     </div>

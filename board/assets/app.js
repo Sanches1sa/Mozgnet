@@ -802,6 +802,9 @@ async function loadSettings() {
     if ($("s-vosk")) $("s-vosk").checked = s.mic_board_asr !== false;          /* v2.93 */
     if ($("s-codecloud")) $("s-codecloud").checked = s.code_from_cloud !== false;
     if ($("s-admincloud")) $("s-admincloud").checked = s.admin_from_cloud !== false;
+    if ($("s-vr")) $("s-vr").checked = s.vr_on !== false;                 /* v2.94 */
+    if ($("s-vrbrain")) $("s-vrbrain").checked = s.vr_to_brain !== false;
+    if ($("s-vrload") && document.activeElement !== $("s-vrload")) $("s-vrload").value = s.vr_load || "0,1,2,3,4,5,6";
     if ($("s-cam")) $("s-cam").checked = s.cam_on !== false;      /* v2.73 */
     if ($("s-camurl")) $("s-camurl").value = s.cam_url || "";
     if ($("s-camai")) $("s-camai").checked = s.cam_ai !== false;       /* v2.88 */
@@ -834,6 +837,9 @@ async function saveSettings() {
     mic_board_asr: $("s-vosk") ? $("s-vosk").checked : true,
     code_from_cloud: $("s-codecloud") ? $("s-codecloud").checked : true,
     admin_from_cloud: $("s-admincloud") ? $("s-admincloud").checked : true,
+    vr_on: $("s-vr") ? $("s-vr").checked : true,
+    vr_to_brain: $("s-vrbrain") ? $("s-vrbrain").checked : true,
+    vr_load: $("s-vrload") ? $("s-vrload").value.trim() : "0,1,2,3,4,5,6",
     cam_on: $("s-cam") ? $("s-cam").checked : true,
     cam_url: $("s-camurl") ? $("s-camurl").value.trim() : "",
     cam_ai: $("s-camai") ? $("s-camai").checked : true,                /* v2.88 */
@@ -1160,3 +1166,23 @@ setInterval(pollState, 1000);
 setInterval(pollTts, 1500);
 setInterval(renderDictInfo, 30000);
 setInterval(pollTensor, 2000);          /* v2.39: компьютер даёт ресурс тензору */
+
+
+/* v2.94: голосовой модуль ELECHOUSE VR3 на D12/D13 */
+(function () {
+  const show = v => {
+    const el = document.getElementById("vrState");
+    if (!el || !v) return;
+    el.textContent = "состояние: " + (v.state || "?") + (v.on === false ? " (выключен)" : "") +
+      " · байт " + (v.bytes || 0) + ", кадров " + (v.frames || 0) + ", ошибок " + (v.errors || 0) +
+      (v.last ? "\nпоследняя команда: «" + v.last + "» (всего " + (v.heard || 0) + ")" : "") +
+      (v.err ? "\n⚠ " + v.err : "") + "\n" + (v.log || []).slice().reverse().join("\n");
+  };
+  const act = async (b) => { try { const r = await apiPost("/api/vr", b); show(r.vr); } catch (e) {} };
+  const poll = async () => { try { const r = await apiGet("/api/vr"); show(r.vr); } catch (e) {} };
+  const on = (id, fn) => { const el = document.getElementById(id); if (el) el.onclick = fn; };
+  on("vrCheck", () => act({ act: "check" }));
+  on("vrLoad", () => act({ act: "load", recs: document.getElementById("s-vrload").value.trim() }));
+  on("vrTrain", () => act({ act: "train", rec: +document.getElementById("vrRec").value, sig: document.getElementById("vrSig").value.trim() }));
+  setInterval(() => { if (document.getElementById("vrBox") && document.getElementById("vrBox").offsetParent) poll(); }, 1500);
+})();

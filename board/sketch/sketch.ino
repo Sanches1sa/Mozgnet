@@ -276,7 +276,15 @@ extern "C" __attribute__((weak)) size_t strlcat(char *dst, const char *src, size
 
 /* ------- МИКРОФОН / ЗВУК (цифровые выходы модулей) ----------------------- */
 #define MIC_PINS_N     2
-const uint8_t MIC_PIN[MIC_PINS_N] = {12, 13};  // DO модулей звука (KY-037/038)
+const uint8_t MIC_PIN[MIC_PINS_N] = {10, 11};  // DO модулей звука (KY-037/038); v2.94: D12/D13 -> D10/D11
+/* v2.94: ГОЛОСОВОЙ МОДУЛЬ ELECHOUSE VR3 (V3.1) — UART 9600 на D12/D13.
+ *   TXD модуля -> делитель 1к/2к -> D12 (приём платы)
+ *   RXD модуля <- D13 (передача платы), VCC -> 5V, GND -> GND
+ * Аппаратный UART (D0/D1) занят камерой — приём программный: по фронту
+ * старт-бита прерывание читает байт (~1 мс), передача — по micros(). */
+#define VR_RX_PIN      12
+#define VR_TX_PIN      13
+#define VR_BIT_US      104      // 9600 бод
 #define MIC_WIN_MS     40       // окно подсчёта переходов звука, мс
 #define MIC_HITS_MAX   12       // столько переходов за окно = 100% громкости
 
@@ -1581,6 +1589,108 @@ String rpcCamFrameInfo() {
  * cam_vote("id|ф1|ф2|...") -> камере уходит строка V..., ответ — в cam_vote_res
  * cam_vote_res()     -> последний JSON голоса камеры ("" — ещё нет)
  * cam_say("фраза")   -> камере уходит W...: она учит слова со своей сценой */
+/* ---------------- v2.94: VR3 — программный UART 9600 на D12/D13 ---------------- */
+static volatile uint8_t  vrRing[256];
+static volatile uint8_t  vrHead = 0, vrTail = 0;
+static volatile uint32_t vrBytes = 0, vrErr = 0;
+static uint8_t  vrFr[40];           // кадр AA | L | cmd | data | 0A (без AA и L)
+static uint8_t  vrFrLen = 0, vrFrGot = 0, vrSt = 0;
+static uint32_t vrFrMs = 0, vrFrames = 0;
+static char     vrOut[600];         // готовые кадры hex через ';' (забирает vr_read)
+
+static inline void vrWaitUntil(uint32_t t) { while ((int32_t)(micros() - t) < 0) {} }
+
+void vrRxIsr() {
+  if (digitalRead(VR_RX_PIN) != LOW) return;       // отложенный фронт внутри байта — не старт
+  uint32_t t0 = micros();
+  uint8_t b = 0;
+  for (uint8_t i = 0; i < 8; i++) {                // середины бит: 1.5, 2.5 … 8.5 бита
+    vrWaitUntil(t0 + VR_BIT_US + VR_BIT_US / 2 + (uint32_t)i * VR_BIT_US);
+    if (digitalRead(VR_RX_PIN) == HIGH) b |= (uint8_t)(1u << i);
+  }
+  vrWaitUntil(t0 + 9u * VR_BIT_US + VR_BIT_US / 2);
+  if (digitalRead(VR_RX_PIN) != HIGH) { vrErr++; return; }   // нет стоп-бита
+  uint8_t n = (uint8_t)(vrHead + 1);
+  if (n != vrTail) { vrRing[vrHead] = b; vrHead = n; }
+  vrBytes++;
+}
+
+static void vrWriteByte(uint8_t b) {
+  uint32_t t0 = micros();
+  digitalWrite(VR_TX_PIN, LOW);
+  vrWaitUntil(t0 + VR_BIT_US);
+  for (uint8_t i = 0; i < 8; i++) {
+    digitalWrite(VR_TX_PIN, ((b >> i) & 1) ? HIGH : LOW);
+    vrWaitUntil(t0 + (uint32_t)(i + 2) * VR_BIT_US);
+  }
+  digitalWrite(VR_TX_PIN, HIGH);
+  vrWaitUntil(t0 + 10u * VR_BIT_US);
+}
+
+static void vrFrameDone() {
+  char hx[3 * 40 + 2];
+  uint8_t k = 0;
+  static const char H[] = "0123456789ABCDEF";
+  for (uint8_t i = 0; i + 1 < vrFrGot && k + 3 < sizeof(hx); i++) {   // без хвоста 0A
+    hx[k++] = H[vrFr[i] >> 4];
+    hx[k++] = H[vrFr[i] & 15];
+  }
+  hx[k] = 0;
+  size_t ol = strlen(vrOut);
+  if (ol + k + 2 >= sizeof(vrOut)) { vrOut[0] = 0; ol = 0; }          // никто не забирал — с начала
+  memcpy(vrOut + ol, hx, k);
+  vrOut[ol + k] = ';';
+  vrOut[ol + k + 1] = 0;
+  vrFrames++;
+}
+
+void vrTick() {
+  if (vrSt && (uint32_t)(millis() - vrFrMs) > 200) vrSt = 0;         // оборванный кадр
+  while (vrTail != vrHead) {
+    uint8_t b = vrRing[vrTail];
+    vrTail = (uint8_t)(vrTail + 1);
+    vrFrMs = millis();
+    if (vrSt == 0) { if (b == 0xAA) vrSt = 1; }
+    else if (vrSt == 1) {
+      if (b < 2 || b > sizeof(vrFr)) { vrSt = (b == 0xAA) ? 1 : 0; continue; }
+      vrFrLen = b; vrFrGot = 0; vrSt = 2;
+    } else {
+      vrFr[vrFrGot++] = b;
+      if (vrFrGot >= vrFrLen) {
+        if (b == 0x0A) vrFrameDone(); else vrErr++;
+        vrSt = 0;
+      }
+    }
+  }
+}
+
+/* RPC vr_read -> "b=<байт>;e=<ошибок>;f=<кадров>|HEX;HEX;" (кадры: cmd+data) */
+String rpcVrRead() {
+  String r = "b=" + String(vrBytes) + ";e=" + String(vrErr) + ";f=" + String(vrFrames) + "|" + String(vrOut);
+  vrOut[0] = 0;
+  return r;
+}
+
+/* RPC vr_send("HEX") — cmd+data; плата сама добавит AA, длину и 0A */
+String rpcVrSend(String hex) {
+  uint8_t buf[40];
+  uint8_t n = 0;
+  hex.trim();
+  for (unsigned i = 0; i + 1 < hex.length() && n < sizeof(buf); i += 2) {
+    char a = hex[i], c = hex[i + 1];
+    auto v = [](char x) -> int { return x >= '0' && x <= '9' ? x - '0' : x >= 'a' && x <= 'f' ? x - 'a' + 10 : x >= 'A' && x <= 'F' ? x - 'A' + 10 : -1; };
+    int hi = v(a), lo = v(c);
+    if (hi < 0 || lo < 0) return "bad hex";
+    buf[n++] = (uint8_t)(hi * 16 + lo);
+  }
+  if (!n) return "empty";
+  vrWriteByte(0xAA);
+  vrWriteByte((uint8_t)(n + 1));   // длина = cmd + data + 0A
+  for (uint8_t i = 0; i < n; i++) vrWriteByte(buf[i]);
+  vrWriteByte(0x0A);
+  return "ok";
+}
+
 static void camLine(char cmd, String arg) {
   arg.replace("\n", " ");
   arg.replace("\r", " ");
@@ -3036,6 +3146,8 @@ void rpcRegister() {
   Bridge.provide_safe("cam_vote", rpcCamVote);            /* v2.88: камера голосует за фразы */
   Bridge.provide_safe("cam_vote_res", rpcCamVoteRes);     /* v2.88: голос камеры */
   Bridge.provide_safe("cam_say", rpcCamSay);              /* v2.88: фраза мозга -> камере */
+  Bridge.provide_safe("vr_read", rpcVrRead);              /* v2.94: голосовой модуль VR3 */
+  Bridge.provide_safe("vr_send", rpcVrSend);
   Bridge.provide_safe("ping", rpcPing);                /* v2.14: пульс моста  */
   Bridge.provide_safe("sync_hz", rpcSyncHz);           /* v2.67: общий ритм платформы */
   Bridge.provide("diag", rpcDiag);                     /* v2.68: из потока моста — работает, даже если loop() завис */
@@ -3265,6 +3377,10 @@ void setup() {
   pinMode(NN_OUT_PIN, OUTPUT);         // v2.22: буфер слов (UTF-8 байты) на D6 (PWM)
   analogWrite(NN_OUT_PIN, 0);
   for (uint8_t k = 0; k < MIC_PINS_N; k++) pinMode(MIC_PIN[k], INPUT);
+  pinMode(VR_TX_PIN, OUTPUT);              // v2.94: VR3 — линия передачи в покое HIGH
+  digitalWrite(VR_TX_PIN, HIGH);
+  pinMode(VR_RX_PIN, INPUT_PULLUP);
+  attachInterrupt(digitalPinToInterrupt(VR_RX_PIN), vrRxIsr, FALLING);
 #if !LINK_SW_WIRE
   for (uint8_t b = 0; b < 4; b++) pinMode(MUX_PINS[b], OUTPUT);
 #endif
@@ -3358,7 +3474,7 @@ void loop() {
   loopStage = 1;  d4fTick();           camUartTick();   // v2.50: кадр камеры на D4 (если есть)
   loopStage = 2;  freqTick();          camUartTick();   // 1. генератор: меандр genHz на D4 -> A0 всех нейронов
   loopStage = 3;  voiceTick();         camUartTick();   // 2. динамик (v1.9): голос мозга / мотивация говорить
-  loopStage = 4;  micTick();           camUartTick();   // 3. микрофон: звук на D12/D13 -> micLevel
+  loopStage = 4;  micTick();  vrTick();  camUartTick();   // v2.94: + голосовой модуль VR3   // 3. микрофон: звук на D12/D13 -> micLevel
   loopStage = 5;  pollNext();          camUartTick();   // 4. опрос нейронов -> val_c
   loopStage = 6;  letterTick();        camUartTick();   // 5. буквогенератор (v2.3): нейросеть 1..33 -> буквы -> слова
   loopStage = 7;  d6Tick();            camUartTick();   // 5a. v2.22: проигрывание буфера слов на D6 (PWM)

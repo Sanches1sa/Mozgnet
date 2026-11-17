@@ -277,7 +277,7 @@ except Exception:
 # App Lab отсутствует (из-за него приложение не запускалось), arduino:tts
 # тоже не подключён. LLM и TTS работают ЧЕРЕЗ ОБЛАКО — см. секции [4] и [6].
 
-APP_VERSION = "2.93.1"
+APP_VERSION = "2.94.0"
 
 # ---------------------------------------------------------------------------
 #   v2.33 (2026): МОСТ-КАНАЛ БЕЗ ТАЙМАУТОВ — фикс «word_push не работает,
@@ -392,6 +392,9 @@ DEFAULT_CFG = {
     "mic_board_asr": True,      # v2.93: Vosk НА ПЛАТЕ — речь в текст прямо на плате
     "code_from_cloud": True,    # v2.93: облако может проверять/запускать код на плате (раздел «Код»)
     "admin_from_cloud": True,   # v2.93: окно «Серверы» облака может выполнять команды в контейнере платы
+    "vr_on": True,              # v2.94: голосовой модуль ELECHOUSE VR3 на D12/D13
+    "vr_load": "0,1,2,3,4,5,6", # v2.94: какие записи (0..79) грузить в распознаватель (до 7)
+    "vr_to_brain": True,        # v2.94: узнанная команда = реплика человека мозгу
     "mic_min_rms": 350,         # v2.70: порог громкости начала фразы (минимум)
     "grav_g": 1.0,              # v2.66: сила тяги (0 — выкл., до 3)
                                 # (по тому, что знает: память/файлы/наставник)
@@ -11833,6 +11836,8 @@ def api_get_settings():
             "mic_board_asr": bool(CFG.get("mic_board_asr", True)),      # v2.93
             "code_from_cloud": bool(CFG.get("code_from_cloud", True)),  # v2.93
             "admin_from_cloud": bool(CFG.get("admin_from_cloud", True)),
+            "vr_on": bool(CFG.get("vr_on", True)), "vr_to_brain": bool(CFG.get("vr_to_brain", True)),
+            "vr_load": str(CFG.get("vr_load") or ""),
             "mic_dev": str(CFG.get("mic_dev") or "default"),
             "cam_on": bool(CFG.get("cam_on", True)),        # v2.73
             "cam_ai": bool(CFG.get("cam_ai", True)),        # v2.88
@@ -11849,7 +11854,7 @@ def api_get_settings():
 def api_set_settings(data: dict):
     d = data or {}
     for k in ("cloud_url", "direct_url", "direct_model", "tts_voice", "mic_dev",
-              "cam_url"):
+              "cam_url", "vr_load"):
         if k in d:
             CFG[k] = str(d.get(k) or "").strip()
     # токены: пустая строка в форме = оставить как было (маска не возвращает их)
@@ -11862,7 +11867,7 @@ def api_set_settings(data: dict):
               "dictate_on", "curious_on", "brain_on", "long_answers",
               "advice_on", "gen_on", "words_to_board", "dict_sync",
               "grav_on", "sync_on", "game_on", "mic_on", "cam_on", "cam_ai",
-              "mic_board_asr", "code_from_cloud", "admin_from_cloud"):
+              "mic_board_asr", "code_from_cloud", "admin_from_cloud", "vr_on", "vr_to_brain"):
         if k in d:
             CFG[k] = bool(d.get(k))
     if "cam_ai_w" in d:                    # v2.88: вес голоса камеры
@@ -12862,6 +12867,7 @@ def mic_status():
     d["dev"] = str(CFG.get("mic_dev") or "default")
     d["queue"] = len(_MIC_Q)
     d["vosk"] = dict(_VOSK_ST)            # v2.93: распознавание на плате
+    d["vr"] = vr_status()                 # v2.94: голосовой модуль VR3
     return d
 
 
@@ -13224,6 +13230,156 @@ def _code_jobs_run(jobs):
         _CODEJOBS["busy"] = False
 
 
+# ===========================================================================
+# v2.94: ГОЛОСОВОЙ МОДУЛЬ ELECHOUSE VR3 (V3.1) на D12 (RX) / D13 (TX), 9600.
+# Скетч принимает байты программно и отдаёт готовые кадры (RPC vr_read),
+# команды модулю — RPC vr_send (cmd+data hex). Протокол модуля:
+#   AA | L | cmd | data | 0A, L = len(data)+2;
+#   00 проверка, 01 распознаватель, 21 sigtrain (обучить с подписью),
+#   30 загрузить записи, 31 очистить; ответы: 0D — узнана команда
+#   (GRPM, запись, индекс, длина подписи, подпись), 0A — подсказка
+#   («Speak now», «Success»…), FF — ошибка.
+# Узнанная команда -> сообщение «🗣 …», реплика мозгу (vr_to_brain) и
+# мысль в облако. Обучение — панель платы (⚙ → Голосовой модуль).
+# ===========================================================================
+_VR = {"state": "нет", "err": "", "bytes": 0, "frames": 0, "errors": 0, "seen": False,
+       "loaded": [], "last": "", "last_ts": 0.0, "heard": 0, "log": deque(maxlen=12),
+       "names": {}, "sent_load": 0.0}
+
+
+def vr_status():
+    d = {k: v for k, v in _VR.items() if k not in ("log", "sent_load", "names")}
+    d["log"] = list(_VR["log"])
+    d["on"] = bool(CFG.get("vr_on", True))
+    return d
+
+
+def vr_send(hexs):
+    r = _bridge_call("vr_send", str(hexs), timeout=4)
+    _VR["log"].append("→ %s (%s)" % (hexs, r or "нет ответа"))
+    return r == "ok"
+
+
+def _vr_records():
+    out = []
+    for x in str(CFG.get("vr_load") or "").replace(" ", "").split(","):
+        if x.isdigit() and int(x) < 80 and int(x) not in out:
+            out.append(int(x))
+    return out[:7]
+
+
+def _vr_frame(fr):
+    """Разбор кадра (cmd+data) от модуля."""
+    if not fr:
+        return
+    cmd, data = fr[0], fr[1:]
+    if cmd == 0x0D and len(data) >= 4:            # узнана команда
+        rec = data[1]
+        sl = data[3]
+        sig = bytes(data[4:4 + sl]).decode("utf-8", "replace").strip() if sl else ""
+        name = sig or _VR["names"].get(str(rec)) or "команда %d" % rec
+        _VR.update(last=name, last_ts=time.time(), heard=_VR["heard"] + 1)
+        _VR["log"].append("🗣 узнала запись %d: %s" % (rec, name))
+        log("СЛУХ", "VR3 узнал запись %d «%s»" % (rec, name))
+        add_message("system", "🗣 Голосовой модуль: «%s»" % name, "Слух")
+        if CFG.get("vr_to_brain", True):
+            try:
+                spawn_process(name, False, "голос (VR3)")
+            except Exception:
+                pass
+        url, token = _cloud_base()
+        if url:
+            threading.Thread(target=_http_json_err, args=(url + "/api/think", {
+                "board": _hostname(), "text": "🗣 Голосовая команда: «%s»" % name, "kind": "hear"}),
+                kwargs={"token": token, "timeout": 8}, daemon=True).start()
+    elif cmd == 0x0A:                             # подсказка (обучение)
+        txt = bytes(data[1:] if data and data[0] < 0x20 else data).decode("latin-1", "replace").strip()
+        _VR["log"].append("ℹ %s" % (txt or fr.hex()))
+    elif cmd == 0xFF:
+        _VR["err"] = "модуль: ошибка %s" % fr.hex()
+        _VR["log"].append("⚠ ошибка модуля: %s" % fr.hex())
+    elif cmd == 0x00:
+        _VR.update(seen=True, state="на связи", err="")
+        _VR["log"].append("✓ модуль ответил: %s" % fr.hex())
+    elif cmd == 0x30:
+        _VR["loaded"] = list(data[1:]) if len(data) > 1 else _VR["loaded"]
+        _VR["log"].append("✓ загружены записи: %s" % fr.hex())
+    elif cmd == 0x21:
+        _VR["log"].append("✓ обучение: %s" % fr.hex())
+    else:
+        _VR["log"].append("← %s" % fr.hex())
+
+
+def vr_worker():
+    time.sleep(25)
+    last_check = 0.0
+    while True:
+        time.sleep(0.4)
+        if not CFG.get("vr_on", True):
+            _VR["state"] = "выкл"
+            time.sleep(3)
+            continue
+        r = _bridge_call("vr_read", timeout=3)
+        if r is None:
+            _VR["state"] = "скетч не отвечает"
+            time.sleep(3)
+            continue
+        head, _, body = str(r).partition("|")
+        for part in head.split(";"):
+            k, _, v = part.partition("=")
+            if v.isdigit():
+                _VR[{"b": "bytes", "e": "errors", "f": "frames"}.get(k, k)] = int(v)
+        for hx in body.split(";"):
+            hx = hx.strip()
+            if hx:
+                try:
+                    _vr_frame(bytes.fromhex(hx))
+                except Exception as e:
+                    _VR["err"] = str(e)[:80]
+        now = time.time()
+        if not _VR["seen"] and now - last_check > 15:
+            last_check = now
+            vr_send("00")                                     # проверка: ответит — модуль есть
+            _VR["state"] = "ищу модуль (D12/D13)" if not _VR["bytes"] else "байты есть, ответа нет"
+        if _VR["seen"] and not _VR["sent_load"]:
+            recs = _vr_records()
+            if recs:
+                vr_send("30" + "".join("%02X" % x for x in recs))
+            _VR["sent_load"] = now
+
+
+def api_vr(data: dict = None):
+    """v2.94: голосовой модуль — состояние; POST {act: check|load|train|clear, rec, sig}."""
+    d = data or {}
+    act = str(d.get("act") or "")
+    if act == "check":
+        _VR["seen"] = False
+        vr_send("00")
+    elif act == "load":
+        if d.get("recs") is not None:
+            CFG["vr_load"] = str(d.get("recs"))[:60]
+            save_cfg(CFG)
+        recs = _vr_records()
+        vr_send("30" + "".join("%02X" % x for x in recs))
+    elif act == "train":
+        try:
+            rec = int(d.get("rec"))
+        except Exception:
+            return {"ok": False, "error": "номер записи 0..79"}
+        if not 0 <= rec < 80:
+            return {"ok": False, "error": "номер записи 0..79"}
+        sig = str(d.get("sig") or "").strip()[:20]
+        _VR["names"][str(rec)] = sig or ("команда %d" % rec)
+        sb = sig.encode("utf-8")[:20]
+        vr_send("21%02X%s" % (rec, sb.hex().upper()))       # sigtrain: говори 2 раза по подсказке
+        _VR["log"].append("🎙 обучаю запись %d «%s» — скажи команду, потом ещё раз" % (rec, sig))
+    elif act == "clear":
+        vr_send("31")
+    elif act:
+        return {"ok": False, "error": "неизвестное действие"}
+    return {"ok": True, "vr": vr_status()}
+
+
 def mic_live_worker():
     """v2.93: живой звук. Пока облако держит mic_live (кнопка «Слушать» в
     облаке), каждые ~0.5 с шлём накопленный PCM 16 кГц в /api/hearing/stream;
@@ -13268,6 +13424,8 @@ def register_web():
     ui.expose_api("POST", "/api/think", api_think)          # v2.58
     ui.expose_api("GET", "/api/settings", api_get_settings)
     ui.expose_api("POST", "/api/settings", api_set_settings)
+    ui.expose_api("GET", "/api/vr", api_vr)                  # v2.94: голосовой модуль VR3
+    ui.expose_api("POST", "/api/vr", api_vr)
     ui.expose_api("GET", "/api/tts_audio", api_tts_audio)
     ui.expose_api("POST", "/api/teach", api_teach)
     ui.expose_api("POST", "/api/speak", api_speak)
@@ -13462,6 +13620,7 @@ def main():
     threading.Thread(target=mic_send_worker, daemon=True).start()
     threading.Thread(target=mic_live_worker, daemon=True).start()     # v2.93: живой звук
     threading.Thread(target=vosk_install_worker, daemon=True).start() # v2.93: Vosk на плате
+    threading.Thread(target=vr_worker, daemon=True).start()           # v2.94: голосовой модуль VR3
     try:
         _crash_hooks()                                            # v2.61
     except Exception:

@@ -42,7 +42,7 @@ def note_link(board, mic=None, cam=None):
         if isinstance(mic, dict):
             _MIC[board] = dict({k: mic.get(k) for k in (
                 "state", "err", "phrases", "sent", "heard", "last", "rms", "floor",
-                "on", "dev", "queue", "live", "live_sent", "live_err", "reply")}, ts=now)
+                "on", "dev", "queue", "live", "live_sent", "live_err", "reply", "vosk", "vr")}, ts=now)
         if isinstance(cam, dict):
             _CAM[board] = dict({k: cam.get(k) for k in (
                 "state", "err", "up_err", "kb", "ok_age", "sent_age", "url", "on",

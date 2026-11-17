@@ -2158,6 +2158,9 @@ async function micWire() {
       if (m.err) h += '<div style="color:#e88">⚠ ' + esc(m.err) + '</div>';
       if (m.last) h += '<div class="muted">последнее: «' + esc(m.last) + '»</div>';
       if (m.live_err) h += '<div style="color:#e88">живой звук: ' + esc(m.live_err) + '</div>';
+      if (m.vosk) h += '<div>🧠 Vosk на плате: ' + esc(m.vosk.state || '?') + (m.vosk.texts ? ' · распознано фраз ' + m.vosk.texts : '') + (m.vosk.err ? ' <span style="color:#e88">' + esc(m.vosk.err) + '</span>' : '') + '</div>';
+      if (m.vr) h += '<div>🗣 Модуль VR3 (D12/D13): ' + esc(m.vr.state || '?') + ' · байт ' + (m.vr.bytes || 0) + ', кадров ' + (m.vr.frames || 0) +
+        (m.vr.last ? ' · последняя команда «' + esc(m.vr.last) + '»' : '') + (m.vr.err ? ' <span style="color:#e88">' + esc(m.vr.err) + '</span>' : '') + '</div>';
     } else h += '<div class="muted">🎤 плата не прислала состояние микрофона (обнови плату до v2.93)</div>';
     if (lv) h += '<div>🔊 живой звук: ' + lv.sec + ' с в буфере, ' + lv.kb + ' КБ, кусков ' + lv.chunks + ', пик ' + bar(lv.peak, 32767) +
       ' <span class="muted">(' + (lv.age ?? '—') + ' с назад)</span></div>';
