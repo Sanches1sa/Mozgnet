@@ -1463,6 +1463,8 @@ static uint16_t camLen = 0;        // его длина
 static uint8_t  camFrameSeq = 0;   // seq последнего целого кадра
 static uint32_t camLastMs = 0;     // когда кадр положили
 static uint32_t camOk = 0, camBad = 0;          // счётчики целых/битых
+static volatile bool camCopying = false;   // v2.94.1: кадр копируется в camBuf
+static volatile uint32_t camGen = 0;       // v2.94.1: счётчик смен кадра (чётный — кадр целый)
 static uint32_t camBytes = 0;      // v2.93: сколько байт пришло по UART вообще (0 = провод/питание)
 static uint32_t camByteMs = 0;     // v2.93: когда пришёл последний байт
 static uint32_t camLost = 0;       // v2.93: пакеты, оборванные паузой (переполнение приёмника)
@@ -1544,9 +1546,13 @@ void camUartTick() {
         uint8_t typ = camPkt[2];
         if (typ == 0x01) {                // JPEG-кадр — целиком в camBuf
           if (camRx[0] == 0xFF && camRx[1] == 0xD8) {
+            camCopying = true;                // v2.94.1: поток моста не читает кадр, пока копируем
+            camGen++;
             memcpy(camBuf, camRx, camPktLen);
             camLen = camPktLen;
             camFrameSeq = camPkt[3];
+            camGen++;
+            camCopying = false;
             camLastMs = millis();
             camOk++;
           } else camBad++;                // не JPEG — в мусор
@@ -1723,11 +1729,14 @@ String rpcCamChunk(String arg) {
   if (col <= 0) return "";
   long seq = arg.substring(0, col).toInt();
   long off = arg.substring(col + 1).toInt();
-  if (seq != (long)camFrameSeq || camLen == 0 ||
+  uint32_t g0 = camGen;                       // v2.94.1: вызывается из потока моста
+  if (camCopying || (g0 & 1) || seq != (long)camFrameSeq || camLen == 0 ||
       off < 0 || off >= (long)camLen) return "";
   int n = (int)camLen - (int)off;
   if (n > CAMRX_CHUNK) n = CAMRX_CHUNK;
-  return camB64(camBuf + off, n);
+  String r = camB64(camBuf + off, n);
+  if (camGen != g0 || camCopying) return "";  // кадр сменился, пока читали — заново
+  return r;
 }
 
 void wordInputs(int8_t *x) {
@@ -3140,8 +3149,11 @@ void rpcRegister() {
   Bridge.provide_safe("neuro_assign", rpcNeuroAssign); /* v2.28: назначение номеров нейронам */
   Bridge.provide_safe("neuro_assign_poll", rpcNeuroAssignPoll); /* v2.33: прогресс назначения */
   Bridge.provide_safe("neuro_reset", rpcNeuroReset);   /* v2.29: сброс номеров нейронов */
-  Bridge.provide_safe("cam_frame_info", rpcCamFrameInfo); /* v2.30: кадр UART-камеры */
-  Bridge.provide_safe("cam_chunk", rpcCamChunk);          /* v2.30: кадр кусками (b64) */
+  /* v2.94.1: кадр камеры отдаём из ПОТОКА МОСТА (provide, не provide_safe):
+   * раньше запрос ждал конца прохода loop() и при занятом loop (I2C
+   * нейронов, шум A4) не успевал за таймаут — «cam_frame_info не ответил» */
+  Bridge.provide("cam_frame_info", rpcCamFrameInfo);      /* v2.30: кадр UART-камеры */
+  Bridge.provide("cam_chunk", rpcCamChunk);               /* v2.30: кадр кусками (b64) */
   Bridge.provide_safe("cam_vis", rpcCamVis);              /* v2.88: зрение камеры (JSON) */
   Bridge.provide_safe("cam_vote", rpcCamVote);            /* v2.88: камера голосует за фразы */
   Bridge.provide_safe("cam_vote_res", rpcCamVoteRes);     /* v2.88: голос камеры */

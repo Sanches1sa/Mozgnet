@@ -277,7 +277,7 @@ except Exception:
 # App Lab отсутствует (из-за него приложение не запускалось), arduino:tts
 # тоже не подключён. LLM и TTS работают ЧЕРЕЗ ОБЛАКО — см. секции [4] и [6].
 
-APP_VERSION = "2.94.0"
+APP_VERSION = "2.94.1"
 
 # ---------------------------------------------------------------------------
 #   v2.33 (2026): МОСТ-КАНАЛ БЕЗ ТАЙМАУТОВ — фикс «word_push не работает,
@@ -1069,8 +1069,15 @@ def _cam_uart_diag():
                    "запущен — смотри вывод сборки в App Lab / журнал лаунчера; лаунчер: "
                    "⚙ → «Починить сборку»" % ("с запуска" if not SH.bridge_seen else "%d с" % ba))
         else:
-            why = ("мост со скетчем жив, но cam_frame_info не ответил за 4 с — loop скетча "
-                   "занят (нейроны/I2C); кадры при этом могут приниматься")
+            dg = _SKETCH.get("diag") or {}
+            sketch_diag_async()
+            if dg.get("stuck"):
+                why = ("скетч ЗАВИС: loop() стоит на этапе «%s» (проходов %s) — перезапусти "
+                       "приложение; если повторится — пришли этот текст" % (dg.get("loop_name"), dg.get("count")))
+            else:
+                why = ("мост со скетчем жив, но cam_frame_info не ответил за 8 с%s — обнови "
+                       "плату до 2.94.1 (кадры камеры отдаются из потока моста)" % (
+                           ("; loop сейчас на этапе «%s»" % dg.get("loop_name")) if dg else ""))
     elif not d.get("bytes") and "bytes" in d:
         why = ("по проводу не пришло НИ ОДНОГО байта: проверь TX ESP32-CAM (GPIO1/U0TXD "
                "или пин из esp32cam_uart) → D0/RX платы, общий GND и питание камеры 5 В")
@@ -12912,6 +12919,20 @@ def mic_listen_worker():
             time.sleep(120)
             continue
         dev = str(CFG.get("mic_dev") or "default")
+        try:                                # v2.94.1: есть ли вообще устройство записи
+            import subprocess as _sp
+            lst = _sp.run(["arecord", "-l"], stdout=_sp.PIPE, stderr=_sp.STDOUT,
+                          timeout=10).stdout.decode("utf-8", "replace")
+        except Exception:
+            lst = "card"
+        if "card" not in lst.lower():
+            _MIC["state"] = "нет USB-микрофона"
+            _MIC["err"] = ("у платы нет устройства записи звука: речь в облако, Vosk и живой "
+                           "звук работают только с USB-микрофоном (через USB-C хаб). Модуль "
+                           "VR3 слушает своим микрофоном только обученные команды — они "
+                           "приходят отдельно (🗣 Модуль VR3)")
+            time.sleep(60)
+            continue
         cmd = ["arecord", "-q", "-D", dev, "-f", "S16_LE", "-r", str(MIC_SR),
                "-c", "1", "-t", "raw"]
         try:
