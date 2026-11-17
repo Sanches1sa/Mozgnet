@@ -27,6 +27,7 @@ _LIVE = {}       # плата -> {"pcm": bytearray, "sr": 16000, "ts", "chunks",
 _WANT = {}       # плата|"*" -> до какого времени держать живой звук
 _MIC = {}        # плата -> состояние микрофона из link + ts
 _CAM = {}        # плата -> состояние камеры из link + ts
+_SK = {}         # плата -> скетч и мост (v3.179.1)
 
 
 def _bname(b):
@@ -34,7 +35,7 @@ def _bname(b):
     return re.sub(r"[^\w.\-]", "_", b) or "board"
 
 
-def note_link(board, mic=None, cam=None):
+def note_link(board, mic=None, cam=None, sketch=None):
     """Из /api/link: запомнить состояние ушей и глаз платы."""
     board = str(board or "?")[:40]
     now = time.time()
@@ -43,6 +44,8 @@ def note_link(board, mic=None, cam=None):
             _MIC[board] = dict({k: mic.get(k) for k in (
                 "state", "err", "phrases", "sent", "heard", "last", "rms", "floor",
                 "on", "dev", "queue", "live", "live_sent", "live_err", "reply", "vosk", "vr")}, ts=now)
+        if isinstance(sketch, dict):
+            _SK[board] = dict(sketch, ts=now)
         if isinstance(cam, dict):
             _CAM[board] = dict({k: cam.get(k) for k in (
                 "state", "err", "up_err", "kb", "ok_age", "sent_age", "url", "on",
@@ -175,7 +178,7 @@ def status():
     """Сводка для карточки в облаке."""
     now = time.time()
     with _LOCK:
-        boards = sorted(set(_MIC) | set(_CAM) | set(_LIVE))
+        boards = sorted(set(_MIC) | set(_CAM) | set(_LIVE) | set(_SK))
         out = []
         for b in boards:
             m = _MIC.get(b) or {}
@@ -191,6 +194,7 @@ def status():
                          "rms": lv.get("rms"), "peak": lv.get("peak"),
                          "sr": lv.get("sr")} if lv else None,
                 "want": want_for(b) > 0,
+                "sketch": _SK.get(b),
             })
         want_all = _WANT.get("*", 0) > now
     try:

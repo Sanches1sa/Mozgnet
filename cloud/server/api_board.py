@@ -573,7 +573,7 @@ def h_link(req):
     try:                         # v3.178: уши и глаза платы + живой звук по кнопке
         import micstream
         if isinstance(r, dict) and r.get("ok"):
-            micstream.note_link(b.get("board"), b.get("mic"), b.get("cam"))
+            micstream.note_link(b.get("board"), b.get("mic"), b.get("cam"), b.get("sketch"))
             lv = micstream.want_for(b.get("board"))
             if lv:
                 r["mic_live"] = lv

@@ -277,7 +277,7 @@ except Exception:
 # App Lab отсутствует (из-за него приложение не запускалось), arduino:tts
 # тоже не подключён. LLM и TTS работают ЧЕРЕЗ ОБЛАКО — см. секции [4] и [6].
 
-APP_VERSION = "2.94.3"
+APP_VERSION = "2.94.4"
 
 # ---------------------------------------------------------------------------
 #   v2.33 (2026): МОСТ-КАНАЛ БЕЗ ТАЙМАУТОВ — фикс «word_push не работает,
@@ -2199,6 +2199,14 @@ def _link_extras(payload):
         in ("uart", "uart:", "serial", "провод") else None,      # v2.93
         "ai": camai_status()})
     _put("mic", mic_status)             # v2.93: уши платы видны в облаке
+    _put("sketch", lambda: {             # v2.94.4: скетч и мост — для облака
+        "boot": _SKETCH["boot"], "boot_name": BOOT_STAGES.get(_SKETCH["boot"], ""),
+        "diag": _SKETCH["diag"], "diag_err": _SKETCH["diag_err"],
+        "alive": (time.time() - SH.bridge_ts) < 10.0, "age": int(max(0.0, time.time() - SH.bridge_ts)),
+        "seen": SH.bridge_seen, "queue": len(_BRIDGE_Q), "dropped": SH.bridge_dropped,
+        "rpc": sorted(([k, v["ok"], v["err"], v["last"]] for k, v in list(_RPC_STATS.items())
+                       if v["err"]), key=lambda x: -x[2])[:8],
+        "log": [t for _ts, t in list(_SKETCH["log"])[-4:]]})
     _put("codejobs", lambda: dict(_CODEJOBS, code=bool(CFG.get("code_from_cloud", True)),
                                   admin=bool(CFG.get("admin_from_cloud", True))))
 
@@ -13385,7 +13393,10 @@ def vr_worker():
             _VR["state"] = "выкл"
             time.sleep(3)
             continue
-        r = _bridge_call("vr_read", timeout=3)
+        time.sleep(1.1)                        # v2.94.4: реже — не забивать очередь моста
+        if len(_BRIDGE_Q) > 4:
+            continue
+        r = _bridge_call("vr_read", timeout=2)
         if r is None:
             _VR["state"] = "скетч не отвечает"
             time.sleep(3)

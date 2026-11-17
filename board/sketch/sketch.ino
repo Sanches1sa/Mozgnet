@@ -1692,6 +1692,7 @@ String rpcVrEnable(String a) {
 
 /* RPC vr_read -> "b=<байт>;e=<ошибок>;f=<кадров>|HEX;HEX;" (кадры: cmd+data) */
 String rpcVrRead() {
+  vrTick();                          // v2.94.4: разбор кадров — здесь, в потоке моста
   String r = "b=" + String(vrBytes) + ";e=" + String(vrErr) + ";f=" + String(vrFrames) + "|" + String(vrOut);
   vrOut[0] = 0;
   return r;
@@ -3179,9 +3180,11 @@ void rpcRegister() {
   Bridge.provide_safe("cam_vote", rpcCamVote);            /* v2.88: камера голосует за фразы */
   Bridge.provide_safe("cam_vote_res", rpcCamVoteRes);     /* v2.88: голос камеры */
   Bridge.provide_safe("cam_say", rpcCamSay);              /* v2.88: фраза мозга -> камере */
-  Bridge.provide_safe("vr_read", rpcVrRead);              /* v2.94: голосовой модуль VR3 */
-  Bridge.provide_safe("vr_enable", rpcVrEnable);          /* v2.94.3: включается из Python */
-  Bridge.provide_safe("vr_send", rpcVrSend);
+  /* v2.94.4: VR3 целиком в потоке моста (не ждёт loop): приём — кольцо из
+   * прерывания (один писатель, один читатель), разбор — в vr_read */
+  Bridge.provide("vr_read", rpcVrRead);                   /* v2.94: голосовой модуль VR3 */
+  Bridge.provide("vr_enable", rpcVrEnable);               /* v2.94.3: включается из Python */
+  Bridge.provide("vr_send", rpcVrSend);
   Bridge.provide_safe("ping", rpcPing);                /* v2.14: пульс моста  */
   Bridge.provide_safe("sync_hz", rpcSyncHz);           /* v2.67: общий ритм платформы */
   Bridge.provide("diag", rpcDiag);                     /* v2.68: из потока моста — работает, даже если loop() завис */
@@ -3507,7 +3510,7 @@ void loop() {
   loopStage = 1;  d4fTick();           camUartTick();   // v2.50: кадр камеры на D4 (если есть)
   loopStage = 2;  freqTick();          camUartTick();   // 1. генератор: меандр genHz на D4 -> A0 всех нейронов
   loopStage = 3;  voiceTick();         camUartTick();   // 2. динамик (v1.9): голос мозга / мотивация говорить
-  loopStage = 4;  micTick();  vrTick();  camUartTick();   // v2.94: + голосовой модуль VR3   // 3. микрофон: звук на D12/D13 -> micLevel
+  loopStage = 4;  micTick();           camUartTick();   // 3. микрофон (KY-037 на D10/D11)   // 3. микрофон: звук на D12/D13 -> micLevel
   loopStage = 5;  pollNext();          camUartTick();   // 4. опрос нейронов -> val_c
   loopStage = 6;  letterTick();        camUartTick();   // 5. буквогенератор (v2.3): нейросеть 1..33 -> буквы -> слова
   loopStage = 7;  d6Tick();            camUartTick();   // 5a. v2.22: проигрывание буфера слов на D6 (PWM)

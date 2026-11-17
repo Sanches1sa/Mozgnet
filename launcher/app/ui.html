@@ -196,6 +196,24 @@ header{padding:10px 20px}
 #dWrench .tacts{flex-direction:column;align-items:stretch}
 #dWrench .tacts .b{text-align:center}
 #dWrench td .sub.mono{font-size:11px}
+/* v3.162: главный экран — два окна (облако | плата), кнопка запуска уходит в ⚡ справа */
+.runp{display:flex;flex-direction:column;align-items:center}
+.split{display:none;grid-template-columns:1fr 1fr;gap:12px;height:calc(100vh - 58px);padding:12px 70px 12px 14px}
+.split.on{display:grid}
+.stage.splitmode{display:none}
+@media(max-width:900px){.split{grid-template-columns:1fr;grid-template-rows:1fr 1fr;padding-right:60px}}
+.pane{display:flex;flex-direction:column;min-height:0;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:0 6px 28px rgba(0,0,0,.28);transition:box-shadow .2s}
+.pane .ph{display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid var(--line);background:rgba(15,19,28,.9);font-size:13px}
+.pane .ph b{font-weight:600}
+.pane .ph .v{color:var(--mut);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1;min-width:0}
+.pane .ph .dot{margin-top:0}
+.pane iframe{flex:1;width:100%;border:0;background:var(--bg);min-height:0}
+.pane .pe{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--mut);text-align:center;padding:20px}
+.pane .pe .big{font-size:42px;opacity:.8}
+.pane.max{position:fixed;left:10px;right:66px;top:64px;bottom:10px;z-index:30}
+.split.hasmax .pane:not(.max){visibility:hidden}
+#dRun .runp{padding:18px 0}
+#dRun .core{transform:scale(.82);margin:-20px 0}
 </style>
 </head>
 <body>
@@ -208,6 +226,7 @@ header{padding:10px 20px}
 </header>
 
 <main class="stage" id="stage">
+ <div class="runp" id="runPanel">
   <div class="core" id="runWrap">
     <svg class="dial" viewBox="0 0 268 268"><circle cx="134" cy="134" r="128" stroke-width="6" stroke-dasharray="1.2 9.85"/><circle cx="134" cy="134" r="119" stroke-width="1"/></svg>
     <svg class="arc" viewBox="0 0 268 268"><defs><linearGradient id="gArc" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fbbf24"/><stop offset="1" stop-color="#f472b6"/></linearGradient></defs><circle cx="134" cy="134" r="110"/></svg>
@@ -222,9 +241,30 @@ header{padding:10px 20px}
     <div class="chip" title="Плата Arduino UNO Q"><span class="dot" id="mdB"></span><b>Плата</b><span class="v" id="msB">—</span></div>
     <div class="chip" id="chipSpin" title="Спин (вращение) MAC платы — нажми, чтобы настроить" style="cursor:pointer"><span class="dot" id="mdS"></span><b>Спин</b><span class="v" id="msS">—</span></div>
   </div>
+ </div>
 </main>
 
+<section class="split" id="split">
+  <div class="pane" id="pCloud">
+    <div class="ph"><span class="dot" id="pdC"></span><b>☁ Облако</b><span class="v" id="psC">—</span>
+      <button class="b sm" data-reload="frC" title="Обновить">⟳</button>
+      <button class="b sm" data-max="pCloud" title="Развернуть на всё окно / вернуть">⤢</button>
+      <button class="b sm" id="pOpenC" title="Открыть облако во вкладке «Облако»">↗</button></div>
+    <iframe id="frC" title="Облако"></iframe>
+    <div class="pe" id="peC" style="display:none"><div class="big">☁</div><div id="peCt">облако не запущено</div><button class="b p" id="peCb">Запустить облако</button></div>
+  </div>
+  <div class="pane" id="pBoard">
+    <div class="ph"><span class="dot" id="pdB"></span><b>📟 Плата</b><span class="v" id="psB">—</span>
+      <button class="b sm" data-reload="frB" title="Обновить">⟳</button>
+      <button class="b sm" data-max="pBoard" title="Развернуть на всё окно / вернуть">⤢</button>
+      <button class="b sm" id="pOpenB" title="Открыть плату во вкладке «Плата»">↗</button></div>
+    <iframe id="frB" title="Плата"></iframe>
+    <div class="pe" id="peB" style="display:none"><div class="big">📟</div><div id="peBt">плата не на связи</div><button class="b p" id="peBb">⚡ Запустить плату</button></div>
+  </div>
+</section>
+
 <div class="stabs" id="stabs">
+  <button class="stab" id="bBolt" title="Запуск: кнопка ⏻ и статус облака, платы и спина"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><path d="M13.2 2.5 5 13.6h6.3l-1 7.9 8.3-11.2h-6.4z"/></svg></button>
   <button class="stab" id="bGear" title="Настройки: облако, плата, вращение MAC, интернет платы"><svg id="gearIco" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path id="gearPath"/><circle cx="12" cy="12" r="3.2"/></svg></button>
   <button class="stab" id="bApk" title="APK для телефона (mozgnet): сохранить в «Загрузки» или раздать на телефон по Wi-Fi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6.5" y="2.5" width="11" height="19" rx="2.4"/><path d="M10.5 18.5h3"/><path d="M12 7v6.5M9.4 11l2.6 2.6 2.6-2.6"/></svg></button>
   <button class="stab" id="bWrench" title="Сеть: подключение, предсказание адреса, сканер, журнал"><svg class="wr" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></button>
@@ -309,6 +349,11 @@ header{padding:10px 20px}
         <div style="align-self:flex-end"><button class="b" id="bWconn">Подключить</button></div>
       </div>
     </div>
+</aside>
+
+<aside class="drawer" id="dRun">
+  <div class="dhead"><h3>⚡ Запуск</h3><button class="b" data-close>✕ Закрыть</button></div>
+  <div id="runSlot"></div>
 </aside>
 
 <aside class="drawer" id="dApk">
@@ -431,18 +476,55 @@ document.querySelectorAll("[data-pick]").forEach(b => b.onclick = async () => {
 });
 // v3.155: две выезжающие панели — ⚙ настройки и 🔧 сеть/журнал
 function openDrawer(id) {
-  ["dGear", "dWrench", "dApk"].forEach(d => $(d).classList.toggle("show", d === id));
+  ["dGear", "dWrench", "dApk", "dRun"].forEach(d => $(d).classList.toggle("show", d === id));
   $("scrim").classList.add("show"); $("stabs").classList.add("open");
-  $("bGear").classList.toggle("on", id === "dGear"); $("bWrench").classList.toggle("on", id === "dWrench"); $("bApk").classList.toggle("on", id === "dApk");
+  $("bGear").classList.toggle("on", id === "dGear"); $("bWrench").classList.toggle("on", id === "dWrench"); $("bApk").classList.toggle("on", id === "dApk"); $("bBolt").classList.toggle("on", id === "dRun");
   if (id === "dWrench") { const lg = $("log"); lg.scrollTop = lg.scrollHeight; }
 }
 function closeDrawers() {
-  ["dGear", "dWrench", "dApk"].forEach(d => $(d).classList.remove("show"));
-  $("scrim").classList.remove("show"); $("stabs").classList.remove("open"); ["bGear", "bWrench", "bApk"].forEach(b => $(b).classList.remove("on"));
+  ["dGear", "dWrench", "dApk", "dRun"].forEach(d => $(d).classList.remove("show"));
+  $("scrim").classList.remove("show"); $("stabs").classList.remove("open"); ["bGear", "bWrench", "bApk", "bBolt"].forEach(b => $(b).classList.remove("on"));
 }
 $("bGear").onclick = () => { if ($("dGear").classList.contains("show")) return closeDrawers(); openDrawer("dGear"); if (!(st.mac && st.mac.board) && $("fIp").value.trim()) act("macshow"); };
 $("bWrench").onclick = () => $("dWrench").classList.contains("show") ? closeDrawers() : openDrawer("dWrench");
 $("bApk").onclick = () => $("dApk").classList.contains("show") ? closeDrawers() : openDrawer("dApk");
+$("bBolt").onclick = () => $("dRun").classList.contains("show") ? closeDrawers() : openDrawer("dRun");
+// v3.162: ДВА ОКНА на главном экране — облако слева, плата справа
+let SPLIT = null;
+function setSrc(fr, url) { if (url && fr.dataset.src !== url) { fr.dataset.src = url; fr.src = url; } }
+function renderSplit() {
+  const cs = st.cloud || {}, bs = st.board || {}, busy = st.busy || {};
+  const want = !!cs.ok && !busy.run;
+  if (want !== SPLIT) {
+    SPLIT = want;
+    $("split").classList.toggle("on", want);
+    $("stage").classList.toggle("splitmode", want);
+    (want ? $("runSlot") : $("stage")).appendChild($("runPanel"));   // кнопка ⏻ — в ⚡ справа
+    $("bBolt").style.display = want ? "" : "none";
+    if (!want && $("dRun").classList.contains("show")) closeDrawers();
+  }
+  if (!want) return;
+  $("pdC").className = $("dC").className; $("psC").textContent = $("msC").textContent;
+  $("pdB").className = $("dB").className; $("psB").textContent = $("msB").textContent;
+  const cOk = !!cs.ok;
+  $("frC").style.display = cOk ? "" : "none"; $("peC").style.display = cOk ? "none" : "";
+  if (cOk) setSrc($("frC"), cloudView());
+  const ip = bs.ip || $("fIp").value.trim();
+  const bOk = !!(ip && bs.ok);
+  $("frB").style.display = bOk ? "" : "none"; $("peB").style.display = bOk ? "none" : "";
+  if (bOk) setSrc($("frB"), boardUrl(ip));
+  else $("peBt").textContent = !ip ? "плата ещё не найдена — сканер ищет её в сети" : (bs.ssh ? "плата в сети, приложение не запущено" : "плата " + ip + " не отвечает");
+}
+document.querySelectorAll("[data-max]").forEach(b => b.onclick = () => {
+  const p = $(b.dataset.max), on = !p.classList.contains("max");
+  document.querySelectorAll(".pane").forEach(x => x.classList.remove("max"));
+  p.classList.toggle("max", on); $("split").classList.toggle("hasmax", on);
+});
+document.querySelectorAll("[data-reload]").forEach(b => b.onclick = () => { const f = $(b.dataset.reload); if (f.dataset.src) f.src = f.dataset.src; });
+$("pOpenC").onclick = () => openCloud();
+$("pOpenB").onclick = () => openBoard();
+$("peCb").onclick = () => act("cloud");
+$("peBb").onclick = () => openDrawer("dRun");
 $("chipSpin").onclick = () => { openDrawer("dGear"); const b = $("macBox"); if (b) setTimeout(() => b.scrollIntoView({block: "center", behavior: "smooth"}), 300); };
 // v3.161: общий ZIP-архив и APK
 $("bZip").onclick = async () => { $("bZip").disabled = true; try { await call("/api/action", {do: "zip", deploy: $("cZipDeploy").checked}); } finally { $("bZip").disabled = false; refresh(); } };
@@ -677,6 +759,7 @@ async function refresh() {
     if (st.nav) { location.href = st.nav; return; }
     render();
     renderPkg();
+    renderSplit();
   } catch (e) {}
 }
 (async () => {

@@ -2164,6 +2164,15 @@ async function micWire() {
     } else h += '<div class="muted">🎤 плата не прислала состояние микрофона (обнови плату до v2.93)</div>';
     if (lv) h += '<div>🔊 живой звук: ' + lv.sec + ' с в буфере, ' + lv.kb + ' КБ, кусков ' + lv.chunks + ', пик ' + bar(lv.peak, 32767) +
       ' <span class="muted">(' + (lv.age ?? '—') + ' с назад)</span></div>';
+    const sk = b.sketch;                            // v3.179.1: скетч и мост платы
+    if (sk) {
+      const dg = sk.diag || {};
+      h += '<div>🔌 Мост к скетчу: ' + (sk.alive ? '<span style="color:#4ade80">жив</span>' : '<span style="color:#e88">молчит ' + sk.age + ' с</span>') +
+        ' · запуск скетча: шаг ' + (sk.boot ?? '?') + (sk.boot_name ? ' «' + esc(sk.boot_name) + '»' : '') +
+        (dg.loop_name ? ' · loop: «' + esc(dg.loop_name) + '»' + (dg.stuck ? ' <b style="color:#e88">СТОИТ</b>' : '') + ', проходов ' + dg.count : '') +
+        (sk.diag_err ? ' · diag: ' + esc(sk.diag_err) : '') + ' · очередь ' + (sk.queue || 0) + ', сброшено ' + (sk.dropped || 0) + '</div>';
+      if ((sk.rpc || []).length) h += '<div class="mini" style="color:#e8a">ошибки вызовов: ' + sk.rpc.map(r => esc(r[0]) + ' ✗' + r[2] + '/✓' + r[1] + (r[3] ? ' (' + esc(r[3]) + ')' : '')).join(' · ') + '</div>';
+    }
     h += '<div style="margin:4px 0">' + (b.want ? '<button class="btn" data-mic-stop="' + esc(b.board) + '">⏹ Стоп</button> <span class="muted">слушаю… звук играет кусками по 3 с</span>'
       : '<button class="btn" data-mic-go="' + esc(b.board) + '">🎧 Слушать 60 с</button>') +
       ' <button class="btn" data-mic-clip="' + esc(b.board) + '">▶ Последние 10 с</button>' +
