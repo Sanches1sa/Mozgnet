@@ -277,7 +277,7 @@ except Exception:
 # App Lab отсутствует (из-за него приложение не запускалось), arduino:tts
 # тоже не подключён. LLM и TTS работают ЧЕРЕЗ ОБЛАКО — см. секции [4] и [6].
 
-APP_VERSION = "2.94.5"
+APP_VERSION = "2.94.6"
 
 # ---------------------------------------------------------------------------
 #   v2.33 (2026): МОСТ-КАНАЛ БЕЗ ТАЙМАУТОВ — фикс «word_push не работает,
@@ -2204,6 +2204,7 @@ def _link_extras(payload):
         "diag": _SKETCH["diag"], "diag_err": _SKETCH["diag_err"],
         "alive": (time.time() - SH.bridge_ts) < 10.0, "age": int(max(0.0, time.time() - SH.bridge_ts)),
         "seen": SH.bridge_seen, "queue": len(_BRIDGE_Q), "dropped": SH.bridge_dropped,
+        "app": APP_VERSION, "sver": _SKETCH.get("sver"),
         "rpc": sorted(([k, v["ok"], v["err"], v["last"]] for k, v in list(_RPC_STATS.items())
                        if v["err"]), key=lambda x: -x[2])[:8],
         "log": [t for _ts, t in list(_SKETCH["log"])[-4:]]})
@@ -10159,6 +10160,7 @@ def register_bridge():
     Bridge.provide("on_say", on_say)
     Bridge.provide("on_log", on_log)          # v2.68: журнал скетча
     Bridge.provide("on_boot", on_boot)        # v2.68: шаги запуска скетча
+    Bridge.provide("on_sver", on_sver)        # v2.94.6: версия скетча (раз в 10 с)
     # v2.92: шум конденсатора (A4), активность D6 и множитель шага весов —
     # скетч шлёт их сам (notify); без обработчиков мост сыпал бы ошибками
     Bridge.provide("cap_noise", lambda v: _part_note("cap", v))
@@ -10231,6 +10233,24 @@ def on_log(line):
         print("[СКЕТЧ] " + t, flush=True)       # видно в логах приложения
     except Exception:
         pass
+
+
+def on_sver(s=""):
+    """v2.94.6: «2.94.6;up=…;loops=…» — какой скетч реально работает на MCU."""
+    _bridge_touch()
+    d = {}
+    for i, part in enumerate(str(s or "").split(";")):
+        k, _, v = part.partition("=")
+        d["ver" if i == 0 else k] = v if i else k
+    try:
+        prev = _SKETCH.get("sver") or {}
+        now = time.time()
+        if prev.get("loops") and prev.get("ts"):
+            d["loops_per_s"] = int((int(d.get("loops") or 0) - int(prev["loops"])) / max(1.0, now - prev["ts"]))
+        d["ts"] = now
+    except Exception:
+        pass
+    _SKETCH["sver"] = d
 
 
 def on_boot(stage):

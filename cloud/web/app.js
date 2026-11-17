@@ -2167,6 +2167,8 @@ async function micWire() {
     const sk = b.sketch;                            // v3.179.1: скетч и мост платы
     if (sk) {
       const dg = sk.diag || {};
+      const sv = sk.sver || {};
+      h += '<div>🧩 Приложение платы v' + esc(sk.app || '?') + ' · скетч на MCU: ' + (sv.ver ? 'v' + esc(sv.ver) + ' (работает ' + esc(sv.up || '?') + ' с' + (sv.loops_per_s != null ? ', ' + sv.loops_per_s + ' проходов loop/с' : '') + ')' : '<span style="color:#e88">не сообщил версию — на MCU старый скетч (новый не залился)</span>') + '</div>';
       h += '<div>🔌 Мост к скетчу: ' + (sk.alive ? '<span style="color:#4ade80">жив</span>' : '<span style="color:#e88">молчит ' + sk.age + ' с</span>') +
         ' · запуск скетча: шаг ' + (sk.boot ?? '?') + (sk.boot_name ? ' «' + esc(sk.boot_name) + '»' : '') +
         (dg.loop_name ? ' · loop: «' + esc(dg.loop_name) + '»' + (dg.stuck ? ' <b style="color:#e88">СТОИТ</b>' : '') + ', проходов ' + dg.count : '') +

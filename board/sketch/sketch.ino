@@ -3531,6 +3531,13 @@ void loop() {
    * 8 analogRead за проход (АЦП ждёт семафор); с v2.93 АЦП читается редко —
    * и мост задыхался. Теперь — сон 1 мс каждые 3 мс (кадры камеры копит
    * драйвер UART по прерыванию). */
+#if USE_RB
+  static uint32_t sverMs = 0;            // v2.94.6: версия СКЕТЧА — видно, залился ли новый
+  if ((uint32_t)(millis() - sverMs) >= 10000) {
+    sverMs = millis();
+    Bridge.notify("on_sver", String("2.94.6;up=") + String(millis() / 1000UL) + ";loops=" + String((unsigned long)loopCount));
+  }
+#endif
   static uint32_t yieldMs = 0;
   if ((uint32_t)(millis() - yieldMs) >= 3) {
     yieldMs = millis();
