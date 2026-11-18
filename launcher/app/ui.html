@@ -307,6 +307,7 @@ header{padding:10px 20px}
         <button class="b" id="bKey" title="Один раз ввести пароль платы — дальше все действия идут без окон консоли">Вход по ключу</button>
         <button class="b" id="bWd" title="Автозапуск и сторож платы (нужны права sudo; пароль — один раз)">Сторож платы</button>
         <button class="b" id="bOldChk" title="Показать, есть ли на плате старая/чужая платформа (neuro_brain_12, службы neuro-*, связь с чужим облаком) — ничего не удаляет">🔍 Чужие программы на плате</button>
+        <span style="display:inline-flex;gap:6px;align-items:center"><input type="text" id="fBlk" class="mono" value="157.22.190.54" style="width:150px" title="адреса через запятую"><button class="b" id="bBlk" title="Запретить адреса на плате (брандмауэр, переживает перезагрузку) и на этом компьютере (брандмауэр Windows — подтверди окно UAC)">⛔ Запретить адрес</button></span>
         <button class="b" id="bOldDo" title="Остановить и удалить старую/чужую платформу с платы (сначала архив в /home/arduino/old_platform_*.tar.gz; приложение neuro_12 не трогает; нужен пароль sudo)">🧹 Убрать чужое с платы</button>
         <button class="b" id="bFix" title="Удалить кэш сборки скетча и собрать заново (лечит «file truncated»)">Починить сборку</button>
       </div>
@@ -605,6 +606,7 @@ $("bStop").onclick = () => act("stop");
 $("bKey").onclick = () => act("key");
 $("bWd").onclick = () => act("watchdog");
 $("bOldChk").onclick = () => act("cleanold_dry");
+$("bBlk").onclick = () => { const v = $("fBlk").value.trim(); if (v && confirm("Запретить " + v + " на плате и на этом компьютере?")) call("/api/action", {do: "blockip", ips: v}); };
 $("bOldDo").onclick = () => { if (confirm("Остановить службы старой платформы neuro_brain_12 и убрать её файлы с платы?\nСначала всё упакуется в архив /home/arduino/old_platform_<дата>.tar.gz. Приложение neuro_12 не трогается.")) act("cleanold"); };
 $("bScan").onclick = async () => { await call("/api/save", {ports: $("fPorts").value, range: $("fRange").value}); act("scan"); };
 $("bNet").onclick = () => act("net");

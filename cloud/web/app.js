@@ -4229,6 +4229,17 @@ async function tabVoice() {
 /* ---------------------------- Безопасность -------------------------------- */
 function tabSecurity() {
   const p = $('[data-pane="security"]');
+  setTimeout(async () => {                               // v3.182: запрещённые адреса
+    try {
+      const r = await api('/api/security/blocked');
+      if ($('#secBlk')) $('#secBlk').value = (r.ips || []).join('\n');
+      $('#secBlkSave').onclick = async () => {
+        const ips = $('#secBlk').value.split(/[\s,;]+/).filter(Boolean);
+        const x = await api('/api/security/blocked', { body: { ips } });
+        $('#secBlkSt').textContent = x.ok ? 'запрещено: ' + x.ips.join(', ') : (x.error || 'ошибка');
+      };
+    } catch (e) {}
+  }, 50);
   p.innerHTML = '<h2>Безопасность</h2>' +
     '<div class="okbox">Веб-панель закрыта паролем. Платы подключаются ' +
     'отдельно — по токену платы (вкладка «Общие»). Пароль хранится ' +
@@ -4240,6 +4251,10 @@ function tabSecurity() {
     '<div class="fgroup"><label>Повтори новый пароль</label>' +
     '<input id="secNew2" type="password" autocomplete="new-password"></div>' +
     '<button class="btn" id="secSave">Сменить пароль</button>' +
+    '<h2 style="margin-top:26px">⛔ Запрещённые адреса</h2>' +
+    '<div class="hint">Облако не принимает запросы с этих адресов и само на них не ходит. Плата (v2.97+) получает этот список по связи и тоже их не пускает. Один адрес или сеть в строке (a.b.c.d или a.b.c.0/24).</div>' +
+    '<textarea id="secBlk" rows="3" style="width:100%;font-family:monospace"></textarea>' +
+    '<button class="btn" id="secBlkSave">Сохранить запрет</button> <span class="mini" id="secBlkSt"></span>' +
     '<h2 style="margin-top:26px">Сессии</h2>' +
     '<div class="hint">Сессия живёт 30 дней и продлевается при входе. ' +
     '«Выйти везде» сбрасывает вход на всех устройствах, включая это ' +

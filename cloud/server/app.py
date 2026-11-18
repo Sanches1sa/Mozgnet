@@ -239,6 +239,13 @@ class Handler(BaseHTTPRequestHandler):
         req.files_data = {}
         req.params = {}
         req.client_ip = self.client_address[0]
+        try:                                       # v3.182: запрещённые адреса
+            import ipblock
+            if ipblock.blocked(req.client_ip):
+                self.close_connection = True
+                return self._send_json(403, {"ok": False, "error": "адрес запрещён"})
+        except Exception:
+            pass
 
         try:
             if STARTING[0] and path.startswith("/api/") and path not in _START_OK \
@@ -550,6 +557,11 @@ _START_OK = ("/api/health", "/api/login", "/api/logout", "/api/settings",
 
 
 def main():
+    try:                                           # v3.182: исходящие на запрещённые — нет
+        import ipblock
+        ipblock.install()
+    except Exception:
+        pass
     if not _single_instance():
         msg = ("neuro12-cloud уже работает с этим каталогом данных (%s) — "
                "вторая копия не нужна, выхожу." % store.DATA_DIR)

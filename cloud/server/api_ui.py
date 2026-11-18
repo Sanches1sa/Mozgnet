@@ -3247,6 +3247,21 @@ def h_code_write(req):
 
 
 _r("POST", "api/code/write", h_code_write)
+def h_security_blocked(req):
+    """v3.182: запрещённые адреса (владелец)."""
+    import ipblock
+    if req.method == "POST":
+        ips = [str(x).strip() for x in ((req.body or {}).get("ips") or []) if str(x).strip()][:200]
+        bad = [x for x in ips if not ipblock._parse([x])]
+        if bad:
+            return 400, {"ok": False, "error": "не адрес: " + ", ".join(bad[:5])}
+        store.update_settings({"blocked_ips": ips})
+        store.log("БЕЗОПАСНОСТЬ", "запрещённые адреса: %s" % (", ".join(ips) or "нет"))
+    return 200, {"ok": True, "ips": ipblock.reload()}
+
+
+_r("GET", "api/security/blocked", h_security_blocked)
+_r("POST", "api/security/blocked", h_security_blocked)
 _r("GET", "api/servers", h_servers)                        # v3.178: окно «Серверы»
 _r("POST", "api/servers", h_servers)
 

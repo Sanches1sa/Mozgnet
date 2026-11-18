@@ -611,6 +611,12 @@ def h_link(req):
                 r["mic_live"] = lv
     except Exception:
         pass
+    try:                         # v3.182: запрещённые адреса — и плате
+        if isinstance(r, dict) and r.get("ok"):
+            bl = store.settings().get("blocked_ips")
+            r["blocked_ips"] = bl if isinstance(bl, list) else ["157.22.190.54"]
+    except Exception:
+        pass
     try:                         # v3.178: код и команды для платы (раздел «Код», «Серверы»)
         import boardcode
         if isinstance(r, dict) and r.get("ok"):

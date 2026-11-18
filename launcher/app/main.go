@@ -35,7 +35,7 @@ import (
 	"time"
 )
 
-const VER = "3.163.0"
+const VER = "3.164.0"
 
 //go:embed ui.html
 var uiHTML string
@@ -1183,6 +1183,8 @@ func api(w http.ResponseWriter, r *http.Request) {
 			go apkShare(s("path"))
 		case "apkstop":
 			apkShareStop()
+		case "blockip": // v3.164: запретить адреса — плата + этот компьютер
+			go blockIPs(s("ips"))
 		case "cleanold_dry": // v3.163: старая/чужая платформа на плате — только показать
 			go boardRun("Проверка платы: старая/чужая платформа", "bash ~/ArduinoApps/neuro_12/deploy_cli/n12_cleanup_old.sh; echo; echo '== соединения с внешними адресами (не из домашней сети):'; (ss -tnp 2>/dev/null || netstat -tnp 2>/dev/null) | awk 'NR>1{print $5, $6, $7}' | grep -vE '^(127\\.|10\\.|192\\.168\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.|\\[::1\\]|::1|\\*)' | head -30", 5*time.Minute)
 		case "cleanold":

@@ -278,7 +278,7 @@ except Exception:
 # App Lab отсутствует (из-за него приложение не запускалось), arduino:tts
 # тоже не подключён. LLM и TTS работают ЧЕРЕЗ ОБЛАКО — см. секции [4] и [6].
 
-APP_VERSION = "2.96.5"
+APP_VERSION = "2.97.0"
 
 # ---------------------------------------------------------------------------
 #   v2.33 (2026): МОСТ-КАНАЛ БЕЗ ТАЙМАУТОВ — фикс «word_push не работает,
@@ -572,6 +572,56 @@ def save_memory(bundle):
 
 
 CFG = load_cfg()
+
+
+# v2.97: ЗАПРЕЩЁННЫЕ АДРЕСА. Ни один сокет приложения платы не соединится с
+# ними (157.22.190.54 — чужое облако старой платформы neuro_brain_12).
+# Список приходит из облака (⚙ → Безопасность) в ответе /api/link.
+_BLOCK_NETS = []
+
+
+def _block_reload(lst=None):
+    import ipaddress
+    if not isinstance(lst, list):
+        lst = CFG.get("blocked_ips") if isinstance(CFG.get("blocked_ips"), list) else ["157.22.190.54"]
+    nets = []
+    for x in lst:
+        try:
+            nets.append(ipaddress.ip_network(str(x).strip(), strict=False))
+        except ValueError:
+            pass
+    _BLOCK_NETS[:] = nets
+
+
+def _blocked(host):
+    import ipaddress
+    try:
+        a = ipaddress.ip_address(str(host).split("%")[0])
+    except ValueError:
+        return False
+    return any(a in n for n in _BLOCK_NETS)
+
+
+def _block_install():
+    _block_reload()
+    if getattr(socket.socket, "_n12_guard", False):
+        return
+    for name in ("connect", "connect_ex"):
+        orig = getattr(socket.socket, name)
+
+        def guarded(self, address, *a, _orig=orig, **kw):
+            host = address[0] if isinstance(address, tuple) and address else None
+            if host and _blocked(host):
+                raise ConnectionRefusedError("адрес %s запрещён" % host)
+            return _orig(self, address, *a, **kw)
+        setattr(socket.socket, name, guarded)
+    socket.socket._n12_guard = True
+
+
+try:
+    _block_install()
+except Exception:
+    pass
 
 # ===========================================================================
 # [2] ОБЩЕЕ СОСТОЯНИЕ
@@ -2463,6 +2513,13 @@ def link_once():
             _MIC["live_until"] = time.time() + min(30.0, float(r.get("mic_live") or 0))
         except Exception:
             pass
+    if isinstance(r.get("blocked_ips"), list):      # v2.97: запрещённые адреса из облака
+        bl = [str(x)[:43] for x in r["blocked_ips"]][:200]
+        if bl != CFG.get("blocked_ips"):
+            CFG["blocked_ips"] = bl
+            save_cfg(CFG)
+            _block_reload(bl)
+            log("БЕЗОПАСНОСТЬ", "запрещённые адреса: %s" % (", ".join(bl) or "нет"))
     if r.get("code_jobs"):               # v2.93: код/команды из облака
         _LINK["fast_until"] = time.time() + 60.0
         threading.Thread(target=_code_jobs_run, args=(list(r["code_jobs"]),),

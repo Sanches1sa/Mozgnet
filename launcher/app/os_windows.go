@@ -199,3 +199,18 @@ func stopCloudProc(dir string) {
 
 // v3.161: показать файл в Проводнике (выделенным)
 func revealFile(p string) { exec.Command("explorer.exe", "/select,", p).Start() }
+
+// v3.164: запрет адресов в брандмауэре Windows (одно окно UAC)
+func blockLocal(ips []string) {
+	list := strings.Join(ips, ",")
+	cmd := "netsh advfirewall firewall delete rule name=Mozg12-block | Out-Null; " +
+		"netsh advfirewall firewall add rule name=Mozg12-block dir=out action=block remoteip=" + list + "; " +
+		"netsh advfirewall firewall add rule name=Mozg12-block dir=in action=block remoteip=" + list
+	err := hidden(exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command",
+		"Start-Process powershell -Verb RunAs -WindowStyle Hidden -Wait -ArgumentList '-NoProfile','-Command',\""+strings.ReplaceAll(cmd, "\"", "`\"")+"\"")).Run()
+	if err != nil {
+		logf("Брандмауэр Windows: не получилось (%v) — подтверди окно «Разрешить изменения» (UAC).", err)
+		return
+	}
+	logf("Брандмауэр Windows: правило «Mozg12-block» — %s запрещены (входящие и исходящие).", list)
+}

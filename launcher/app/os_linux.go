@@ -695,3 +695,19 @@ func stopCloudProc(dir string) {
 
 // v3.161: открыть папку с файлом
 func revealFile(p string) { openURL("file://" + filepath.Dir(p)) }
+
+// v3.164: запрет адресов на этом компьютере (Linux): iptables через pkexec/sudo
+func blockLocal(ips []string) {
+	sc := "for ip in " + strings.Join(ips, " ") + "; do iptables -C OUTPUT -d $ip -j DROP 2>/dev/null || iptables -I OUTPUT -d $ip -j DROP; iptables -C INPUT -s $ip -j DROP 2>/dev/null || iptables -I INPUT -s $ip -j DROP; done"
+	var cmd *exec.Cmd
+	if has("pkexec") {
+		cmd = exec.Command("pkexec", "sh", "-c", sc)
+	} else {
+		cmd = exec.Command("sudo", "-n", "sh", "-c", sc)
+	}
+	if out, err := cmd.CombinedOutput(); err != nil {
+		logf("Запрет на этом компьютере не поставлен (%v %s) — выполни вручную: sudo sh -c '%s'", err, strings.TrimSpace(string(out)), sc)
+		return
+	}
+	logf("На этом компьютере запрещены: %s (iptables, до перезагрузки).", strings.Join(ips, ", "))
+}
