@@ -2838,6 +2838,14 @@ def h_maxbot_wipe(req):
 _r("POST", "api/maxbot/wipe", h_maxbot_wipe)
 
 
+def h_maxbot_restart(req):
+    """v3.184: перезагрузить бота МАКС (без перезапуска облака)."""
+    return 200, maxbot.restart("кнопка владельца")
+
+
+_r("POST", "api/maxbot/restart", h_maxbot_restart)
+
+
 def h_maxbot_scan(req):
     """v3.24: СКАН ИСТОРИИ ЧАТА — кнопка панели «Скан истории чата»:
     загрузить все документы и сообщения чата в память нейросети

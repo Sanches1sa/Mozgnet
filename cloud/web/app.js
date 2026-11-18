@@ -4361,6 +4361,7 @@ async function tabMaxbot() {
     '<div id="mxScanBox" class="hint" style="margin-top:8px"></div>' +
     '<button class="btn" id="mxSave">Сохранить и подключить</button> ' +
     '<button class="btn ghost" id="mxProbe">Обновить статус и чаты</button>' +
+    ' <button class="btn" id="mxRestart" title="Бот завис — перезапустить опрос и обработчики (облако не перезапускается, сообщения не теряются)">🔄 Перезагрузить бота</button>' +
     '<div id="mxBot" class="hint"></div>' +
     '<div id="mxChats"></div>';
   let r;
@@ -4448,6 +4449,11 @@ async function tabMaxbot() {
         'запускалась — бот выключен).';
     }
     renderTab('maxbot');
+  };
+  $('#mxRestart').onclick = async () => {        // v3.184
+    const rr = await api('/api/maxbot/restart', { body: {} });
+    toast(rr.ok ? 'Бот МАКС перезагружен — через ~5 с снова на связи' : (rr.error || 'ошибка'), rr.ok ? 'ok' : 'err');
+    setTimeout(() => renderTab('maxbot'), 5000);
   };
   $('#mxProbe').onclick = async () => {
     const rr = await api('/api/maxbot/probe', { body: {} });

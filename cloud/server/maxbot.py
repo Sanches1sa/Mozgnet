@@ -2436,12 +2436,20 @@ def _chat_lock(chat_id):
         return lk
 
 
+_BUSY = {}                       # v3.184: id задачи -> (начало, чат) — для сторожа
+_GEN = [0]                       # v3.184: поколение опроса (перезапуск = +1)
+
+
 def _run_update(u, chat_id):
+    key = id(u)
+    _BUSY[key] = (time.time(), chat_id)
     try:
         with _chat_lock(chat_id):
             handle_update(u)
     except Exception as e:
         _err("обработка события: %s: %s" % (type(e).__name__, e))
+    finally:
+        _BUSY.pop(key, None)
 
 
 def _dispatch(u):
@@ -2462,12 +2470,12 @@ def _dispatch(u):
 
 
 # ------------------------------- фоновый поток ------------------------------
-def _loop():
+def _loop(gen=0):
     st = _load()
     st.setdefault("started", time.time())
     marker = st.get("marker")
     fail = 0
-    while True:
+    while gen == _GEN[0]:              # v3.184: перезапуск — старый поток уходит
         if not enabled() or not token():
             _release_lead()
             _WAKE.wait(5.0)
@@ -2491,6 +2499,8 @@ def _loop():
                 _save()
             _autoscan_tick()
             ups, marker = _poll(_load().get("marker") or marker)
+            if gen != _GEN[0]:            # v3.184: пока ждали — бота перезагрузили
+                break
             with _STATE_LOCK:
                 _load()["last_ok"] = time.time()
                 _load()["last_error"] = ""
@@ -2555,10 +2565,78 @@ def start():
     сам включается, когда появляются maxbot_on + maxbot_token."""
     if _TH[0] and _TH[0].is_alive():
         return
-    _TH[0] = threading.Thread(target=_loop, daemon=True,
+    _TH[0] = threading.Thread(target=_loop, args=(_GEN[0],), daemon=True,
                               name="maxbot-poll")
     _TH[0].start()
     _WAKE.set()
+    if not _WD[0]:
+        _WD[0] = threading.Thread(target=_watchdog, daemon=True, name="maxbot-watchdog")
+        _WD[0].start()
+
+
+_WD = [None]
+_RESTARTS = {"n": 0, "last": 0.0, "why": ""}
+
+
+def restart(why="кнопка владельца"):
+    """v3.184: ПЕРЕЗАГРУЗКА БОТА МАКС без перезапуска облака: новый поток
+    опроса, новый пул обработчиков (зависшие брошены), свежие замки чатов,
+    основной хост API, проверка токена заново. Маркер событий сохраняется —
+    сообщения не теряются и не дублируются."""
+    global _CHAT_LOCKS
+    _GEN[0] += 1
+    old = _POOL[0]
+    _POOL[0] = None
+    if old is not None:
+        try:
+            old.shutdown(wait=False, cancel_futures=True)
+        except TypeError:
+            old.shutdown(wait=False)
+        except Exception:
+            pass
+    with _CHAT_LOCKS_GUARD:
+        _CHAT_LOCKS = {}
+    _BUSY.clear()
+    _OVERRIDE[0] = None
+    try:
+        _SCAN_STOP.set()
+    except Exception:
+        pass
+    with _STATE_LOCK:
+        _load().pop("bot", None)                 # заново GET /me
+        _load()["last_error"] = ""
+    _RESTARTS.update(n=_RESTARTS["n"] + 1, last=time.time(), why=str(why)[:200])
+    store.log("МАКС", "перезагрузка бота: %s" % why)
+    _WAKE.set()                                  # старый поток проснётся и выйдет
+    _TH[0] = threading.Thread(target=_loop, args=(_GEN[0],), daemon=True,
+                              name="maxbot-poll-%d" % _GEN[0])
+    _TH[0].start()
+    _WAKE.set()
+    return {"ok": True, "restarts": _RESTARTS["n"]}
+
+
+def _watchdog():
+    """v3.184: сторож бота: опрос молчит > 4 мин или ответ висит > 6 мин —
+    перезагрузить бота сам (не чаще раза в 5 минут)."""
+    time.sleep(120)
+    while True:
+        time.sleep(30)
+        try:
+            if not enabled() or not token() or not _LEAD.get("fh"):
+                continue
+            now = time.time()
+            if now - _RESTARTS["last"] < 300:
+                continue
+            last_ok = float(_load().get("last_ok") or 0)
+            stuck = [t for t, _c in list(_BUSY.values()) if now - t > 360]
+            if not (_TH[0] and _TH[0].is_alive()):
+                restart("поток опроса умер")
+            elif last_ok and now - last_ok > 240:
+                restart("опрос МАКС молчит %d с" % (now - last_ok))
+            elif stuck:
+                restart("ответ висит %d мин (%d шт.)" % ((now - min(stuck)) // 60, len(stuck)))
+        except Exception:
+            pass
 
 
 def wake():
@@ -2595,6 +2673,9 @@ def status():
                  if k != "started"},
         "scan_done": (st.get("scan_done") or {}),
         "leader": bool(_LEAD.get("fh")),            # v3.33
+        "restarts": dict(_RESTARTS),                 # v3.184
+        "busy": len(_BUSY),
+        "last_ok_age": int(time.time() - float(st.get("last_ok") or 0)) if st.get("last_ok") else None,
         "pid": os.getpid(),
         "leader_note": _LEAD.get("note") or "",
         "marker_set": bool(st.get("marker")),
