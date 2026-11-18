@@ -599,7 +599,8 @@ def h_link(req):
         if isinstance(r, dict) and r.get("ok"):
             r["particles"] = particles_cfg()
             if isinstance(b.get("noise"), dict):
-                _NOISE[str(b.get("board") or "?")[:40]] = dict(b["noise"], ts=time.time())
+                _NOISE[str(b.get("board") or "?")[:40]] = dict(b["noise"], ts=time.time(),
+                                                               frz=b.get("frz") if isinstance(b.get("frz"), dict) else None)
     except Exception:
         pass
     try:                         # v3.178: уши и глаза платы + живой звук по кнопке
@@ -642,19 +643,21 @@ def particles_cfg():
             return float(s_.get(k, d))
         except (TypeError, ValueError):
             return d
-    return "grav:%d,muon:%d,phot:%d,gen:%d,cpu:%d,min:%g,max:%g" % (
+    return "grav:%d,muon:%d,phot:%d,gen:%d,cpu:%d,min:%g,max:%g,frz:%d,acc:%d" % (
         1 if s_.get("part_grav") else 0, 1 if s_.get("part_muon") else 0,
         1 if s_.get("part_phot") else 0, int(max(0, f("part_gen_hz", 0))),
-        1 if s_.get("part_cpu_link") else 0, f("part_min_mhz", 100.0), f("part_max_ghz", 4.0))
+        1 if s_.get("part_cpu_link") else 0, f("part_min_mhz", 100.0), f("part_max_ghz", 4.0),
+        1 if s_.get("part_frz") else 0, int(max(2, min(4096, f("part_frz_n", 64)))))
 
 
 def h_particles(req):
     """GET: галочки и шум плат; POST: сохранить галочки."""
-    keys = ("part_grav", "part_muon", "part_phot", "part_cpu_link")
+    keys = ("part_grav", "part_muon", "part_phot", "part_cpu_link", "part_frz")
     if req.method == "POST":
         b = req.body or {}
         cp = {k: bool(b[k]) for k in keys if k in b}
-        for k, lo, hi in (("part_gen_hz", 0, 20000), ("part_min_mhz", 0, 100000), ("part_max_ghz", 0, 1000)):
+        for k, lo, hi in (("part_gen_hz", 0, 20000), ("part_min_mhz", 0, 100000), ("part_max_ghz", 0, 1000),
+                          ("part_frz_n", 2, 4096)):
             if k in b:
                 try:
                     cp[k] = max(lo, min(hi, float(b[k])))
@@ -668,7 +671,7 @@ def h_particles(req):
     boards = [dict(v, board=k, age=int(now - v.get("ts", now))) for k, v in _NOISE.items()
               if now - v.get("ts", 0) < 120]
     return 200, {"ok": True, "cfg": particles_cfg(),
-                 "settings": {k: s_.get(k) for k in keys + ("part_gen_hz", "part_min_mhz", "part_max_ghz")},
+                 "settings": {k: s_.get(k) for k in keys + ("part_gen_hz", "part_min_mhz", "part_max_ghz", "part_frz_n")},
                  "boards": boards}
 
 

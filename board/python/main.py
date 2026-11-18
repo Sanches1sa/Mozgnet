@@ -278,7 +278,7 @@ except Exception:
 # App Lab отсутствует (из-за него приложение не запускалось), arduino:tts
 # тоже не подключён. LLM и TTS работают ЧЕРЕЗ ОБЛАКО — см. секции [4] и [6].
 
-APP_VERSION = "2.97.0"
+APP_VERSION = "2.98.0"
 
 # ---------------------------------------------------------------------------
 #   v2.33 (2026): МОСТ-КАНАЛ БЕЗ ТАЙМАУТОВ — фикс «word_push не работает,
@@ -2368,6 +2368,7 @@ def _link_extras(payload):
         in ("uart", "uart:", "serial", "провод") else None,      # v2.93
         "ai": camai_status()})
     _put("mic", mic_status)             # v2.93: уши платы видны в облаке
+    _put("frz", frz_status)             # v2.98: заморозка гравитонов
     _put("safe", lambda: {k: v for k, v in _SAFE.items() if k != "hash"})   # v2.95
     _put("sketch", lambda: {             # v2.94.4: скетч и мост — для облака
         "boot": _SKETCH["boot"], "boot_name": BOOT_STAGES.get(_SKETCH["boot"], ""),
@@ -10559,15 +10560,33 @@ def _part_note(key, v):
     _PART["ts"] = time.time()
 
 
+_FRZ = {"want": False, "info": {}, "ts": 0.0}
+
+
+def frz_status():
+    """v2.98: заморозка гравитонов — сколько кадров наложено, замёрз ли узор."""
+    if _FRZ["want"] and time.time() - _FRZ["ts"] > 8:
+        _FRZ["ts"] = time.time()
+        r = _bridge_call("frz_info", timeout=3)
+        if r:
+            d = {}
+            for part in str(r).split(";"):
+                k, _, v = part.partition("=")
+                d[k] = int(v) if v.isdigit() else v
+            _FRZ["info"] = d
+    return dict(_FRZ["info"], want=_FRZ["want"])
+
+
 def _part_apply(cfg):
     """Конфиг квантов от облака -> скетч (только при изменении или раз в 5 мин,
     если скетч перезапускался)."""
     if isinstance(cfg, dict):
         cfg = ",".join("%s:%s" % (k, cfg[k]) for k in
-                       ("grav", "muon", "phot", "gen", "cpu", "min", "max") if k in cfg)
+                       ("grav", "muon", "phot", "gen", "cpu", "min", "max", "frz", "acc") if k in cfg)
     cfg = str(cfg or "")[:120]
     if not cfg:
         return
+    _FRZ["want"] = "frz:1" in cfg                      # v2.98
     if cfg == _PART["cfg"] and time.time() - _PART["cfg_ts"] < 300:
         return
     try:

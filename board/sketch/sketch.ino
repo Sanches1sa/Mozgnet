@@ -2492,14 +2492,57 @@ void updateLearningScale() {
   else learningScale = 1;
 }
 
+/* v2.98: «ЗАМОРОЗКА ГРАВИТОНОВ» — наложение кадров шума A4.
+ * Кадр = 32 выборки шума (по одной на квант гравитона). frzRounds кадров
+ * СКЛАДЫВАЮТСЯ ячейка к ячейке (суперпозиция, как накопление сигнала в
+ * осциллографе): случайная часть шума растёт как корень из N, повторяющаяся
+ * — как N, поэтому после наложения остаётся устойчивый «узор» шума.
+ * Набрали — узор ЗАМЁРЗ: гравитоны на D6 играют его без изменений, пока
+ * заморозку не снимут. Это обработка сигнала, а не физика частиц. */
+#define FRZ_BINS 32
+static bool     frzOn = false;
+static uint16_t frzRounds = 64, frzDone = 0;
+static uint32_t frzAcc[FRZ_BINS];
+static uint8_t  frzPat[FRZ_BINS];
+static bool     frzFrozen = false;
+static uint8_t  frzBin = 0;
+
+static void frzReset() {
+  memset(frzAcc, 0, sizeof(frzAcc));
+  frzDone = 0; frzBin = 0; frzFrozen = false;
+}
+
+static void frzStep() {                       // одна выборка в текущую ячейку
+  frzAcc[frzBin] += (uint32_t)analogRead(CAP_NOISE_PIN);
+  if (++frzBin < FRZ_BINS) return;
+  frzBin = 0;
+  if (++frzDone < frzRounds) return;
+  uint32_t mn = 0xFFFFFFFFUL, mx = 0;         // замораживаем: растягиваем узор в 0..60
+  for (uint8_t i = 0; i < FRZ_BINS; i++) { if (frzAcc[i] < mn) mn = frzAcc[i]; if (frzAcc[i] > mx) mx = frzAcc[i]; }
+  uint32_t span = mx > mn ? mx - mn : 1;
+  for (uint8_t i = 0; i < FRZ_BINS; i++) frzPat[i] = (uint8_t)((frzAcc[i] - mn) * 60UL / span);
+  frzFrozen = true;
+}
+
+/* RPC frz_info -> "on=1;frozen=0;done=12;of=64;pat=HEX(32)" */
+String rpcFrzInfo() {
+  String r = "on=" + String(frzOn ? 1 : 0) + ";frozen=" + String(frzFrozen ? 1 : 0) +
+             ";done=" + String(frzDone) + ";of=" + String(frzRounds) + ";pat=";
+  static const char H[] = "0123456789ABCDEF";
+  if (frzFrozen) for (uint8_t i = 0; i < FRZ_BINS; i++) { r += H[frzPat[i] >> 4]; r += H[frzPat[i] & 15]; }
+  return r;
+}
+
 void particleTick() {
   if (!(partGrav || partMuon || partPhot)) return;
   uint32_t now = millis();
   if ((int32_t)(now - partNextMs) < 0) return;
   partNextMs = now + 80;   // ~12.5 Гц кванты
   uint8_t level = 0;
+  if (partGrav && frzOn && !frzFrozen) frzStep();               // v2.98: набираем узор
   if (partPhot && (partPhase % 5 == 0)) level = 220;          // короткая вспышка фотона
   else if (partMuon && (partPhase % 3 == 0)) level = 140;     // пакет мюона
+  else if (partGrav && frzOn && frzFrozen) level = 40 + frzPat[partPhase % FRZ_BINS];   // замёрзший узор
   else if (partGrav) level = 40 + (partPhase % 20);           // низкий фон гравитона
   if (level) { analogWrite(NN_OUT_PIN, level); d6Activity = min(255, d6Activity + 8); }
   partPhase++;
@@ -3190,6 +3233,14 @@ void rpcParticleCfg(String v) {
   int mx = v.indexOf("max:");
   if (mx >= 0) freqBandMaxGhz = v.substring(mx + 4).toFloat();
   if (genFreqOverride > 0 && genFreqOverride <= GEN_MAX_HZ) genHz = genFreqOverride;
+  /* v2.98: заморозка гравитонов: frz:1 — набрать и заморозить, acc:N — кадров */
+  bool wantFrz = v.indexOf("frz:1") >= 0;
+  int ac = v.indexOf("acc:");
+  uint16_t rounds = frzRounds;
+  if (ac >= 0) { long n = v.substring(ac + 4).toInt(); if (n >= 2 && n <= 4096) rounds = (uint16_t)n; }
+  if (wantFrz && (!frzOn || rounds != frzRounds)) { frzRounds = rounds; frzReset(); }
+  frzOn = wantFrz;
+  if (!frzOn) frzFrozen = false;
 }
 
 void rpcD6Freq(String v) {
@@ -3295,6 +3346,7 @@ void rpcRegister() {
   Bridge.provide_safe("d6img", rpcD6Img);               /* v2.48: кадр камеры растром на D6 */
   Bridge.provide_safe("d4pol", rpcD4Pol);               /* v2.48: полярность меандра D4 (знак частоты) */
   Bridge.provide_safe("d6freq", rpcD6Freq);
+  Bridge.provide_safe("frz_info", rpcFrzInfo);            /* v2.98: заморозка гравитонов */
   Bridge.provide_safe("particle_cfg", rpcParticleCfg);   /* v2.92: конфиг частиц и частоты */            /* v2.46: знаковый кадр частоты на D6 */
   Bridge.provide_safe("word_push", rpcWordPush);       /* v2.27: слово из большого словаря */
   Bridge.provide_safe("word_q", rpcWordQ);             /* v2.34: очередь слов (память платы) */
@@ -3667,7 +3719,7 @@ void loop() {
   static uint32_t sverMs = 0;            // v2.94.6: версия СКЕТЧА — видно, залился ли новый
   if ((uint32_t)(millis() - sverMs) >= 10000) {
     sverMs = millis();
-    Bridge.notify("on_sver", String("2.96.5;up=") + String(millis() / 1000UL) + ";loops=" + String((unsigned long)loopCount));
+    Bridge.notify("on_sver", String("2.98.0;up=") + String(millis() / 1000UL) + ";loops=" + String((unsigned long)loopCount));
   }
 #endif
   /* v2.96.2 (проверено на плате): ни сон 1 мс каждые 2 мс, ни yield()

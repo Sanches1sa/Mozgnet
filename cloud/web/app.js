@@ -2106,6 +2106,16 @@ function groupCommon(p) {
   });
 }
 
+/* v3.185: замёрзший узор гравитонов — 32 столбика */
+function frzBars(hex) {
+  hex = String(hex || '');
+  let h = '<span style="display:inline-flex;align-items:flex-end;gap:1px;height:30px;vertical-align:middle">';
+  for (let i = 0; i + 1 < hex.length; i += 2) {
+    const v = parseInt(hex.slice(i, i + 2), 16) || 0;
+    h += '<span style="width:4px;height:' + Math.max(2, Math.round(v / 60 * 30)) + 'px;background:#7dd3fc;border-radius:1px"></span>';
+  }
+  return h + '</span>';
+}
 /* v3.177.2: КВАНТЫ НА D6 — галочки для скетча платы и шум плат */
 async function partWire() {
   const box = $('#partForm');
@@ -2117,18 +2127,21 @@ async function partWire() {
   box.innerHTML =
     '<div style="margin:4px 0">' + ck('partGrav', 'part_grav', '«гравитоны» — низкий фон') + ck('partMuon', 'part_muon', '«мюоны» — пакеты') +
     ck('partPhot', 'part_phot', '«фотоны» — вспышки') + '</div>' +
+    '<div style="margin:4px 0">' + ck('partFrz', 'part_frz', '❄ заморозить гравитоны — наложить') + '<input type="number" id="partFrzN" min="2" max="4096" style="width:70px" value="' + (s.part_frz_n || 64) + '"> кадров шума A4 друг на друга и играть застывший узор на D6</div>' +
     '<div style="margin:4px 0">Частота генератора: <input type="number" id="partGen" min="0" max="20000" style="width:84px" value="' + (s.part_gen_hz || 0) + '"> Гц (0 — сам) · ' +
     ck('partCpu', 'part_cpu_link', 'привязать к частоте процессора') + '</div>' +
     '<div style="margin:4px 0">Полоса: от <input type="number" id="partMin" step="1" style="width:76px" value="' + (s.part_min_mhz ?? 100) + '"> МГц до ' +
     '<input type="number" id="partMax" step="0.1" style="width:64px" value="' + (s.part_max_ghz ?? 4) + '"> ГГц</div>' +
     '<div style="margin:4px 0">Скетчу уходит: <code>' + esc(r.cfg || '') + '</code></div>' +
     ((r.boards || []).length ? (r.boards || []).map(b => '<div>📟 <b>' + esc(b.board) + '</b>: шум A4 <b>' + (b.cap ?? '—') + '</b>/255 · активность D6 ' + (b.d6 ?? '—') +
-      ' · шаг весов ×' + (b.scale ?? 1) + (b.cfg ? '' : ' · <i>конфиг ещё не дошёл</i>') + ' <span class="muted">(' + b.age + ' с назад)</span></div>').join('')
+      ' · шаг весов ×' + (b.scale ?? 1) + (b.cfg ? '' : ' · <i>конфиг ещё не дошёл</i>') + ' <span class="muted">(' + b.age + ' с назад)</span>' +
+      (b.frz && b.frz.want ? '<div>❄ ' + (b.frz.frozen ? '<b>узор замёрз</b> (' + b.frz.of + ' кадров наложено) ' + frzBars(b.frz.pat) : 'наложено кадров ' + (b.frz.done ?? '?') + ' из ' + (b.frz.of ?? '?')) + '</div>' : '') + '</div>').join('')
       : '<div class="muted">Платы v2.92 пока не прислали шум (они шлют его каждые 5 с в канале связи).</div>');
   const save = async () => {
     await api('/api/particles', { body: { part_grav: $('#partGrav').checked, part_muon: $('#partMuon').checked,
       part_phot: $('#partPhot').checked, part_cpu_link: $('#partCpu').checked, part_gen_hz: +$('#partGen').value || 0,
-      part_min_mhz: +$('#partMin').value || 0, part_max_ghz: +$('#partMax').value || 0 } });
+      part_min_mhz: +$('#partMin').value || 0, part_max_ghz: +$('#partMax').value || 0,
+      part_frz: $('#partFrz').checked, part_frz_n: +$('#partFrzN').value || 64 } });
     toast('Кванты: сохранено — платы получат за 5 с', 'ok');
     partWire();
   };
