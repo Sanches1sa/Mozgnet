@@ -678,7 +678,7 @@ def h_hearing_mic(req):
     import senses
     b = req.body or {}
     r = senses.mic_in(b.get("board"), b.get("wav"), b.get("level"),
-                      text_board=b.get("text_board"))
+                      text_board=b.get("text_board"), ip=req.client_ip)
     return (200 if r.get("ok") else 400), r
 
 

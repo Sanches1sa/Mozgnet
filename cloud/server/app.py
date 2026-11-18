@@ -14,6 +14,59 @@ import os
 import re
 import sys
 
+
+# v3.183: ВТОРОЙ ЗАПУСК — ВЫХОД ДО ИМПОРТА МОДУЛЕЙ. Страж Windows (каждые
+# 5 минут), автозапуск, лаунчер и сторож поднимали ещё одну копию облака.
+# Она выходила («второй запуск не нужен»), но лишь ПОСЛЕ импорта всех
+# модулей — а часть из них при импорте читает/пишет файлы data и запускает
+# потоки. Две копии одновременно писали одни JSON → у работающего облака
+# портились файлы, и оно падало. Теперь: замок data/server.lock занят
+# (или облако отвечает на свой порт) — выходим сразу, ничего не трогая.
+def _n12_busy_early():
+    if os.environ.get("NEURO_CHILD"):
+        return False                       # ребёнок сторожа — проверит сам
+    data = os.environ.get("NEURO_DATA") or os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+    lock = os.path.join(data, "server.lock")
+    if not os.path.isfile(lock):
+        return False
+    try:
+        fh = open(lock, "a+b")
+    except OSError:
+        return False
+    try:
+        fh.seek(0)
+        if os.name == "nt":
+            import msvcrt
+            msvcrt.locking(fh.fileno(), msvcrt.LK_NBLCK, 1)
+            fh.seek(0)
+            msvcrt.locking(fh.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+        return False                       # замок свободен — облака нет
+    except (OSError, IOError):
+        return True                        # замок держит работающее облако
+    finally:
+        try:
+            fh.close()
+        except Exception:
+            pass
+
+
+if __name__ == "__main__" and _n12_busy_early():
+    try:
+        _d = os.environ.get("NEURO_DATA") or os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
+        with open(os.path.join(_d, "second_start.log"), "a", encoding="utf-8") as _f:
+            import time as _t
+            _f.write("%s второй запуск (pid %d) — облако уже работает, выход\n" % (
+                _t.strftime("%Y-%m-%d %H:%M:%S"), os.getpid()))
+    except Exception:
+        pass
+    sys.exit(0)
+
 # v3.147: БЫСТРАЯ ЗАПИСЬ JSON. json.dump() в файл кодирует ПО КУСОЧКАМ на чистом
 # Python (в ~6 раз медленнее json.dumps на C) и всё это время держит GIL:
 # пока сохраняется большая сеть, веб-интерфейс и API ждут — «долго грузятся
@@ -826,6 +879,28 @@ def _crash_diag():
     _th.excepthook = _thook
 
 
+def _crash_hint(code):
+    """v3.183: что значит код выхода процесса облака."""
+    try:
+        c = int(code) & 0xFFFFFFFF
+    except Exception:
+        return ""
+    known = {
+        0xC0000005: "нарушение доступа к памяти в машинном коде (numpy / vosk / Pillow) — "
+                    "сбой библиотеки, не Python",
+        0xC00000FD: "переполнение стека (слишком глубокая рекурсия)",
+        0xC0000409: "аварийная остановка библиотеки (buffer overrun)",
+        0xC0000017: "не хватило памяти",
+        0xC000013A: "закрыто пользователем / Ctrl+C",
+        0x40010004: "процесс убит снаружи (диспетчер задач / другой запуск)",
+        1: "необработанное исключение Python — смотри строку причины",
+        9: "убит снаружи (kill -9 / нехватка памяти)",
+        0xFFFFFFF7: "убит снаружи (SIGKILL — часто нехватка памяти)",
+        137: "убит снаружи (нехватка памяти, OOM)",
+    }
+    return known.get(c, "")
+
+
 def _supervise():
     import subprocess
     flag = store.p("_planned_restart")
@@ -864,6 +939,13 @@ def _supervise():
             store.log("СТОРОЖ", "облако упало (код %s%s) — поднимаю снова через "
                       "%d с (подробно — data/crash.log)" % (
                           code, (": " + why) if why else "", pause))
+        except Exception:
+            pass
+        try:                 # v3.183: падения — списком, их видно в панели и лаунчере
+            lst = store.load_json("crashes.json", []) or []
+            lst.append({"ts": time.time(), "code": code, "why": why, "up": round(time.time() - t0, 1),
+                        "hint": _crash_hint(code)})
+            store.save_json("crashes.json", lst[-100:])
         except Exception:
             pass
         time.sleep(pause)

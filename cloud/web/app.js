@@ -2199,7 +2199,7 @@ async function micWire() {
     '<audio id="micAudio" controls style="width:100%;margin-top:6px"></audio>';
   const heard = r.heard || [];
   if (heard.length) h += '<div class="mini" style="margin-top:6px"><b>Что облако услышало:</b>' + heard.map(x =>
-    '<div>' + new Date((x.ts || 0) * 1000).toLocaleTimeString() + ' · ' + esc(x.board || '') + ': ' +
+    '<div>' + new Date((x.ts || 0) * 1000).toLocaleTimeString() + ' · ' + esc(x.board || '') + (x.ip ? ' <span class="muted">[' + esc(x.ip) + ']</span>' : '') + ': ' +
     (x.text ? '«' + esc(x.text) + '»' : x.reply ? '↩ ' + esc(x.reply) : '<span class="muted">' + esc((x.kind || 'звук') + '; ' + (x.why || '')) + '</span>') + '</div>').join('') + '</div>';
   const keepSrc = $('#micAudio') && $('#micAudio').src, keepImg = $('#micCamImg') && $('#micCamImg').src;
   box.innerHTML = h;
@@ -2278,6 +2278,26 @@ async function safeWire() {
     toast('Готово: перезапусти приложение на плате ' + x.value, 'ok');
   });
 }
+/* v3.183: облако падало? — видно сразу, с причиной */
+async function crashCheck() {
+  try {
+    const r = await api('/api/crashes');
+    let bn = document.getElementById('crashBanner');
+    if (!r.hour) { if (bn) bn.remove(); return; }
+    if (!bn) { bn = document.createElement('div'); bn.id = 'crashBanner'; bn.style.cssText = 'position:fixed;right:12px;bottom:12px;z-index:9998;max-width:min(560px,92vw);background:#2a1414;border:1px solid #e55;border-radius:10px;padding:8px 12px;cursor:pointer;font-size:13px'; document.body.appendChild(bn); }
+    const c = r.crashes[0] || {};
+    bn.innerHTML = '⚠ Облако падало <b>' + r.hour + '</b> раз за час (' + r.day + ' за сутки). Последнее: ' + new Date((c.ts || 0) * 1000).toLocaleTimeString() +
+      ', код ' + esc(String(c.code)) + (c.hint ? ' — ' + esc(c.hint) : '') + (c.why ? '<br><code>' + esc(c.why) + '</code>' : '') + '<br><span class="muted">нажми — подробности</span>';
+    bn.onclick = () => {
+      const w = window.open('', '_blank');
+      if (!w) return;
+      w.document.title = 'Мозг-12: падения облака';
+      w.document.body.innerHTML = '<pre style="white-space:pre-wrap;font:13px monospace">' + esc(r.crashes.map(x => new Date(x.ts * 1000).toLocaleString('ru') + '  код ' + x.code + '  проработало ' + x.up + ' с  ' + (x.hint || '') + '\n   ' + (x.why || '')).join('\n')) + '\n\n===== crash.log (хвост) =====\n' + esc(r.tail || '') + '</pre>';
+    };
+  } catch (e) {}
+}
+setInterval(crashCheck, 60000); setTimeout(crashCheck, 5000);
+
 /* запросы подключения плат — заметны на любой вкладке */
 setInterval(async () => {
   try {

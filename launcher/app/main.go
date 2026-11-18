@@ -35,7 +35,7 @@ import (
 	"time"
 )
 
-const VER = "3.164.0"
+const VER = "3.165.0"
 
 //go:embed ui.html
 var uiHTML string
@@ -1183,6 +1183,8 @@ func api(w http.ResponseWriter, r *http.Request) {
 			go apkShare(s("path"))
 		case "apkstop":
 			apkShareStop()
+		case "crashrep": // v3.165: почему падает облако
+			go crashReport()
 		case "blockip": // v3.164: запретить адреса — плата + этот компьютер
 			go blockIPs(s("ips"))
 		case "cleanold_dry": // v3.163: старая/чужая платформа на плате — только показать

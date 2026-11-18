@@ -3260,6 +3260,21 @@ def h_security_blocked(req):
     return 200, {"ok": True, "ips": ipblock.reload()}
 
 
+def h_crashes(req):
+    """v3.183: почему падало облако — список падений и хвост crash.log."""
+    lst = store.load_json("crashes.json", []) or []
+    tail = ""
+    try:
+        with open(store.p("crash.log"), "r", encoding="utf-8", errors="replace") as f:
+            tail = f.read()[-8000:]
+    except Exception:
+        pass
+    now = time.time()
+    return 200, {"ok": True, "crashes": lst[-30:][::-1], "hour": sum(1 for c in lst if now - c.get("ts", 0) < 3600),
+                 "day": sum(1 for c in lst if now - c.get("ts", 0) < 86400), "tail": tail}
+
+
+_r("GET", "api/crashes", h_crashes)
 _r("GET", "api/security/blocked", h_security_blocked)
 _r("POST", "api/security/blocked", h_security_blocked)
 _r("GET", "api/servers", h_servers)                        # v3.178: окно «Серверы»

@@ -3,7 +3,11 @@
 package main
 
 import (
+	"encoding/json"
+	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -87,4 +91,69 @@ func blockIPs(raw string) {
 	} else {
 		logf("Плата ещё не найдена — на плате запрет поставлю, когда она появится (нажми ещё раз).")
 	}
+}
+
+// crashReport — v3.165: «🩺 Почему падает облако»: падения из data/crashes.json,
+// хвост data/crash.log и строки сторожа из журнала — в журнал лаунчера и в файл
+// mozg12-отчёт-падений.txt в «Загрузках» (его можно прислать разработчику).
+func crashReport() {
+	c := getCfg()
+	data := filepath.Join(c.Cloud, "data")
+	var b strings.Builder
+	fmt.Fprintf(&b, "Мозг-12: отчёт о падениях облака, %s\nпапка облака: %s\n\n", time.Now().Format("02.01.2006 15:04:05"), c.Cloud)
+	var crashes []map[string]interface{}
+	if raw, err := os.ReadFile(filepath.Join(data, "crashes.json")); err == nil {
+		json.Unmarshal(raw, &crashes)
+	}
+	hour := 0
+	for _, x := range crashes {
+		if ts, ok := x["ts"].(float64); ok && time.Since(time.Unix(int64(ts), 0)) < time.Hour {
+			hour++
+		}
+	}
+	fmt.Fprintf(&b, "падений записано: %d, за последний час: %d\n", len(crashes), hour)
+	for i := len(crashes) - 1; i >= 0 && i >= len(crashes)-15; i-- {
+		x := crashes[i]
+		ts, _ := x["ts"].(float64)
+		fmt.Fprintf(&b, "  %s  код %v  проработало %v с  %v\n     %v\n", time.Unix(int64(ts), 0).Format("02.01 15:04:05"), x["code"], x["up"], x["hint"], x["why"])
+	}
+	if raw, err := os.ReadFile(filepath.Join(data, "log.txt")); err == nil {
+		lines := strings.Split(string(raw), "\n")
+		b.WriteString("\n===== журнал облака: сторож и ошибки (последние) =====\n")
+		n := 0
+		for i := len(lines) - 1; i >= 0 && n < 40; i-- {
+			l := lines[i]
+			if strings.Contains(l, "СТОРОЖ") || strings.Contains(l, "ИСКЛЮЧЕНИЕ") || strings.Contains(l, "Traceback") || strings.Contains(l, "ПАДЕНИЕ") {
+				b.WriteString(l + "\n")
+				n++
+			}
+		}
+	}
+	if raw, err := os.ReadFile(filepath.Join(data, "crash.log")); err == nil {
+		t := string(raw)
+		if len(t) > 12000 {
+			t = t[len(t)-12000:]
+		}
+		b.WriteString("\n===== crash.log (хвост) =====\n" + t)
+	}
+	rep := b.String()
+	for _, l := range strings.Split(rep, "\n")[:min2(25, len(strings.Split(rep, "\n")))] {
+		if strings.TrimSpace(l) != "" {
+			logf("%s", l)
+		}
+	}
+	dd := downloadDirs()[0]
+	os.MkdirAll(dd, 0755)
+	out := filepath.Join(dd, "mozg12-отчёт-падений.txt")
+	if err := os.WriteFile(out, []byte(rep), 0644); err == nil {
+		logf("Отчёт сохранён: %s — пришли этот файл, по нему видно, почему падает облако.", out)
+		revealFile(out)
+	}
+}
+
+func min2(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

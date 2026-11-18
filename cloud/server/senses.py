@@ -273,7 +273,7 @@ def _addressed(text):
     return None
 
 
-def mic_in(board, wav_b64, level=None, text_board=None):
+def mic_in(board, wav_b64, level=None, text_board=None, ip=None):
     """Фраза с микрофона платы -> распознать, запомнить, ответить, если к мозгу."""
     import base64
     import hearing
@@ -302,7 +302,7 @@ def mic_in(board, wav_b64, level=None, text_board=None):
             "kind": props.get("kind"), "sec": props.get("sec"),
             "loud_db": props.get("loud_db"), "level": level,
             "why": "" if text else (why2 or "слов не разобрано"),
-            "board_text": tb}
+            "board_text": tb, "ip": str(ip or "")[:45]}    # v3.183: с какого адреса пришло
     _heard_add(item)
     out = {"ok": True, "text": text, "kind": props.get("kind"),
            "props": props.get("text"), "asr_why": item["why"]}
