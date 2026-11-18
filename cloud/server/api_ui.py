@@ -2342,6 +2342,50 @@ def h_doom_control(req):
     return (200 if r.get("ok") else 400), r
 
 
+def h_gubble_state(req):
+    """v3.181: мир игры «Gubble 2» для страницы /gubble."""
+    import gubble
+    return 200, gubble.state(req.query.get("mapver", "0"))
+
+
+def h_gubble_input(req):
+    import gubble
+    return 200, gubble.human_input(req.params.get("_sid", ""), req.body or {})
+
+
+def h_gubble_control(req):
+    import gubble
+    r = gubble.control(req.body or {})
+    return (200 if r.get("ok") else 400), r
+
+
+def h_gamechat(req):
+    """v3.181: общий чат плата↔облако↔боты↔LLM (страницы игр и панель)."""
+    import gamechat
+    if req.method == "POST":
+        b = req.body or {}
+        text = str(b.get("text") or "").strip()[:400]
+        if not text:
+            return 400, {"ok": False, "error": "пустое сообщение"}
+        who = str(b.get("who") or "владелец").strip()[:20] or "владелец"
+        m = gamechat.post(who, text, kind="chat", game=str(b.get("game") or ""),
+                          src="human:" + str(req.params.get("_sid", ""))[:8])
+        return 200, {"ok": True, "msg": m}
+    msgs, seq = gamechat.since(req.query.get("since", "0"), limit=60)
+    try:
+        import games
+        gst = games.status()
+    except Exception:
+        gst = {}
+    return 200, {"ok": True, "seq": seq, "msgs": msgs, "games": gst}
+
+
+def h_games(req):
+    """v3.181: арбитр игр — где своя LLM, доступность игр."""
+    import games
+    return 200, dict(ok=True, **games.status())
+
+
 def h_senses(req):
     """v3.128: глаза и уши: состояние, «что видишь», «что слышишь»."""
     import senses
@@ -2366,6 +2410,12 @@ _r("POST", "api/senses", h_senses)
 _r("GET", "api/doom/state", h_doom_state)                 # v3.127: игра
 _r("POST", "api/doom/input", h_doom_input)
 _r("POST", "api/doom/control", h_doom_control)
+_r("GET", "api/gubble/state", h_gubble_state)             # v3.181: Gubble 2
+_r("POST", "api/gubble/input", h_gubble_input)
+_r("POST", "api/gubble/control", h_gubble_control)
+_r("GET", "api/gamechat", h_gamechat)                     # v3.181: общий чат
+_r("POST", "api/gamechat", h_gamechat)
+_r("GET", "api/games", h_games)
 _r("POST", "api/hearing", h_hearing)
 _r("GET", "api/hearing", h_hearing)         # v3.33: поставить numpy
 _r("GET", "api/brain/train", h_brain_train)

@@ -1,0 +1,337 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gubble 2 — головоломка облака</title>
+<style>
+  :root { --bg:#0e0f12; --panel:#17191f; --line:#2a2e38; --txt:#e6e6e6; --dim:#9aa0ab;
+          --acc:#7bd389; --good:#5fc77a; --bad:#e25a4a; --bot:#b07cff; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt); font:14px/1.4 system-ui, sans-serif; }
+  header { display:flex; gap:12px; align-items:center; padding:8px 16px; border-bottom:1px solid var(--line); flex-wrap:wrap; }
+  header h1 { font-size:18px; margin:0; letter-spacing:2px; color:var(--acc); }
+  header a { color:var(--dim); text-decoration:none; }
+  main { display:grid; grid-template-columns:minmax(0,1fr) 340px; gap:12px; padding:12px 16px; }
+  @media (max-width: 900px) { main { grid-template-columns:1fr; } }
+  #wrap { position:relative; background:#000; border:1px solid var(--line); }
+  #view { width:100%; display:block; image-rendering:pixelated; aspect-ratio:1/1; max-height:78vh; margin:0 auto; }
+  #over { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; pointer-events:none; font-size:26px; font-weight:700; color:#fff; text-shadow:0 2px 6px #000; }
+  #title { position:absolute; inset:0; display:none; flex-direction:column; align-items:center; justify-content:center; background:rgba(0,0,0,.72); color:#fff; text-align:center; padding:24px; pointer-events:none; }
+  #title .ep { color:var(--acc); letter-spacing:3px; font-size:13px; text-transform:uppercase; }
+  #title .nm { font-size:30px; font-weight:800; margin:6px 0 10px; text-shadow:0 2px 8px #000; }
+  #title .st { max-width:520px; font-size:14px; color:#ddd; line-height:1.45; }
+  .bar { display:flex; gap:8px; flex-wrap:wrap; margin:8px 0; align-items:center; }
+  button, select, input { background:var(--panel); color:var(--txt); border:1px solid var(--line); border-radius:6px; padding:6px 10px; font:inherit; }
+  button { cursor:pointer; } button:hover { border-color:var(--acc); } button.on { border-color:var(--good); color:var(--good); }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:10px 12px; margin-bottom:10px; }
+  .card h3 { margin:0 0 6px; font-size:13px; color:var(--dim); font-weight:600; text-transform:uppercase; letter-spacing:1px; }
+  .dim { color:var(--dim); font-size:12.5px; }
+  kbd { background:#262a33; border-radius:3px; padding:0 4px; font-size:12px; }
+  #log, #gchat { max-height:220px; overflow:auto; font-size:12.5px; }
+  #log div, #gchat div { padding:2px 0; border-bottom:1px solid #1f2229; }
+  .k-level { color:var(--acc); } .k-death { color:var(--bad); } .k-item { color:#ffd27d; } .k-join,.k-leave { color:var(--bot); } .k-thought { color:#8fb7ff; } .k-chat { color:#ffd27d; }
+  #gchat .w { font-weight:600; } #gchat .llm .w { color:#ffd27d; } #gchat .board .w { color:var(--bot); } #gchat .event { color:var(--dim); }
+  #chatbox { display:flex; gap:6px; margin-top:6px; } #chatbox input { flex:1; }
+  .tbl { width:100%; border-collapse:collapse; font-size:12.5px; } .tbl td { padding:2px 4px; border-bottom:1px dashed var(--line); } .tbl td:last-child { text-align:right; }
+</style>
+</head>
+<body>
+<header>
+  <h1>GUBBLE 2</h1>
+  <span class="dim">60 уровней · 6 миров · сними весь крепёж нужным инструментом и дойди до выхода · своя LLM и мозг платы играют сами</span>
+  <span style="flex:1"></span>
+  <a href="/doom" title="первая игра облака">🎮 РОК-12</a>
+  <a href="/">← в панель</a>
+</header>
+<main>
+  <section>
+    <div id="wrap"><canvas id="view" width="576" height="576"></canvas><div id="over"></div>
+      <div id="title"><div class="ep" id="t-ep"></div><div class="nm" id="t-nm"></div><div class="st" id="t-st"></div></div></div>
+    <div class="bar">
+      <input id="b-name" placeholder="твоё имя" maxlength="20" style="width:110px">
+      <button id="b-play">▶ Играть</button>
+      <label class="dim">Смотреть: <select id="b-view"></select></label>
+      <button id="b-llm" title="своя LLM облака — игрок (если Gubble 2 недоступна, она пойдёт в РОК-12)">🤖 Позвать свою LLM</button>
+      <button id="b-invite">🧠 Позвать мозг</button>
+      <button id="b-pause">⏸ Пауза</button>
+      <label class="dim">Уровень: <select id="b-level"></select></label>
+      <button id="b-next">⏭ Следующий</button>
+      <button id="b-restart">↺ Новая игра</button>
+    </div>
+    <div id="chatbox"><input id="c-text" placeholder="сказать в общий чат (плата, облако, боты и своя LLM; «ллм, …» — спросить LLM)" maxlength="200"><button id="c-send">Сказать</button></div>
+    <div class="dim" style="margin-top:6px">Управление: <kbd>←↑→↓</kbd> / <kbd>WASD</kbd> — ходить. Наступи на инструмент — возьмёшь его (старый останется лежать). Стой на крепеже с нужным инструментом — он снимется.
+      Крепёж: ⊕ винт → отвёртка, │ гвоздь → молоток, ⬢ болт → ключ, ● заклёпка → дрель. Касание врага — минус жизнь. <kbd>Enter</kbd> — чат.</div>
+  </section>
+  <aside>
+    <div class="card"><h3>Уровень</h3><div id="lvl" class="dim">…</div></div>
+    <div class="card"><h3>Общий чат <span class="dim" id="gc-where"></span></h3><div id="gchat" class="dim">…</div></div>
+    <div class="card"><h3>Табло</h3><div id="players" class="dim">никто не играет</div></div>
+    <div class="card"><h3>События</h3><div id="log"></div></div>
+  </aside>
+</main>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const cv = $("view"), cx = cv.getContext("2d");
+const N = 24, T = cv.width / N;                       // 24 клетки по 24 px
+cx.imageSmoothingEnabled = false;
+const CID = (sessionStorage.gcid || (sessionStorage.gcid = Math.random().toString(36).slice(2, 10)));
+$("b-name").value = localStorage.doomName || "";
+
+/* ---------------- картинки: всё рисуется кодом ---------------- */
+function mk(w, h, fn) { const c = document.createElement("canvas"); c.width = w; c.height = h; fn(c.getContext("2d"), w, h); return c; }
+function rnd(seed) { let s = seed; return () => (s = (s * 16807) % 2147483647) / 2147483647; }
+function ell(g, x, y, rx, ry, c) { g.fillStyle = c; g.beginPath(); g.ellipse(x, y, rx, ry, 0, 0, 7); g.fill(); }
+const TILES = {};
+function tiles(theme, bg, floor, acc) {
+  const r = rnd(theme.length * 31 + 7);
+  const wall = mk(T, T, (g) => {
+    g.fillStyle = bg[1]; g.fillRect(0, 0, T, T);
+    if (theme === "garden") { for (let i = 0; i < 14; i++) ell(g, r() * T, r() * T, 3 + r() * 4, 3 + r() * 3, `rgb(${30 + r() * 30},${90 + r() * 70},${40 + r() * 30})`); }
+    else if (theme === "factory") { g.fillStyle = "#3a3a44"; g.fillRect(1, 1, T - 2, T - 2); g.fillStyle = "#5a5a66"; g.fillRect(3, 3, T - 6, T / 2 - 4); g.fillStyle = "#e2a13a"; g.fillRect(3, T - 6, 4, 3); g.fillRect(T - 7, T - 6, 4, 3); }
+    else if (theme === "sea") { g.fillStyle = "#123a58"; g.fillRect(0, 0, T, T); g.strokeStyle = "#1e5c86"; g.lineWidth = 1; for (let y = 4; y < T; y += 6) { g.beginPath(); g.moveTo(0, y); g.quadraticCurveTo(T / 2, y - 3, T, y); g.stroke(); } g.fillStyle = "#5fd0ff"; g.fillRect(4, 4, 2, 2); }
+    else if (theme === "ice") { const gr = g.createLinearGradient(0, 0, T, T); gr.addColorStop(0, "#9cc8ea"); gr.addColorStop(1, "#4a7aa6"); g.fillStyle = gr; g.fillRect(0, 0, T, T); g.strokeStyle = "rgba(255,255,255,.6)"; g.beginPath(); g.moveTo(2, T - 3); g.lineTo(T / 2, 4); g.lineTo(T - 3, T / 2); g.stroke(); }
+    else if (theme === "sky") { g.fillStyle = "#6a5a90"; g.fillRect(0, 0, T, T); g.fillStyle = "#8a7ab0"; g.fillRect(2, 2, T - 4, T - 4); g.fillStyle = "#ffd27d"; g.fillRect(T / 2 - 2, 4, 4, 4); g.fillStyle = "#4a3a70"; g.fillRect(2, T - 5, T - 4, 3); }
+    else { g.fillStyle = "#22262a"; g.fillRect(0, 0, T, T); g.fillStyle = "#30363c"; g.fillRect(1, 1, T - 2, T / 2 - 1); g.fillStyle = "#9bff6b"; g.fillRect(3, T - 6, T - 6, 2); }
+  });
+  const fl = [0, 1, 2].map((v) => mk(T, T, (g) => {
+    g.fillStyle = floor[v % 2]; g.fillRect(0, 0, T, T);
+    for (let i = 0; i < 6; i++) { g.fillStyle = "rgba(0,0,0," + (r() * .15).toFixed(2) + ")"; g.fillRect(r() * T, r() * T, 2, 2); }
+    if (theme === "garden" && r() < .5) { g.fillStyle = "#4f8a3a"; g.fillRect(r() * (T - 4), r() * (T - 4), 3, 2); }
+    if (theme === "factory") { g.strokeStyle = "rgba(0,0,0,.25)"; g.strokeRect(.5, .5, T - 1, T - 1); }
+    if (theme === "ice") { g.fillStyle = "rgba(255,255,255,.25)"; g.fillRect(r() * T, r() * T, 5, 1); }
+  }));
+  return { wall, fl, acc };
+}
+function sprite(fn) { return mk(T, T, fn); }
+const SP = {
+  // Габбл — зелёный инопланетянин в шлеме (цвет — по игроку)
+  gub: (col) => [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([fx, fy]) => sprite((g) => {
+    ell(g, 12, 15, 7, 6, col); ell(g, 12, 8, 7, 6.5, "#9adf7a"); ell(g, 12, 8, 7.5, 7, "rgba(160,220,255,.35)");
+    ell(g, 12 + fx * 2.5, 8 + fy * 1.5, 2.2, 2.6, "#fff"); ell(g, 12 + fx * 3, 8 + fy * 1.5, 1.1, 1.3, "#111");
+    g.fillStyle = "#9adf7a"; g.fillRect(11, 0, 2, 3); ell(g, 12, 0, 1.6, 1.6, "#ff5a4a");
+    g.fillStyle = col; g.fillRect(8, 19, 3, 4); g.fillRect(13, 19, 3, 4);
+  })),
+  tool: {
+    driver: sprite((g) => { g.fillStyle = "#e2a13a"; g.fillRect(4, 10, 9, 5); g.fillStyle = "#c9ccd6"; g.fillRect(13, 11, 8, 3); g.fillRect(20, 10, 2, 5); }),
+    hammer: sprite((g) => { g.fillStyle = "#8a5a33"; g.fillRect(11, 8, 3, 14); g.fillStyle = "#6a6f80"; g.fillRect(5, 4, 15, 6); g.fillStyle = "#9aa1aa"; g.fillRect(5, 4, 15, 2); }),
+    wrench: sprite((g) => { g.fillStyle = "#9aa1aa"; g.fillRect(9, 8, 6, 13); ell(g, 12, 7, 6, 5, "#9aa1aa"); g.fillStyle = "#0e0f12"; g.fillRect(10, 2, 4, 5); }),
+    drill: sprite((g) => { g.fillStyle = "#3f7fd6"; g.fillRect(6, 8, 11, 8); g.fillRect(9, 15, 5, 6); g.fillStyle = "#c9ccd6"; g.fillRect(17, 10, 6, 3); g.fillStyle = "#ffd84a"; g.fillRect(7, 9, 3, 2); }),
+  },
+  fast: {
+    screw: sprite((g) => { ell(g, 12, 12, 7, 7, "#8a8f9a"); ell(g, 12, 12, 5, 5, "#b8bdc8"); g.fillStyle = "#3a3e48"; g.fillRect(8, 11, 8, 2); g.fillRect(11, 8, 2, 8); }),
+    nail: sprite((g) => { g.fillStyle = "#a8adb8"; g.fillRect(6, 7, 12, 3); g.fillRect(11, 9, 2, 10); ell(g, 12, 19, 1.5, 1.5, "#777"); }),
+    bolt: sprite((g) => { g.fillStyle = "#c9a23a"; g.beginPath(); for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3; g.lineTo(12 + Math.cos(a) * 7.5, 12 + Math.sin(a) * 7.5); } g.fill(); ell(g, 12, 12, 3, 3, "#7a6020"); }),
+    rivet: sprite((g) => { ell(g, 12, 13, 7, 6, "#6f7480"); ell(g, 12, 11, 6, 5, "#a0a6b2"); ell(g, 10, 9, 2, 1.5, "#fff"); }),
+  },
+  bonus: {
+    clock: sprite((g) => { ell(g, 12, 12, 8, 8, "#e8e8e8"); ell(g, 12, 12, 6.5, 6.5, "#fff"); g.strokeStyle = "#222"; g.lineWidth = 1.5; g.beginPath(); g.moveTo(12, 12); g.lineTo(12, 7); g.moveTo(12, 12); g.lineTo(16, 12); g.stroke(); }),
+    heart: sprite((g) => { g.fillStyle = "#ff4a6a"; g.beginPath(); g.moveTo(12, 20); g.bezierCurveTo(2, 12, 5, 3, 12, 8); g.bezierCurveTo(19, 3, 22, 12, 12, 20); g.fill(); }),
+    star: sprite((g) => { g.fillStyle = "#ffd84a"; g.beginPath(); for (let i = 0; i < 10; i++) { const a = i * Math.PI / 5 - Math.PI / 2, r = i % 2 ? 4 : 9; g.lineTo(12 + Math.cos(a) * r, 12 + Math.sin(a) * r); } g.fill(); }),
+    gem: sprite((g) => { g.fillStyle = "#5fd0ff"; g.beginPath(); g.moveTo(12, 3); g.lineTo(20, 10); g.lineTo(12, 21); g.lineTo(4, 10); g.fill(); g.fillStyle = "#c8f4ff"; g.beginPath(); g.moveTo(12, 3); g.lineTo(16, 10); g.lineTo(8, 10); g.fill(); }),
+  },
+  enemy: {
+    crab: sprite((g) => { ell(g, 12, 13, 8, 5.5, "#d9552a"); for (const x of [4, 20]) ell(g, x, 10, 3, 2.5, "#d9552a"); g.strokeStyle = "#d9552a"; g.lineWidth = 2; for (let i = -1; i <= 1; i += 2) for (let k = 0; k < 3; k++) { g.beginPath(); g.moveTo(12, 14); g.lineTo(12 + i * 9, 16 + k * 2); g.stroke(); } ell(g, 9, 10, 1.5, 1.5, "#fff"); ell(g, 15, 10, 1.5, 1.5, "#fff"); }),
+    ghost: sprite((g) => { g.fillStyle = "rgba(200,210,255,.85)"; g.beginPath(); g.moveTo(4, 21); g.lineTo(4, 10); g.quadraticCurveTo(12, -2, 20, 10); g.lineTo(20, 21); for (let x = 20; x > 4; x -= 4) g.lineTo(x - 2, 18); g.fill(); ell(g, 9, 10, 1.8, 2.4, "#223"); ell(g, 15, 10, 1.8, 2.4, "#223"); }),
+    zap: sprite((g) => { g.fillStyle = "#2a2a30"; g.fillRect(8, 6, 8, 14); g.fillStyle = "#ffd84a"; g.beginPath(); g.moveTo(13, 2); g.lineTo(9, 11); g.lineTo(12, 11); g.lineTo(10, 19); g.lineTo(16, 9); g.lineTo(13, 9); g.lineTo(15, 2); g.fill(); }),
+    roller: sprite((g) => { ell(g, 12, 12, 9, 9, "#4a4e5c"); ell(g, 12, 12, 6, 6, "#6a6f80"); g.strokeStyle = "#22252e"; g.lineWidth = 2; for (let i = 0; i < 4; i++) { const a = i * Math.PI / 2; g.beginPath(); g.moveTo(12, 12); g.lineTo(12 + Math.cos(a) * 9, 12 + Math.sin(a) * 9); g.stroke(); } ell(g, 12, 12, 2, 2, "#ff3a2a"); }),
+  },
+  exit: (open) => sprite((g) => { ell(g, 12, 12, 10, 10, open ? "#2f8f4a" : "#333"); ell(g, 12, 12, 7, 7, open ? "#7bd389" : "#444"); ell(g, 12, 12, 3.5, 3.5, open ? "#fff" : "#222"); }),
+};
+const EXIT_OPEN = SP.exit(true), EXIT_CLOSED = SP.exit(false);
+const PCOL = { human: "#3e8f5a", bot: "#7d4fd0", llm: "#d08a2a" };
+const GUB = { human: SP.gub(PCOL.human), bot: SP.gub(PCOL.bot), llm: SP.gub(PCOL.llm) };
+
+/* ---------------- состояние ---------------- */
+let S = null, MAP = null, MAPVER = 0, meId = null, me = null, playing = false, meDead = false, viewId = "";
+let tileset = null, themeKey = "", titleUntil = 0, titleKey = "", pendingSay = "";
+const keys = {}, ENT = new Map();
+function cell(x, y) { if (!MAP) return 1; const xi = Math.floor(x), yi = Math.floor(y); if (yi < 0 || yi >= N || xi < 0 || xi >= N) return 1; return +MAP[yi][xi]; }
+function smooth(id, x, y) { let e = ENT.get(id); if (!e || Math.hypot(e.x - x, e.y - y) > 2) { e = { x, y }; ENT.set(id, e); } e.x += (x - e.x) * .35; e.y += (y - e.y) * .35; return e; }
+
+async function poll() {
+  try {
+    const r = await fetch("/api/gubble/state?mapver=" + MAPVER, { cache: "no-store" });
+    const d = await r.json();
+    if (d.ok) {
+      if (d.map) { MAP = d.map; MAPVER = d.mapver; ENT.clear(); if (me) me.snap = true; }
+      S = d;
+      if (d.def && d.def.theme !== themeKey) { themeKey = d.def.theme; tileset = tiles(d.def.theme, d.def.bg, d.def.floor, d.def.acc); }
+      const tk = d.mapver + ":" + (d.def && d.def.name);
+      if (tk !== titleKey) { titleKey = tk; titleUntil = performance.now() + 5500; }
+      ui();
+    } else if (d.auth) location.href = "/login";
+  } catch (e) { }
+  setTimeout(poll, 90);
+}
+async function sendInput() {
+  if (playing && me) {
+    const body = { x: me.x, y: me.y, cid: CID };
+    if (pendingSay) { body.say = pendingSay; pendingSay = ""; }
+    try {
+      const r = await fetch("/api/gubble/input", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const d = await r.json();
+      if (d.ok && d.me) {
+        meId = d.id;
+        if (d.me.dead) meDead = true;
+        else if (meDead || me.snap || Math.hypot(d.me.x - me.x, d.me.y - me.y) > 1.5) { meDead = false; me.snap = false; me.x = d.me.x; me.y = d.me.y; }
+      }
+    } catch (e) { }
+  }
+  setTimeout(sendInput, 66);
+}
+let tPrev = performance.now();
+function stepMe(dt) {
+  if (!playing || !me || meDead) return;
+  let dx = ((keys.KeyD || keys.ArrowRight) ? 1 : 0) - ((keys.KeyA || keys.ArrowLeft) ? 1 : 0);
+  let dy = ((keys.KeyS || keys.ArrowDown) ? 1 : 0) - ((keys.KeyW || keys.ArrowUp) ? 1 : 0);
+  const ln = Math.hypot(dx, dy); if (!ln) return;
+  dx /= ln; dy /= ln; const sp = 4.2 * dt, r = .32;
+  const nx = me.x + dx * sp, sx = dx > 0 ? r : -r;
+  if (dx && !cell(nx + sx, me.y - r * .7) && !cell(nx + sx, me.y + r * .7)) me.x = nx;
+  const ny = me.y + dy * sp, sy = dy > 0 ? r : -r;
+  if (dy && !cell(me.x - r * .7, ny + sy) && !cell(me.x + r * .7, ny + sy)) me.y = ny;
+  me.face = Math.abs(dx) >= Math.abs(dy) ? (dx > 0 ? 0 : 1) : (dy > 0 ? 2 : 3);
+}
+
+/* ---------------- отрисовка ---------------- */
+function faceIdx(f) { return f[0] > 0 ? 0 : f[0] < 0 ? 1 : f[1] > 0 ? 2 : 3; }
+function render() {
+  const now = performance.now(), dt = Math.min(.05, (now - tPrev) / 1000); tPrev = now;
+  stepMe(dt);
+  cx.fillStyle = "#000"; cx.fillRect(0, 0, cv.width, cv.height);
+  $("over").textContent = "";
+  if (!MAP || !S || !tileset) { $("over").textContent = "загрузка мира…"; return requestAnimationFrame(render); }
+  for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+    const w = +MAP[y][x];
+    cx.drawImage(w ? tileset.wall : tileset.fl[(x * 7 + y * 13) % 3], x * T, y * T);
+    if (w) { if (y + 1 < N && !+MAP[y + 1][x]) { cx.fillStyle = "rgba(0,0,0,.35)"; cx.fillRect(x * T, (y + 1) * T, T, 4); } }
+  }
+  // выход
+  cx.drawImage(S.exit_open ? EXIT_OPEN : EXIT_CLOSED, S.exit[0] * T, S.exit[1] * T);
+  if (S.exit_open) { cx.fillStyle = "rgba(123,211,137," + (0.25 + 0.2 * Math.sin(now / 200)).toFixed(2) + ")"; cx.beginPath(); cx.arc(S.exit[0] * T + T / 2, S.exit[1] * T + T / 2, T * .8, 0, 7); cx.fill(); }
+  // крепёж, инструменты, бонусы
+  for (const f of S.fast) { cx.drawImage(SP.fast[f.kind], (f.x - .5) * T, (f.y - .5) * T); if (f.work > 0) { cx.fillStyle = "#ffd84a"; cx.fillRect((f.x - .5) * T + 2, (f.y + .35) * T, (T - 4) * f.work, 3); } }
+  for (const t of S.tools) { cx.fillStyle = "rgba(255,255,255,.12)"; cx.fillRect((t.x - .5) * T + 1, (t.y - .5) * T + 1, T - 2, T - 2); cx.drawImage(SP.tool[t.kind], (t.x - .5) * T, (t.y - .5) * T); }
+  for (const b of S.bonus) { const yo = Math.sin(now / 250 + b.id) * 2; cx.drawImage(SP.bonus[b.kind], (b.x - .5) * T, (b.y - .5) * T + yo); }
+  // враги
+  const frozen = S.frozen > 0;
+  for (const e of S.enemies) {
+    const p = smooth("e" + e.id, e.x, e.y);
+    if (e.kind === "zap") { const ph = e.t / 3, r = T * 1.6; cx.fillStyle = e.flash ? "rgba(255,220,80,.6)" : "rgba(255,220,80," + (0.05 + ph * 0.22).toFixed(2) + ")"; cx.beginPath(); cx.arc(p.x * T, p.y * T, r, 0, 7); cx.fill(); }
+    const s = e.boss ? 1.5 : 1;
+    cx.save(); cx.translate(p.x * T, p.y * T); if (e.kind === "roller") cx.rotate(now / (e.boss ? 90 : 160)); cx.drawImage(SP.enemy[e.kind], -T / 2 * s, -T / 2 * s, T * s, T * s); cx.restore();
+    if (frozen && e.kind !== "zap") { cx.fillStyle = "rgba(160,220,255,.45)"; cx.fillRect((p.x - .5) * T, (p.y - .5) * T, T, T); }
+  }
+  // игроки
+  for (const p of S.players) {
+    if (p.dead) continue;
+    let px = p.x, py = p.y, fi = faceIdx(p.face || [1, 0]);
+    if (p.id === meId && me && !meDead) { px = me.x; py = me.y; fi = me.face == null ? fi : me.face; } else { const e = smooth(p.id, p.x, p.y); px = e.x; py = e.y; }
+    if (p.safe && Math.floor(now / 120) % 2) cx.globalAlpha = .45;
+    cx.drawImage(GUB[p.kind][fi], (px - .5) * T, (py - .5) * T);
+    cx.globalAlpha = 1;
+    if (p.tool) cx.drawImage(SP.tool[p.tool], (px - .1) * T, (py - .9) * T, T * .6, T * .6);
+    cx.font = "bold 9px sans-serif"; cx.textAlign = "center"; cx.fillStyle = "rgba(0,0,0,.6)"; cx.fillText(p.name, px * T + 1, (py - .7) * T + 1); cx.fillStyle = p.kind === "llm" ? "#ffd27d" : p.kind === "bot" ? "#c9a6ff" : "#7dff9b"; cx.fillText(p.name, px * T, (py - .7) * T);
+  }
+  // HUD
+  cx.fillStyle = "rgba(0,0,0,.6)"; cx.fillRect(0, cv.height - 22, cv.width, 22);
+  cx.font = "bold 13px monospace"; cx.textAlign = "left";
+  const mep = S.players.find((q) => q.id === (playing ? meId : viewId)) || S.players.find((q) => q.kind === "llm") || S.players[0];
+  const tl = S.time_left; cx.fillStyle = tl < 20 ? "#ff5a4a" : "#fff"; cx.fillText("⏱ " + tl, 8, cv.height - 7);
+  cx.fillStyle = "#ffd27d"; cx.fillText("крепежа " + S.fast.length, 80, cv.height - 7);
+  if (mep) { cx.fillStyle = "#ff6a8a"; cx.fillText("♥".repeat(Math.max(0, mep.lives)), 210, cv.height - 7); cx.fillStyle = "#9cc4ff"; cx.fillText((mep.tool ? ({ driver: "отвёртка", hammer: "молоток", wrench: "ключ", drill: "дрель" })[mep.tool] : "пусто"), 290, cv.height - 7); cx.fillStyle = "#ddd"; cx.textAlign = "right"; cx.fillText(mep.name + " ✦" + mep.score, cv.width - 8, cv.height - 7); }
+  if (frozen) { cx.fillStyle = "rgba(160,220,255,.12)"; cx.fillRect(0, 0, cv.width, cv.height); }
+  if (S.paused) $("over").textContent = "ПАУЗА";
+  else if (mep && mep.dead) $("over").textContent = "ой! сейчас вернусь…";
+  else if (!S.players.length) $("over").textContent = "никто не играет — нажми «Играть» или позови LLM";
+  titleCard();
+  requestAnimationFrame(render);
+}
+function titleCard() {
+  const on = performance.now() < titleUntil && S && S.def;
+  $("title").style.display = on ? "flex" : "none";
+  if (!on) return;
+  $("t-ep").textContent = "Мир " + S.def.world_n + " · " + S.def.world + " · уровень " + S.def.idx + " из 60" + (S.def.loop ? " · круг " + (S.def.loop + 1) : "");
+  $("t-nm").textContent = S.def.name; $("t-st").textContent = S.def.story;
+}
+
+/* ---------------- панель ---------------- */
+function esc(t) { return String(t == null ? "" : t).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]); }
+let lastLog = "";
+function ui() {
+  const d = S.def;
+  $("lvl").innerHTML = `<b style="color:var(--acc)">${esc(d.name)}</b> — мир ${d.world_n} «${esc(d.world)}», уровень ${d.idx}/60${d.loop ? ", круг " + (d.loop + 1) : ""}<br><span class="dim">${esc(d.story)}</span><br>
+    <span class="dim">время на уровень ${d.time} с · пройдено игр целиком: ${S.finished}</span>`;
+  const sel = $("b-view"), opts = S.players.map((p) => p.id).join("|");
+  if (sel.dataset.k !== opts) { sel.dataset.k = opts; sel.innerHTML = S.players.length ? S.players.map((p) => `<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("") : "<option value=''>—</option>"; viewId = sel.value; }
+  const sorted = S.players.slice().sort((a, b) => b.score - a.score);
+  $("players").innerHTML = sorted.length ? "<table class='tbl'>" + sorted.map((p, i) => `<tr><td>${i + 1}.</td><td>${p.kind === "llm" ? "🤖" : p.kind === "bot" ? "🧠" : "🙂"} ${esc(p.name)}${p.id === meId ? " (ты)" : ""}</td><td>♥${p.lives} · снял ${p.removed} · ур.${p.levels}</td><td><b>${p.score}</b></td></tr>`).join("") + "</table>" : "никто не играет";
+  const lvl = $("b-level");
+  if (!lvl.options.length) for (let i = 1; i <= 60; i++) { const o = document.createElement("option"); o.value = i; o.textContent = i; lvl.appendChild(o); }
+  if (document.activeElement !== lvl) lvl.value = String(d.idx);
+  const L = S.llm || {}, G = S.games || {};
+  $("b-llm").textContent = L.on ? "🤖 LLM играет: " + (L.tactic || "") + " (убрать)" : (G.llm_game === "doom" ? "🤖 LLM в РОК-12 — позвать сюда" : "🤖 Позвать свою LLM");
+  $("b-llm").classList.toggle("on", !!L.on);
+  $("b-llm").title = L.on ? "тактику выбирает: " + (L.src || "") + " · решений " + (L.decisions || 0) : "своя LLM облака";
+  $("gc-where").textContent = G.llm_game ? "· LLM сейчас в " + G.llm_game_name : "· LLM не играет";
+  $("b-pause").textContent = S.paused ? "▶ Продолжить" : "⏸ Пауза";
+  const inv = (S.invite || []).length > 0; $("b-invite").textContent = inv ? "🧠 Приглашение отправлено (снять)" : "🧠 Позвать мозг"; $("b-invite").classList.toggle("on", inv);
+  const lk = S.log.map((e) => e.ts).join(",");
+  if (lk !== lastLog) { lastLog = lk; $("log").innerHTML = S.log.slice().reverse().map((e) => `<div class="k-${esc(e.kind)}">${new Date(e.ts * 1000).toLocaleTimeString()} ${e.who ? "<b>" + esc(e.who) + "</b>: " : ""}${esc(e.text)}</div>`).join(""); }
+}
+
+/* ---------------- общий чат ---------------- */
+let gcSeq = 0;
+async function pollChat() {
+  try {
+    const r = await fetch("/api/gamechat?since=" + gcSeq, { cache: "no-store" }); const d = await r.json();
+    if (d.ok && d.msgs && d.msgs.length) {
+      const box = $("gchat"), atEnd = box.scrollTop + box.clientHeight >= box.scrollHeight - 20;
+      if (box.textContent === "…") box.innerHTML = "";
+      for (const m of d.msgs) {
+        const cls = m.kind === "llm" || m.src === "llm" ? "llm" : (m.src || "").startsWith("board") ? "board" : m.kind === "event" ? "event" : "";
+        const div = document.createElement("div"); div.className = cls;
+        div.innerHTML = `<span class="dim">${new Date(m.ts * 1000).toLocaleTimeString().slice(0, 5)}</span> <span class="w">${esc(m.who)}</span>${m.game ? " <span class='dim'>·" + esc(m.game) + "</span>" : ""}: ${esc(m.text)}`;
+        box.appendChild(div); gcSeq = Math.max(gcSeq, m.seq);
+      }
+      while (box.children.length > 80) box.removeChild(box.firstChild);
+      if (atEnd) box.scrollTop = box.scrollHeight;
+    }
+  } catch (e) { }
+  setTimeout(pollChat, 1500);
+}
+async function sayChat() {
+  const t = $("c-text").value.trim(); if (!t) return; $("c-text").value = "";
+  if (playing && me) { pendingSay = t; return; }
+  await fetch("/api/gamechat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ who: $("b-name").value.trim() || "владелец", text: t, game: "Gubble 2" }) });
+}
+$("c-send").onclick = sayChat;
+$("c-text").addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); sayChat(); cv.focus(); } e.stopPropagation(); });
+
+/* ---------------- управление ---------------- */
+async function ctl(action, extra) { await fetch("/api/gubble/control", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(Object.assign({ action }, extra || {})) }); }
+$("b-pause").onclick = () => ctl("pause");
+$("b-next").onclick = () => ctl("next");
+$("b-restart").onclick = () => { if (confirm("Начать Gubble 2 заново с уровня 1?")) ctl("restart"); };
+$("b-level").onchange = (e) => ctl("level", { n: +e.target.value });
+$("b-llm").onclick = () => ctl(S && S.llm && S.llm.on ? "llm_leave" : "llm_join");
+$("b-invite").onclick = () => ctl((S && S.invite && S.invite.length) ? "uninvite" : "invite");
+$("b-view").onchange = (e) => { viewId = e.target.value; };
+$("b-name").onchange = () => { localStorage.doomName = $("b-name").value.trim(); };
+$("b-play").onclick = async () => {
+  if (playing) { playing = false; $("b-play").textContent = "▶ Играть"; $("b-play").classList.remove("on"); await fetch("/api/gubble/input", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ leave: true, cid: CID }) }); meId = null; me = null; return; }
+  const name = $("b-name").value.trim() || "владелец"; localStorage.doomName = name;
+  const r = await fetch("/api/gubble/input", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, cid: CID }) });
+  const d = await r.json();
+  if (d.ok) { meId = d.id; me = { x: d.me.x, y: d.me.y, face: 0 }; playing = true; $("b-play").textContent = "■ Выйти"; $("b-play").classList.add("on"); cv.focus(); }
+};
+const GK = ["KeyW", "KeyA", "KeyS", "KeyD", "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"];
+addEventListener("keydown", (e) => { if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return; if (e.code === "Enter") { e.preventDefault(); $("c-text").focus(); return; } if (!playing) return; if (GK.includes(e.code)) e.preventDefault(); keys[e.code] = true; });
+addEventListener("keyup", (e) => { keys[e.code] = false; });
+cv.tabIndex = 0;
+poll(); sendInput(); pollChat(); requestAnimationFrame(render);
+</script>
+</body>
+</html>

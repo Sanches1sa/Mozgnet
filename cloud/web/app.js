@@ -2158,7 +2158,9 @@ async function micWire() {
       if (m.err) h += '<div style="color:#e88">⚠ ' + esc(m.err) + '</div>';
       if (m.last) h += '<div class="muted">последнее: «' + esc(m.last) + '»</div>';
       if (m.live_err) h += '<div style="color:#e88">живой звук: ' + esc(m.live_err) + '</div>';
-      if (m.vosk) h += '<div>🧠 Vosk на плате: ' + esc(m.vosk.state || '?') + (m.vosk.texts ? ' · распознано фраз ' + m.vosk.texts : '') + (m.vosk.err ? ' <span style="color:#e88">' + esc(m.vosk.err) + '</span>' : '') + '</div>';
+      if (m.vosk) h += '<div>🧠 Vosk на плате: ' + esc(m.vosk.state || '?') + (m.vosk.texts ? ' · распознано фраз ' + m.vosk.texts : '') + (m.vosk.where ? ' <span class="muted">(' + esc(m.vosk.where) + ')</span>' : '') + (m.vosk.err ? ' <span style="color:#e88">' + esc(m.vosk.err) + '</span>' : '') +
+        (m.vosk.state !== 'готов' ? ' <button class="btn" data-vosk-board="' + esc(b.board) + '" title="v3.181: плата v2.96+ поставит пакет vosk в свою постоянную папку pylib и русскую модель (~45 МБ) — распознавание речи прямо на плате, без облака">⬇ Поставить Vosk на плату</button>' : '') + '</div>';
+      else h += '<div>🧠 Vosk на плате: <span class="muted">плата не сообщила</span> <button class="btn" data-vosk-board="' + esc(b.board) + '">⬇ Поставить Vosk на плату</button></div>';
       if (m.vr) h += '<div>🗣 Модуль VR3 (D12/D13): ' + esc(m.vr.state || '?') + ' · байт ' + (m.vr.bytes || 0) + ', кадров ' + (m.vr.frames || 0) +
         (m.vr.last ? ' · последняя команда «' + esc(m.vr.last) + '»' : '') + (m.vr.err ? ' <span style="color:#e88">' + esc(m.vr.err) + '</span>' : '') + '</div>';
     } else h += '<div class="muted">🎤 плата не прислала состояние микрофона (обнови плату до v2.93)</div>';
@@ -2178,7 +2180,9 @@ async function micWire() {
     h += '<div style="margin:4px 0">' + (b.want ? '<button class="btn" data-mic-stop="' + esc(b.board) + '">⏹ Стоп</button> <span class="muted">слушаю… звук играет кусками по 3 с</span>'
       : '<button class="btn" data-mic-go="' + esc(b.board) + '">🎧 Слушать 60 с</button>') +
       ' <button class="btn" data-mic-clip="' + esc(b.board) + '">▶ Последние 10 с</button>' +
-      ' <button class="btn" data-mic-phrase="' + esc(b.board) + '">▶ Последняя фраза</button></div>';
+      ' <button class="btn" data-mic-phrase="' + esc(b.board) + '">▶ Последняя фраза</button>' +
+      ' <button class="btn" data-mic-to="phrase" data-mic-board="' + esc(b.board) + '" title="v3.181.4: плата скачает этот звук и сыграет его своим динамиком: огибающая на D8 (say_wave), иначе aplay">🔊 Фразу → на динамик платы</button>' +
+      ' <button class="btn" data-mic-to="clip" data-mic-board="' + esc(b.board) + '" title="последние 10 с живого звука — на динамик платы">🔊 10 с → на динамик платы</button></div>';
     if (c) {
       h += '<div>📷 ' + esc(c.state || '?') + (c.on ? '' : ' (камера выключена: cam_on)') + ' · адрес <code>' + esc(c.url || '—') + '</code>' +
         (c.ok_age != null ? ' · последний кадр ' + c.ok_age + ' с назад' : '') + (c.sent_age != null ? ' · в облако ' + c.sent_age + ' с назад' : '') + '</div>';
@@ -2216,6 +2220,21 @@ async function micWire() {
     clearInterval(MIC_PLAY); MIC_PLAY = null;
     await api('/api/hearing/live', { body: { board: x.dataset.micStop, on: false } });
     micWire();
+  });
+  box.querySelectorAll('[data-mic-to]').forEach(x => x.onclick = async () => {       // v3.181.4
+    x.disabled = true;
+    try {
+      const r = await api('/api/hearing/to-board', { body: { board: x.dataset.micBoard, what: x.dataset.micTo, sec: 10 } });
+      toast(r.ok ? 'Отправлено (' + r.kb + ' КБ): плата сыграет за ~5 с' : (r.error || 'ошибка'), r.ok ? 'ok' : 'warn');
+    } catch (e) { toast('не удалось: ' + e, 'warn'); }
+    setTimeout(() => { x.disabled = false; }, 4000);
+  });
+  box.querySelectorAll('[data-vosk-board]').forEach(x => x.onclick = async () => {   // v3.181
+    x.disabled = true;
+    try {
+      const r = await api('/api/hearing/vosk-board', { body: { board: x.dataset.voskBoard } });
+      toast(r.ok ? 'Плата ' + x.dataset.voskBoard + ' получит команду за ~5 с; установка Vosk — несколько минут, состояние — в этой карточке' : (r.error || 'ошибка'), r.ok ? 'ok' : 'warn');
+    } catch (e) { toast('не удалось: ' + e, 'warn'); x.disabled = false; }
   });
   box.querySelectorAll('[data-mic-clip]').forEach(x => x.onclick = () => { clearInterval(MIC_PLAY); MIC_PLAY = null;
     play('/api/hearing/live.wav?board=' + encodeURIComponent(x.dataset.micClip) + '&sec=10'); });

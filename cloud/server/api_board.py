@@ -54,8 +54,21 @@ def h_brains_register(req):
     bid = str(b.get("id") or "").strip()[:40]
     if not bid:
         return 400, {"ok": False, "error": "нет id платы"}
+    url = str(b.get("url") or "").strip()
+    # пустой адрес или внутренний docker (172.16–31.x) недостижимы снаружи:
+    # берём реальный IP, с которого плата пришла (порт — из присланного/7000)
+    try:
+        import re as _re
+        m = _re.match(r"^(https?)://(\d+)\.(\d+)\.\d+\.\d+(?::(\d+))?", url)
+        docker = bool(m and m.group(2) == "172" and 16 <= int(m.group(3)) <= 31)
+        cip = str(req.client_ip or "")
+        if (not url or docker) and cip and not cip.startswith(("127.", "::1")):
+            if str(b.get("kind") or "board") == "board":
+                url = "http://%s:%s" % (cip, (m.group(4) if m and m.group(4) else "7000"))
+    except Exception:
+        pass
     store.board_touch(bid, name=b.get("name"), kind=b.get("kind"),
-                      url=b.get("url"), note=b.get("note"),
+                      url=url or b.get("url"), note=b.get("note"),
                       ip=req.client_ip, via_bridge=False)
     store.log("РЕЕСТР", "плата зарегистрирована:", bid,
               str(b.get("url") or ""))
@@ -563,6 +576,25 @@ def h_link(req):
             r["game"] = doomgame.info_for_board(str(b.get("board") or ""))
     except Exception:
         pass
+    try:                         # v3.181: общий чат плата↔облако↔боты↔LLM
+        import gamechat
+        if isinstance(r, dict) and r.get("ok"):
+            r["chat"] = gamechat.link(str(b.get("board") or ""), b.get("chat_seq"),
+                                      b.get("chat_out"))
+    except Exception:
+        pass
+    try:                         # v3.181: кнопка «поставить Vosk на плату»
+        if isinstance(r, dict) and r.get("ok") and vosk_req_take(b.get("board")):
+            r["vosk_install"] = True
+    except Exception:
+        pass
+    try:                         # v3.181.4: звук из карточки — на динамик платы
+        if isinstance(r, dict) and r.get("ok"):
+            pl = play_req_take(b.get("board"))
+            if pl:
+                r["play"] = pl
+    except Exception:
+        pass
     try:                         # v3.177.2: кванты на D6 (плата v2.92)
         if isinstance(r, dict) and r.get("ok"):
             r["particles"] = particles_cfg()
@@ -660,6 +692,65 @@ def h_hearing_live(req):
         b = req.body or {}
         micstream.set_want(b.get("board") or "*", bool(b.get("on")), b.get("sec") or 60)
     return 200, micstream.status()
+
+
+_VOSK_REQ = {}      # v3.181: плата -> ts: владелец нажал «поставить Vosk на плату»
+
+
+def h_vosk_board(req):
+    """v3.181: кнопка в карточке микрофона: POST {board} — плата (v2.96+)
+    получит в ответе /api/link флаг vosk_install и поставит Vosk в свою
+    постоянную папку pylib + русскую модель (из облака или alphacephei)."""
+    b = req.body or {}
+    board = str(b.get("board") or "").strip()[:40]
+    if not board:
+        return 400, {"ok": False, "error": "нужен id платы"}
+    _VOSK_REQ[board] = time.time()
+    store.log("СЛУХ", "владелец попросил поставить Vosk на плату %s" % board)
+    return 200, {"ok": True, "board": board,
+                 "note": "плата получит команду при следующей связи (до 5 с); установка — несколько минут"}
+
+
+def vosk_req_take(board):
+    ts = _VOSK_REQ.pop(str(board or "")[:40], None)
+    return bool(ts and time.time() - ts < 600)
+
+
+_PLAY_REQ = {}      # v3.181.4: плата -> {what, sec, ts}: «звук из карточки — на динамик платы»
+
+
+def h_hearing_to_board(req):
+    """v3.181.4: кнопка в карточке микрофона: POST {board, what: phrase|clip, sec?}
+    — плата (v2.96.1+) получит в ответе /api/link play{url, sec}, скачает WAV
+    и сыграет его динамиком (огибающая на D8 через say_wave, иначе aplay)."""
+    b = req.body or {}
+    board = str(b.get("board") or "").strip()[:40]
+    what = "clip" if str(b.get("what") or "") == "clip" else "phrase"
+    try:
+        sec = max(1, min(20, int(b.get("sec") or 10)))
+    except (TypeError, ValueError):
+        sec = 10
+    if not board:
+        return 400, {"ok": False, "error": "нужен id платы"}
+    import micstream
+    data = micstream.phrase_wav(board) if what == "phrase" else micstream.live_wav(board, sec)
+    if not data:
+        return 200, {"ok": False, "error": "у облака нет этого звука от платы %s (%s)" % (
+            board, "фраз ещё не было" if what == "phrase" else "живого звука ещё нет")}
+    _PLAY_REQ[board] = {"what": what, "sec": sec, "ts": time.time()}
+    store.log("СЛУХ", "владелец отправил %s на динамик платы %s" % (
+        "последнюю фразу" if what == "phrase" else "%d с живого звука" % sec, board))
+    return 200, {"ok": True, "board": board, "what": what, "kb": len(data) // 1024,
+                 "note": "плата заберёт звук при следующей связи (до 5 с)"}
+
+
+def play_req_take(board):
+    p = _PLAY_REQ.pop(str(board or "")[:40], None)
+    if not p or time.time() - p["ts"] > 300:
+        return None
+    if p["what"] == "phrase":
+        return {"url": "/api/hearing/phrase.wav?board=%s" % board, "what": "phrase"}
+    return {"url": "/api/hearing/live.wav?board=%s&sec=%d" % (board, p["sec"]), "what": "clip"}
 
 
 def h_hearing_voice(req):
@@ -807,6 +898,12 @@ def h_doom_bot(req):
     """v3.127: бот платы в игре «РОК-12»: действие -> что видит + награда."""
     import doomgame
     return 200, doomgame.bot_call(req.body or {})
+
+
+def h_gubble_bot(req):
+    """v3.181: бот платы в игре «Gubble 2»: {board, act:{dx,dy}, want} -> obs."""
+    import gubble
+    return 200, gubble.bot_call(req.body or {})
 
 
 def h_thoughts(req):
@@ -1362,10 +1459,13 @@ def h_board_read(req):
 
 _r("POST", "api/board/read", h_board_read, auth=True)
 _r("POST", "api/doom/bot", h_doom_bot, auth=True)
+_r("POST", "api/gubble/bot", h_gubble_bot, auth=True)          # v3.181: Gubble 2
 _r("POST", "api/worddict/sync", h_worddict_sync, auth=True)  # v3.133: общий словарь
 _r("POST", "api/hearing/stream", h_hearing_stream, auth=True)   # v3.178: живой звук
 _r("GET", "api/hearing/live", h_hearing_live, "panel")
 _r("POST", "api/hearing/live", h_hearing_live, "panel")
+_r("POST", "api/hearing/vosk-board", h_vosk_board, "panel")     # v3.181: Vosk на плату по кнопке
+_r("POST", "api/hearing/to-board", h_hearing_to_board, "panel") # v3.181.4: звук -> динамик платы
 _r("GET", "api/hearing/live.wav", h_hearing_live_wav, "panel")
 _r("POST", "api/hearing/voice", h_hearing_voice)
 _r("POST", "api/board/codejob", h_board_codejob, auth=True)

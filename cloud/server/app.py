@@ -254,7 +254,7 @@ class Handler(BaseHTTPRequestHandler):
             if not path.startswith("/api/"):
                 if not auth.session_ok(self._cookie(auth.COOKIE)):
                     if path in ("/", "/chat", "/index.html", "/studio",
-                                "/cam", "/doom"):
+                                "/cam", "/doom", "/gubble"):
                         return self._send(302, b"", "text/plain",
                                           {"Location": "/login"})
                     return self._send(401, "закрыто паролем".encode("utf-8"),
@@ -265,6 +265,8 @@ class Handler(BaseHTTPRequestHandler):
                     return self._static("cam.html")
                 if path == "/doom":                      # v3.127: игра
                     return self._static("doom.html")
+                if path == "/gubble":                    # v3.181: Gubble 2
+                    return self._static("gubble.html")
                 return self._static(path.lstrip("/"))
 
             # ---------- API ----------
@@ -575,8 +577,12 @@ def main():
     # и повторные запуски путались. Теперь порт открыт через доли секунды,
     # /api/health отвечает {"starting": true}, чат и плата получают 503
     # «облако запускается» (повторят сами), пока старт не закончится.
+    class _Srv(ThreadingHTTPServer):
+        # по умолчанию очередь listen() = 5: при одновременных запросах
+        # (лаунчер, плата, веб) лишние соединения сбрасываются (RST)
+        request_queue_size = 128
     try:
-        httpd = ThreadingHTTPServer(("0.0.0.0", port), Handler)
+        httpd = _Srv(("0.0.0.0", port), Handler)
     except OSError as e:
         msg = ("не смог занять порт %d (%s). Укажи другой: "
                "set NEURO_PORT=8080 и запусти снова." % (port, e))

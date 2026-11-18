@@ -67,7 +67,7 @@
 
 /* ------------------------------ НАСТРОЙКИ -------------------------------- */
 #define FW_VER           "esp32cam_tflite v1.4"
-#define CAM_BAUD         460800   // = CAMRX_BAUD скетча хаба
+#define CAM_BAUD         115200   // = CAMRX_BAUD скетча хаба (v2.96.5: 115200; на 230400/460800 кадры бились)
 #define UART_TX_PIN      13       // GPIO13 (TX) -> RX UNO Q
 #define UART_RX_PIN      14       // GPIO14 (RX) <- TX UNO Q (голоса, фразы)
 

@@ -1006,8 +1006,19 @@ void txtBump(uint8_t n) {
  * работает и без tone() (важно для Zephyr-ядра UNO Q).
  * Анти-заводка: если микрофон перегружен (динамик слишком близко / громко)
  * дольше MIC_HOT_MS — голос молчит VOICE_COOL_MS, петля размыкается.      */
+/* v2.96.1: ДИНАМИК — ТОЛЬКО РЕЧЬ (TTS). Раньше D8 ещё пищал «мотивацией
+ * говорить» (тоны от частоты шины genHz) и мелодиями слов (буква = нота) —
+ * владельцу это слышалось случайными звуками генератора. Теперь при
+ * SPEAKER_TTS_ONLY 1 на D8 звучит ТОЛЬКО say_wave (речь из облака, которую
+ * Python разобрал в огибающую). Поставь 0, чтобы вернуть старое поведение. */
+#define SPEAKER_TTS_ONLY 1
+
 void voiceSay(uint16_t hzBase, uint8_t tones) {
   if (!voiceOn) return;
+#if SPEAKER_TTS_ONLY
+  (void)hzBase; (void)tones;
+  return;                                 // мотивационные тоны выключены
+#endif
   if (voxSteps || melLen) return;         // уже говорим — не перебиваем
   if (micHotSince && millis() - micHotSince > MIC_HOT_MS &&
       millis() - lastPhraseMs < VOICE_COOL_MS)
@@ -1063,6 +1074,10 @@ void voiceTick() {
  * слово из текущего буфера сборки звучит целиком, как короткое «слово».
  * Неблокирующая очередь шагов (нота/пауза) поверх голосового движка.       */
 void melStart() {
+#if SPEAKER_TTS_ONLY
+  melLen = 0;                             // v2.96.1: мелодии слов выключены
+  return;
+#endif
   if (voxSteps) { melLen = 0; return; }   // не перебивать фразу мотивации
   melIdx = 0; melTone = true; tMel = millis();
   if (mel[0].hz) toneHz = mel[0].hz;
@@ -1104,6 +1119,10 @@ uint8_t letterNumOf(const char *two) {
 }
 
 void voiceWord(const char *w) {
+#if SPEAKER_TTS_ONLY
+  (void)w;
+  return;                                 // v2.96.1: слова нотами не играем
+#endif
   if (!voiceOn || melLen) return;         // голос выключен или уже звучит слово
   for (uint16_t p = 0; w[p] && melLen < MEL_MAX - 2; p += 2) {
     uint8_t num = letterNumOf(w + p);
@@ -1446,7 +1465,9 @@ String rpcNeuroReset() {
  *   скетча камеры. При LINK_SW_WIRE 0 Serial1 может быть занят нейронами
  *   (запасной вариант) — тогда камеру вешать на другой UART. */
 #define CAMRX          Serial1   // аппаратный UART платы (D0/D1)
-#define CAMRX_BAUD     460800    // = CAM_BAUD скетча камеры
+#define CAMRX_BAUD     115200    // = CAM_BAUD скетча камеры. v2.96.5: 115200 (230400 и 460800 —
+                                 // при занятом loop() (≈290 проходов/с) буфер UART
+                                 // переполнялся внутри кадра: bytes шли, bad росло, ok=0
 #define CAMRX_BUF      20480     // v2.89.2: 2 буфера по 20 КБ = те же 40 КБ памяти, что до v2.88
                                  // (в v2.88 было 2×40 КБ — скетч мог не поместиться и не стартовать);
                                  // JPEG QVGA q12 — 6…15 КБ, кадр больше 20 КБ отбрасывается
@@ -1472,6 +1493,20 @@ static uint8_t  camPkt[8];         // заголовок принимаемог�
 static uint8_t  camPktGot = 0;
 static uint16_t camPktLen = 0, camPktGotData = 0;
 static uint8_t  camState = 0;      // 0=ищем A5, 1=ждём 5C, 2=заголовок, 3=payload
+/* v2.96: КАДР УХОДИТ В LINUX САМ (push), а не по запросу. Раньше Python
+ * дёргал RPC cam_frame_info + ~16×cam_chunk; каждый RPC ждёт, пока занятый
+ * loop() дойдёт до моста, и при очереди моста из word_push/say_wave кадр
+ * не собирался вовсе («cam_frame_info не ответил за 8 с»). Теперь после
+ * целого JPEG скетч шлёт Bridge.notify("on_cam", seq, off, len, b64) —
+ * по ОДНОМУ куску за проход loop (не блокирует нейроны), "on_cam_info"
+ * (счётчики) раз в 2 с и "on_cam_vis" (зрение камеры) сразу по приходу.
+ * RPC cam_frame_info/cam_chunk/cam_vis оставлены для старых приложений. */
+static bool     camPush = false;
+static uint16_t camPushOff = 0;
+static uint8_t  camPushSeq = 0;
+static uint32_t camPushMs = 0, camPushStartMs = 0, camInfoMs = 0, camPushed = 0;
+#define CAMPUSH_GAP_MS    12     // пауза между кусками (мосту — продохнуть)
+#define CAMPUSH_PERIOD_MS 600    // не чаще одного кадра в Linux за это время
 
 /* CRC16/XMODEM (полином 0x1021, старт 0) — та же формула, что у камеры */
 static uint16_t camCrc16(const uint8_t *d, uint16_t n) {
@@ -1509,6 +1544,24 @@ static String camB64(const uint8_t *d, int n) {
     s += '=';
   }
   return s;
+}
+
+/* v2.96.2: ВСЁ, ЧТО ПРИШЛО С КАМЕРЫ И ИДЁТ В МОСТ, — ТОЛЬКО ASCII. При
+ * несовпадении скоростей (или помехах) приёмник ловит мусор; изредка он
+ * складывается в «статус» (0x02) или «зрение» (0x03), и байты вроде 0x93
+ * улетали в on_log/on_cam_vis как есть — Bridge.read_loop на Linux-стороне
+ * падал, и мост «умирал» (уведомления пропадали, все вызовы — timed out).
+ * Теперь: байты вне 0x20..0x7E -> '?', длина ограничена; зрение (JSON)
+ * отправляется только если начинается с '{' и целиком ASCII. */
+static void camAsciiFix(char *s, uint16_t maxLen) {
+  for (uint16_t i = 0; i < maxLen && s[i]; i++)
+    if ((uint8_t)s[i] < 0x20 || (uint8_t)s[i] > 0x7E) s[i] = '?';
+  s[maxLen] = 0;
+}
+static bool camAsciiOnly(const char *s, uint16_t n) {
+  for (uint16_t i = 0; i < n; i++)
+    if ((uint8_t)s[i] < 0x20 || (uint8_t)s[i] > 0x7E) return false;
+  return true;
 }
 
 /* Неблокирующий приём байтов камеры — вызывать из loop() каждую итерацию */
@@ -1555,24 +1608,64 @@ void camUartTick() {
             camCopying = false;
             camLastMs = millis();
             camOk++;
+            /* v2.96: новый целый кадр — отдать в Linux сами (кусками в loop) */
+            if ((uint32_t)(millis() - camPushStartMs) >= CAMPUSH_PERIOD_MS) {
+              camPush = true; camPushOff = 0; camPushSeq = camFrameSeq;
+              camPushStartMs = millis();
+            }
           } else camBad++;                // не JPEG — в мусор
         } else if (typ == 0x03 && camPktLen < CAMVIS_MAX) {   // v2.88: зрение
+          if (camRx[0] != '{' || !camAsciiOnly((const char *)camRx, camPktLen)) {
+            camBad++;                     // v2.96.2: не JSON/не ASCII — мусор, в мост нельзя
+            continue;
+          }
           memcpy(camVis, camRx, camPktLen);
           camVis[camPktLen] = 0;
           camVisMs = millis();
           camVisN++;
+#if USE_RB
+          Bridge.notify("on_cam_vis", String(camVis));   // v2.96: зрение — сами
+#endif
         } else if (typ == 0x04 && camPktLen < sizeof(camVote)) { // v2.88: голос
+          if (camRx[0] != '{' || !camAsciiOnly((const char *)camRx, camPktLen)) { camBad++; continue; }
           memcpy(camVote, camRx, camPktLen);
           camVote[camPktLen] = 0;
           camVoteN++;
         } else if (typ == 0x02) {         // текстовый статус камеры
-          if (camPktLen < CAMRX_BUF) camRx[camPktLen] = 0;
+          uint16_t n = camPktLen < 160 ? camPktLen : 160;   // v2.96.2: коротко и только ASCII
+          camRx[n] = 0;
+          camAsciiFix((char *)camRx, n);
           HUB_OUT.print("[CAM] ");
           HUB_OUT.println((const char *)camRx);
         }
       }
     }
   }
+}
+
+String rpcCamFrameInfo();
+
+/* v2.96: отдача кадра в Linux по одному куску за проход loop() + счётчики */
+void camPushTick() {
+#if USE_RB
+  uint32_t now = millis();
+  if ((uint32_t)(now - camInfoMs) >= 2000) {         // счётчики — раз в 2 с
+    camInfoMs = now;
+    Bridge.notify("on_cam_info", rpcCamFrameInfo() + ";pushed=" + String(camPushed));
+  }
+  if (!camPush || camCopying || !camLen) return;
+  if ((uint32_t)(now - camPushMs) < CAMPUSH_GAP_MS) return;
+  camPushMs = now;
+  if (camPushSeq != camFrameSeq) {                   // кадр сменился — с начала
+    camPushOff = 0; camPushSeq = camFrameSeq;
+  }
+  uint16_t n = (uint16_t)(camLen - camPushOff);
+  if (n > CAMRX_CHUNK) n = CAMRX_CHUNK;
+  Bridge.notify("on_cam", (int)camPushSeq, (int)camPushOff, (int)camLen,
+                camB64(camBuf + camPushOff, n));
+  camPushOff = (uint16_t)(camPushOff + n);
+  if (camPushOff >= camLen) { camPush = false; camPushed++; }
+#endif
 }
 
 /* RPC cam_frame_info: параметры последнего кадра + счётчики (для мозга) */
@@ -2978,12 +3071,19 @@ void rpcTeachScore(int reward) { netTeach(reward >= 0 ? 1 : -1); }
  * Проигрываем через существующий неблокирующий движок мелодий mel[]
  * (melTick в loop): каждый кадр = нота hz на ms, пауза = hz 0.
  * Речь мозга перебивает и мелодию слова, и мотивационные посылки.       */
+/* v2.96.4: КУСКАМИ. Входной буфер RPC у моста MCU — 256 байт (RPClite
+ * DEFAULT_RPC_BUFFER_SIZE = 1024/4), а речь целиком — 600–900 байт: такой
+ * вызов MCU не разбирал, и декодер потока сбивался (следом гибли даже
+ * короткие word_push). Теперь Python шлёт кадры порциями ≤180 байт:
+ * первая — как раньше (заменяет речь), следующие — с префиксом '+'
+ * (дописываются в хвост mel[], пока первая часть уже звучит).          */
 String rpcSayWave(String frames) {
   if (!voiceOn) return String("voice_off");
+  bool append = frames.length() && frames[0] == '+';
   int16_t hz[MEL_MAX];
   uint16_t ms[MEL_MAX];
   uint8_t n = 0;
-  int p = 0;
+  int p = append ? 1 : 0;
   int L = frames.length();
   while (p < L && n < MEL_MAX) {
     int colon = frames.indexOf(':', p);
@@ -3002,14 +3102,24 @@ String rpcSayWave(String frames) {
     n++;
   }
   if (!n) return String("empty");
+  if (append) {                       /* v2.96.4: дописать в хвост речи     */
+    if (!melLen) return String("gone");   /* первая часть уже отзвучала — начать заново */
+    uint8_t k = melLen;
+    for (uint8_t i = 0; i < n && k < MEL_MAX; i++, k++) { mel[k].hz = (uint16_t)hz[i]; mel[k].ms = ms[i]; }
+    melLen = k;
+    return String("ok+:") + k;
+  }
+  /* v2.96.2: порядок записи безопасный для melTick: сначала остановить
+   * (melLen=0), заполнить кадры, потом melLen=n. */
+  melLen = 0;
   voxSteps = 0;                       /* речь важнее «мотивации» и слова  */
+  for (uint8_t i = 0; i < n; i++) { mel[i].hz = (uint16_t)hz[i]; mel[i].ms = ms[i]; }
   melIdx = 0;
-  melLen = n;
   melTone = true;
   tMel = millis();
-  for (uint8_t i = 0; i < n; i++) { mel[i].hz = (uint16_t)hz[i]; mel[i].ms = ms[i]; }
   if (mel[0].hz) toneHz = mel[0].hz;
   nextToneEdgeUs = micros();
+  melLen = n;                         /* последним — включаем проигрывание */
   voiceWave++;                        /* статистика: сколько «речей»      */
   return String("ok:") + n;
 }
@@ -3176,7 +3286,9 @@ void rpcRegister() {
   Bridge.provide_safe("teach_score", rpcTeachScore);
   Bridge.provide_safe("teach_last", rpcTeachLast);     /* v2.6: точечное обучение */
   Bridge.provide_safe("teach_shape", rpcTeachShape);   /* v2.6: маска наград  */
-  Bridge.provide_safe("say_wave", rpcSayWave);         /* v2.14: речь на D8   */
+  Bridge.provide_safe("say_wave", rpcSayWave);         /* v2.14: речь на D8. НЕ provide: из потока моста
+                                                          (v2.96.2, проверено) приём вызовов умирал — hz[]/ms[]/String
+                                                          на малом стеке потока моста */
   Bridge.provide_safe("d6seq", rpcD6Seq);              /* v2.22: буфер слов мозга на D6 */
   Bridge.provide_safe("d4pure", rpcD4Pure);             /* v2.50: чистый кадр на D4 (такт = частота генератора) */
   Bridge.provide_safe("d6pure", rpcD6Pure);             /* v2.49: чистый кадр на D6 (без PWM и байтов) */
@@ -3541,6 +3653,7 @@ void loop() {
   loopStage = 9;  neuroAssignTick();   camUartTick();   // 5c. v2.33: назначение нейронов — один шаг, БЕЗ delay()
   loopStage = 10; eePumpTick();        camUartTick();   // 5d. v2.67: веса в EEPROM — по 2 байта за проход
   loopStage = 11; bridgeSync();        camUartTick();   // 6. обмен с Linux-стороной (val_b, chat_out, teach, speak / total_val_c)
+                  camPushTick();       camUartTick();   // 6a. v2.96: кусок кадра камеры -> Linux (push, без RPC)
   loopStage = 12; analyzeAndPrint();   camUartTick();   // 7. анализ val_c (+val_b, звук) -> частота и total_val_c
   loopStage = 0;
   /* v2.94.5: ДАТЬ ПОТОКУ МОСТА ПРОЦЕССОР. loop() на Zephyr — обычный поток;
@@ -3554,9 +3667,12 @@ void loop() {
   static uint32_t sverMs = 0;            // v2.94.6: версия СКЕТЧА — видно, залился ли новый
   if ((uint32_t)(millis() - sverMs) >= 10000) {
     sverMs = millis();
-    Bridge.notify("on_sver", String("2.94.8;up=") + String(millis() / 1000UL) + ";loops=" + String((unsigned long)loopCount));
+    Bridge.notify("on_sver", String("2.96.5;up=") + String(millis() / 1000UL) + ";loops=" + String((unsigned long)loopCount));
   }
 #endif
+  /* v2.96.2 (проверено на плате): ни сон 1 мс каждые 2 мс, ни yield()
+   * между этапами приём вызовов не улучшают (с yield() мост замолкал
+   * полностью). Оставлен исходный ритм v2.94.5: сон 1 мс каждые 3 мс. */
   static uint32_t yieldMs = 0;
   if ((uint32_t)(millis() - yieldMs) >= 3) {
     yieldMs = millis();

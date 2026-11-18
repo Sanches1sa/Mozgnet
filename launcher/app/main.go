@@ -35,7 +35,7 @@ import (
 	"time"
 )
 
-const VER = "3.162.2"
+const VER = "3.163.0"
 
 //go:embed ui.html
 var uiHTML string
@@ -1183,6 +1183,10 @@ func api(w http.ResponseWriter, r *http.Request) {
 			go apkShare(s("path"))
 		case "apkstop":
 			apkShareStop()
+		case "cleanold_dry": // v3.163: старая/чужая платформа на плате — только показать
+			go boardRun("Проверка платы: старая/чужая платформа", "bash ~/ArduinoApps/neuro_12/deploy_cli/n12_cleanup_old.sh; echo; echo '== соединения с внешними адресами (не из домашней сети):'; (ss -tnp 2>/dev/null || netstat -tnp 2>/dev/null) | awk 'NR>1{print $5, $6, $7}' | grep -vE '^(127\\.|10\\.|192\\.168\\.|172\\.(1[6-9]|2[0-9]|3[01])\\.|\\[::1\\]|::1|\\*)' | head -30", 5*time.Minute)
+		case "cleanold":
+			go sudoRun("Очистка платы от старой платформы", "bash ~/ArduinoApps/neuro_12/deploy_cli/n12_cleanup_old.sh --do", 20*time.Minute)
 		case "watchdog":
 			go func() {
 				sudoRun("Установка сторожа платы", "bash ~/ArduinoApps/neuro_12/deploy_cli/install_autostart.sh watchdog && systemctl restart neuro12", 10*time.Minute)

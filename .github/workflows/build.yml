@@ -63,6 +63,10 @@ jobs:
           LV=$(grep -oP 'const VER = "\K[^"]+' launcher/app/main.go)
           mkdir -p out tmp/neuro12-cloud
           rsync -a --exclude data --exclude '__pycache__' --exclude '.pytest_cache' cloud/ tmp/neuro12-cloud/
+          # лаунчер — прямо в папке облака (neuro12-cloud/launcher): Windows exe и Linux
+          mkdir -p tmp/neuro12-cloud/launcher
+          cp out/neuro12-start.exe launcher/brain.ico launcher/THIRD_PARTY_LICENSES.txt tmp/neuro12-cloud/launcher/
+          cp launcher/bin/neuro12-start-linux-amd64 launcher/bin/neuro12-start-linux-arm64 tmp/neuro12-cloud/launcher/
           (cd tmp && zip -qr ../out/neuro12-cloud-v${CV//./_}-update.zip neuro12-cloud)
           (cd board && zip -qr ../out/neuro_12-v${BV//./_}.zip . -x '*__pycache__*' '*.ruff_cache*')
           L=tmp/neuro12-launcher-linux-v$LV; mkdir -p $L/src

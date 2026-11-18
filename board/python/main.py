@@ -230,6 +230,7 @@ import os
 import random
 import re
 import socket
+import sys
 import threading
 import time
 import traceback
@@ -277,7 +278,7 @@ except Exception:
 # App Lab отсутствует (из-за него приложение не запускалось), arduino:tts
 # тоже не подключён. LLM и TTS работают ЧЕРЕЗ ОБЛАКО — см. секции [4] и [6].
 
-APP_VERSION = "2.95.0"
+APP_VERSION = "2.96.5"
 
 # ---------------------------------------------------------------------------
 #   v2.33 (2026): МОСТ-КАНАЛ БЕЗ ТАЙМАУТОВ — фикс «word_push не работает,
@@ -363,6 +364,14 @@ def _base_dirs():
 
 _CFG_NAME = "neuro12_config.json"
 _MEM_NAME = "neuro12_memory.json"
+
+# v2.96: ПОСТОЯННЫЕ PYTHON-ПАКЕТЫ ПЛАТЫ. Контейнер App Lab пересоздаётся при
+# каждом обновлении — pip install внутрь него пропадает (так терялся Vosk).
+# Пакеты ставятся в <папка приложения>/pylib (она смонтирована с платы) и
+# подхватываются отсюда при каждом старте.
+PYLIB_DIR = os.path.join(_base_dirs()[0], "pylib")
+if os.path.isdir(PYLIB_DIR) and PYLIB_DIR not in sys.path:
+    sys.path.insert(0, PYLIB_DIR)
 
 DEFAULT_CFG = {
     "cloud_url": "",            # ВНЕШНИЙ сервер: мозг-почта, память, буфер,
@@ -468,11 +477,42 @@ def save_cfg(cfg):
     return ""
 
 
+_HOSTNAME_CACHE = [""]
+
+
 def _hostname():
-    """Имя платы для облачной памяти (каждая плата хранит свой бандл)."""
+    """Имя платы для облачной памяти (каждая плата хранит свой бандл).
+    Внутри Docker gethostname() = id контейнера, он меняется при каждом
+    пересоздании контейнера -> в облаке плодились «новые платы». Поэтому
+    имя один раз запоминается в файле neuro12_boardid.txt (каталог приложения
+    переживает пересоздание контейнера) или берётся из env NEURO_BOARD_ID."""
+    if _HOSTNAME_CACHE[0]:
+        return _HOSTNAME_CACHE[0]
     try:
         import socket
-        return ((socket.gethostname() or "").strip() or "unoq")[:40]
+        name = (os.environ.get("NEURO_BOARD_ID") or "").strip()
+        if not name:
+            for d in _base_dirs():
+                try:
+                    with open(os.path.join(d, "neuro12_boardid.txt"), encoding="utf-8") as f:
+                        name = f.read().strip()
+                except Exception:
+                    name = ""
+                if name:
+                    break
+        if not name:
+            name = ((socket.gethostname() or "").strip() or "unoq")
+            for d in _base_dirs():
+                if d == "/tmp" or not os.access(d, os.W_OK):
+                    continue
+                try:
+                    with open(os.path.join(d, "neuro12_boardid.txt"), "w", encoding="utf-8") as f:
+                        f.write(name[:40])
+                    break
+                except Exception:
+                    continue
+        _HOSTNAME_CACHE[0] = name[:40] or "unoq"
+        return _HOSTNAME_CACHE[0]
     except Exception:
         return "unoq"
 
@@ -1017,7 +1057,8 @@ def buf_worker():
                               f, ensure_ascii=False)
             except Exception:
                 pass
-            _bridge_call("cloud_buf_set", summary, timeout=4)
+            # v2.96.5: в мост — не длиннее RPC-буфера MCU (кириллица = 2 Б/символ)
+            _bridge_call("cloud_buf_set", summary[:85], timeout=4)
             log("БУФЕР", "из облака:", summary[:80])
         except Exception:
             pass
@@ -1052,6 +1093,57 @@ def _cam_local_summary(jpeg):
 
 
 _CAM_UART = {"info": "", "ts": 0.0}
+# v2.96: КАДР ПРИХОДИТ ОТ СКЕТЧА САМ (push). Скетч 2.96+ после целого JPEG
+# шлёт notify on_cam(seq, off, len, b64) по куску за проход loop, on_cam_info
+# (счётчики) раз в 2 с, on_cam_vis (зрение камеры) сразу. Python собирает
+# кадр здесь и НЕ дёргает RPC cam_frame_info/cam_chunk (те ждали занятый
+# loop и при очереди моста не отвечали по 8 с). RPC — только для скетча < 2.96.
+_CAM_PUSH = {"seq": -1, "len": 0, "buf": None, "off": 0, "ts": 0.0,
+             "frame": b"", "frame_ts": 0.0, "frame_seq": -1, "taken_seq": -1,
+             "info_ts": 0.0, "frames": 0, "broken": 0, "vis": "", "vis_ts": 0.0}
+
+
+def _cam_push_on():
+    """Скетч присылает кадры сам (on_cam_info был за последние 15 с)."""
+    return time.time() - _CAM_PUSH["info_ts"] < 15.0
+
+
+def on_cam(seq, off, total, b64):
+    """Кусок кадра от скетча (v2.96). Собираем по порядку; кадр сменился —
+    начинаем заново (куски старого seq выбрасываем)."""
+    try:
+        seq, off, total = int(seq), int(off), int(total)
+        raw = base64.b64decode(str(b64 or ""))
+    except Exception:
+        return
+    if total <= 0 or total > 200000 or not raw:
+        return
+    P = _CAM_PUSH
+    if seq != P["seq"] or off == 0:
+        if P["buf"] is not None and P["off"] < P["len"]:
+            P["broken"] += 1
+        P.update(seq=seq, len=total, buf=bytearray(), off=0)
+    if off != P["off"]:
+        P["broken"] += 1
+        P["buf"] = None
+        return
+    P["buf"].extend(raw)
+    P["off"] += len(raw)
+    P["ts"] = time.time()
+    if P["off"] >= P["len"]:
+        P.update(frame=bytes(P["buf"]), frame_ts=time.time(), frame_seq=seq,
+                 buf=None, frames=P["frames"] + 1)
+
+
+def on_cam_info(info):
+    """Счётчики приёмника UART скетча (v2.96) — раз в 2 с, без RPC."""
+    _CAM_UART.update(info=str(info or "")[:200], ts=time.time())
+    _CAM_PUSH["info_ts"] = time.time()
+
+
+def on_cam_vis(js):
+    """Зрение камеры (JSON от esp32cam_tflite) — скетч шлёт сам (v2.96)."""
+    _CAM_PUSH["vis"], _CAM_PUSH["vis_ts"] = str(js or "")[:1500], time.time()
 
 
 def _cam_uart_diag():
@@ -1079,9 +1171,12 @@ def _cam_uart_diag():
                 why = ("скетч ЗАВИС: loop() стоит на этапе «%s» (проходов %s) — перезапусти "
                        "приложение; если повторится — пришли этот текст" % (dg.get("loop_name"), dg.get("count")))
             else:
-                why = ("мост со скетчем жив, но cam_frame_info не ответил за 8 с%s — обнови "
-                       "плату до 2.94.1 (кадры камеры отдаются из потока моста)" % (
-                           ("; loop сейчас на этапе «%s»" % dg.get("loop_name")) if dg else ""))
+                sv = str(_SKETCH.get("sver") or "")
+                why = ("мост со скетчем жив, но скетч не присылает счётчики камеры (on_cam_info) "
+                       "и не ответил на cam_frame_info за 8 с%s — скетч %s: нужен скетч 2.96+ "
+                       "(кадры уходят в Linux сами, без RPC): лаунчер ⏻ → залить приложение на плату" % (
+                           ("; loop сейчас на этапе «%s»" % dg.get("loop_name")) if dg else "",
+                           sv or "версии не прислал"))
     elif not d.get("bytes") and "bytes" in d:
         why = ("по проводу не пришло НИ ОДНОГО байта: проверь TX ESP32-CAM (GPIO1/U0TXD "
                "или пин из esp32cam_uart) → D0/RX платы, общий GND и питание камеры 5 В")
@@ -1103,7 +1198,15 @@ def _cam_uart_frame():
     age_ms=..;baud=..", RPC cam_chunk("seq:off") -> base64-кусок ("" если
     кадр уже сменился). Кадр собирается кусками; если во время сборки
     пришёл новый кадр (seq сменился) — честно возвращаем b"": догоним в
-    следующий период. Возвращает JPEG-байты или b""."""
+    следующий период. Возвращает JPEG-байты или b"".
+    v2.96: скетч 2.96+ присылает кадры САМ (on_cam) — берём последний
+    собранный, RPC не трогаем; RPC-опрос только для старого скетча."""
+    P = _CAM_PUSH
+    if _cam_push_on():
+        if P["frame"] and time.time() - P["frame_ts"] < 20.0:
+            P["taken_seq"] = P["frame_seq"]   # свежий кадр (камера шлёт чаще, чем опрос)
+            return P["frame"]
+        return b""                       # кадра ещё нет — счётчики уже в _CAM_UART
     info = _bridge_call("cam_frame_info", timeout=8)
     if not info:
         _CAM_UART.update(info="", ts=time.time())
@@ -1182,7 +1285,11 @@ def camai_worker():
             _CAMAI["ok"] = False
             _CAMAI["err"] = "выключена (нужно cam_url = uart и галочка «камера выбирает слова»)"
             continue
-        r = _bridge_call("cam_vis", timeout=3)
+        if _cam_push_on():                      # v2.96: зрение приходит само (on_cam_vis)
+            age_ms = int((time.time() - _CAM_PUSH["vis_ts"]) * 1000) if _CAM_PUSH["vis_ts"] else 0
+            r = ("age_ms=%d|%s" % (age_ms, _CAM_PUSH["vis"])) if _CAM_PUSH["vis"] else ""
+        else:
+            r = _bridge_call("cam_vis", timeout=3)
         _CAMAI["polls"] += 1
         if not r:
             _CAMAI["ok"] = False
@@ -1261,7 +1368,7 @@ def _camai_say(phrase):
     """Итоговая фраза мозга — камере: она привяжет слова к своей сцене."""
     if not _camai_fresh() or not phrase:
         return
-    _bridge_call("cam_say", str(phrase).replace("\n", " ")[:300], wait=False)
+    _bridge_call("cam_say", str(phrase).replace("\n", " ")[:85], wait=False)   # v2.96.5: ≤ буфера MCU
     _CAMAI["said"] += 1
 
 
@@ -1876,6 +1983,14 @@ def cloud_register():
     if not url:
         return
     ip = _local_ip()
+    # 172.16–31.x = внутренняя сеть Docker: снаружи недоступна. Не шлём её —
+    # облако подставит реальный адрес платы из источника запроса.
+    try:
+        _o = [int(x) for x in ip.split(".")]
+        if _o[0] == 172 and 16 <= _o[1] <= 31:
+            ip = ""
+    except Exception:
+        pass
     reg_url = ("http://%s:%d" % (ip, WEB_UI_PORT)) if ip else ""
     r, err = _http_json_err(
         url + "/api/brains/register",
@@ -2217,6 +2332,60 @@ def _link_extras(payload):
                                   admin=bool(CFG.get("admin_from_cloud", True))))
 
 
+# v2.96: ОБЩИЙ ЧАТ плата ↔ облако ↔ боты ↔ своя LLM. По каналу связи
+# (/api/link) плата отдаёт свои новые реплики (вопросы человека в чате платы
+# и ответы мозга) и получает чужие: реплики людей со страниц игр, мысли
+# своей LLM, события игр («LLM перешла в Gubble 2», «мозг позвал LLM»).
+# Чужие пишутся в чат платы зоной «Общий чат» и обратно не отсылаются.
+_GCHAT = {"seq": 0, "pushed": 0, "got": 0, "sent": 0, "ts": 0.0}
+GCHAT_ZONE = "Общий чат"
+
+
+def _gchat_out(payload):
+    try:
+        payload["chat_seq"] = _GCHAT["seq"]
+        out = []
+        with SH.lock:
+            for m in SH.messages[-40:]:
+                if int(m.get("seq") or 0) <= _GCHAT["pushed"]:
+                    continue
+                if m.get("zone") == GCHAT_ZONE or m.get("role") not in ("user", "bot"):
+                    continue
+                t = str(m.get("text") or "").strip()
+                if not t or len(t) < 2:
+                    continue
+                out.append({"role": m["role"], "text": t[:400], "zone": m.get("zone") or "",
+                            "user": m.get("user") or "", "ts": m.get("ts")})
+            if SH.messages:
+                _GCHAT["pushed"] = max(_GCHAT["pushed"], int(SH.messages[-1].get("seq") or 0))
+        if out:
+            payload["chat_out"] = out[-10:]
+            _GCHAT["sent"] += len(out[-10:])
+    except Exception:
+        pass
+
+
+def _gchat_in(ch):
+    try:
+        msgs = ch.get("msgs") or []
+        for m in msgs:
+            if not isinstance(m, dict) or not m.get("text"):
+                continue
+            who, kind = str(m.get("who") or "облако")[:40], str(m.get("kind") or "")
+            icon = {"llm": "🤖", "thought": "💭", "event": "☁", "invite": "🎮"}.get(kind, "💬")
+            g = str(m.get("game") or "")
+            add_message("system", "%s %s%s: %s" % (icon, who, (" · " + g) if g and g != "плата" else "",
+                                                  str(m["text"])[:400]), GCHAT_ZONE)
+            _GCHAT["got"] += 1
+        try:
+            _GCHAT["seq"] = max(_GCHAT["seq"], int(ch.get("seq") or 0))
+        except (TypeError, ValueError):
+            pass
+        _GCHAT["ts"] = time.time()
+    except Exception:
+        pass
+
+
 def link_once():
     url, token = _cloud_base()
     if not url:
@@ -2241,6 +2410,7 @@ def link_once():
                           "age": int(max(0.0, time.time() - SH.bridge_ts)),
                           "seen": bool(SH.bridge_seen)}}
     _link_extras(payload)              # v2.77: доп. поля — каждое отдельно
+    _gchat_out(payload)                # v2.96: общий чат — свои реплики
     crash = ""
     if not _CRASH_SENT[0]:
         crash = _crash_take()
@@ -2303,6 +2473,15 @@ def link_once():
         _part_apply(r.get("particles"))
     if isinstance(r.get("game"), dict):  # v2.69: в облаке есть игра «РОК-12»
         _GAME["cloud"] = dict(r["game"], ts=time.time())
+    if isinstance(r.get("chat"), dict):  # v2.96: общий чат облака -> чат платы
+        _gchat_in(r["chat"])
+    if r.get("vosk_install"):            # v2.96: кнопка «поставить Vosk» в облаке
+        try:
+            api_vosk_install({})
+        except Exception:
+            pass
+    if isinstance(r.get("play"), dict):  # v2.96.1: звук из карточки микрофона -> динамик
+        threading.Thread(target=_play_from_cloud, args=(dict(r["play"]),), daemon=True).start()
     sy = r.get("sync")                  # v2.67: общий ритм платформы
     if isinstance(sy, dict) and isinstance(sy.get("breath"), dict):
         breath_sync(sy["breath"])       # v2.74: общее дыхание
@@ -7370,8 +7549,15 @@ def _gen_d6_seq(phrase, sign=0, ask=True):
             break
     if not seq:
         return
+    # v2.96.5: строка «12,33,0,…» должна влезать в RPC-буфер MCU (256 Б,
+    # см. BRIDGE_MAX_ARG): режем по байтам на границе слова (0 = пробел)
+    s = ",".join(map(str, seq))
+    lim = BRIDGE_MAX_ARG - 24
+    if len(s) > lim:
+        cut = s.rfind(",0,", 0, lim)
+        s = s[:cut] if cut > 20 else s[:s.rfind(",", 0, lim)]
     try:
-        _bridge_call("d6seq", ",".join(map(str, seq)), wait=False)
+        _bridge_call("d6seq", s, wait=False)
     except Exception:
         pass
     try:
@@ -9782,6 +9968,84 @@ def _wav_frames(wav, max_frames=88, frame_ms=60):
         return ""
 
 
+def play_wav_any(wav, why="звук"):
+    """v2.96.1: сыграть WAV тем же путём, что речь: огибающая -> скетч
+    (say_wave, динамик D8); иначе динамик платы (aplay); иначе браузер.
+    -> 'sketch' | 'board' | 'browser' | ''."""
+    if not wav or len(wav) < 100:
+        return ""
+    via = ""
+    try:
+        _MIC["mute_until"] = time.time() + len(wav) / 32000.0 + 1.5   # не слушать себя
+    except Exception:
+        pass
+    try:
+        frames = _wav_frames(wav)
+    except Exception:
+        frames = ""
+    # v2.96.2: речь — ВНЕ очереди моста (urgent, канал say)
+    # v2.96.4: ПОРЦИЯМИ ≤ BRIDGE_MAX_ARG (буфер RPC у MCU 256 Б): первая
+    # порция заменяет речь, следующие — с префиксом '+' дописываются в хвост
+    if frames and _say_wave_chunked(frames):
+        via = "sketch"
+    if not via and _board_play_wav(wav):
+        via = "board"
+    if not via:
+        import base64
+        _TTS_SEQ[0] += 1
+        with SH.lock:
+            SH.tts_audio = {"id": _TTS_SEQ[0], "b64": base64.b64encode(wav).decode("ascii"),
+                            "mime": "audio/wav"}
+        via = "browser"
+    log("ЗВУК", "%s сыгран через %s (%d КБ)" % (why, via, len(wav) // 1024))
+    return via
+
+
+def _say_wave_chunked(frames):
+    """v2.96.4: строка кадров «hz:ms;…» -> скетч порциями ≤ BRIDGE_MAX_ARG.
+    True — если первая порция принята (речь пошла на D8); хвост — best-effort."""
+    parts = [p for p in str(frames).split(";") if p]
+    chunks, cur = [], ""
+    for p in parts:
+        if len(cur) + len(p) + 1 > BRIDGE_MAX_ARG - 2:
+            chunks.append(cur)
+            cur = ""
+        cur += p + ";"
+    if cur:
+        chunks.append(cur)
+    if not chunks:
+        return False
+    r = _bridge_call("say_wave", chunks[0], timeout=8, channel="say", urgent=True)
+    if not r or str(r).startswith(("voice_off", "empty")):
+        return False
+    for ch in chunks[1:]:
+        r = _bridge_call("say_wave", "+" + ch, timeout=6, channel="say", urgent=True)
+        if not r or str(r) == "gone":
+            break
+    return True
+
+
+def _play_from_cloud(pl):
+    """v2.96.1: облако попросило сыграть звук из карточки микрофона
+    (ответ /api/link: play{url, what}) — скачать WAV и сыграть динамиком."""
+    url, token = _cloud_base()
+    if not url or not isinstance(pl, dict) or not pl.get("url"):
+        return
+    try:
+        req = urllib.request.Request(url + str(pl["url"]), headers={"X-Mozg-Token": token or ""})
+        with urllib.request.urlopen(req, timeout=30) as rr:
+            wav = rr.read(4000000)
+    except Exception as e:
+        log("ЗВУК", "звук из облака не скачался: %s" % str(e)[:100])
+        return
+    with _TTS_LOCK:
+        via = play_wav_any(wav, "звук из облака (%s)" % ("фраза" if pl.get("what") == "phrase" else "запись"))
+    add_message("system", "🔊 Звук из облака (%s, %d КБ) сыгран через %s" % (
+        "последняя фраза" if pl.get("what") == "phrase" else "живая запись", len(wav) // 1024,
+        {"sketch": "динамик D8 (огибающая)", "board": "динамик платы (aplay)",
+         "browser": "браузер"}.get(via, via or "—")), "Слух")
+
+
 def tts_say(text):
     """Озвучить текст (v2.14): облако -> WAV -> СКЕТЧ (say_wave, динамик D8),
     иначе динамик платы (aplay), иначе браузер (/api/tts_audio)."""
@@ -9804,8 +10068,8 @@ def tts_say(text):
                 _MIC["mute_until"] = time.time() + len(wav) / 32000.0 + 1.5
             except Exception:
                 pass
-            if frames and _bridge_call("say_wave", frames, timeout=8):
-                via = "sketch"               # «речь» играет динамик D8
+            if frames and _say_wave_chunked(frames):
+                via = "sketch"               # «речь» играет динамик D8 (v2.96.4: порциями ≤200 Б)
             if not via and _board_play_wav(wav):
                 via = "board"
             if not via:
@@ -9912,7 +10176,8 @@ def _bridge_worker():
         method, args, timeout, channel, box = item[:5]
         ts = item[5] if len(item) > 5 else time.time()
         # v2.33: устарел, пока стоял в очереди (канал занял долгий вызов)
-        if time.time() - ts > timeout + 4.0 and channel != "ping":
+        # v2.96.2: речь (say) — как пинг: идёт вне очереди и не «устаревает»
+        if time.time() - ts > timeout + 4.0 and channel not in ("ping", "say"):
             _rpc_stat(method, False, "устарел в очереди (>%.0f c)" % (timeout + 4))
             with SH.lock:
                 SH.bridge_dropped += 1
@@ -9924,7 +10189,7 @@ def _bridge_worker():
         # v2.18: тихий мост — не-urgent вызов устарел, сбрасываем
         with SH.lock:
             stale_for = time.time() - SH.bridge_ts if SH.bridge_seen else 0.0
-        if stale_for > _BRIDGE_STALE_S and channel != "ping":
+        if stale_for > _BRIDGE_STALE_S and channel not in ("ping", "say"):
             _rpc_stat(method, False, "мост молчит %.0f с" % stale_for)
             with SH.lock:
                 SH.bridge_dropped += 1
@@ -9978,11 +10243,40 @@ def _bridge_enqueue(method, args, timeout=4.0, channel="", urgent=False):
     return box
 
 
+# v2.96.4: ВХОДНОЙ БУФЕР RPC У МОСТА MCU — 256 БАЙТ (Arduino_RPClite:
+# DEFAULT_RPC_BUFFER_SIZE = DECODER_BUFFER_SIZE/4), стек потока моста — 500 Б.
+# Запрос длиннее MCU не разбирает: ответа нет (таймаут), а декодер потока
+# сбивается — следом пропадают даже короткие word_push/ping (на плате было
+# 48 удачных вызовов из 1390). Поэтому длинные аргументы в мост НЕ УХОДЯТ:
+# вызов честно помечается ошибкой «слишком длинно», а речь и прочее режутся
+# на порции ≤ BRIDGE_MAX_ARG на стороне отправителя.
+BRIDGE_MAX_ARG = 200
+_BRIDGE_LONG_LOGGED = {}
+
+
+def _bridge_arg_len(args):
+    n = 0
+    for a in args:
+        try:
+            n += len(str(a).encode("utf-8")) if not isinstance(a, (bytes, bytearray)) else len(a)
+        except Exception:
+            n += 32
+    return n + 24                                      # имя метода + обвязка msgpack
+
+
 def _bridge_call(method, *args, timeout=4, channel="", urgent=False,
                  wait=True):
     """Вызов RPC-метода скетча через очередь (никогда не кидает исключение).
     wait=True — дождаться результата (обрезка по timeout+2 с); wait=False —
     «выстрелил и забыл» (результат не нужен)."""
+    ln = _bridge_arg_len(args)
+    if ln > BRIDGE_MAX_ARG + 24:
+        _rpc_stat(method, False, "слишком длинно для моста: %d Б > %d (буфер MCU 256 Б)" % (ln, BRIDGE_MAX_ARG))
+        if time.time() - _BRIDGE_LONG_LOGGED.get(method, 0) > 120:
+            _BRIDGE_LONG_LOGGED[method] = time.time()
+            log("мост:", method, "-> не отправлен: аргумент %d Б, а буфер RPC у MCU 256 Б "
+                "(порежь на порции ≤ %d Б)" % (ln, BRIDGE_MAX_ARG))
+        return None
     if not _BRIDGE_WORKER_ON[0]:
         # работник ещё не поднят (ранние вызовы при старте) — прямой вызов
         try:
@@ -10171,7 +10465,11 @@ def register_bridge():
     Bridge.provide("cap_noise", lambda v: _part_note("cap", v))
     Bridge.provide("d6_act", lambda v: _part_note("d6", v))
     Bridge.provide("learn_scale", lambda v: _part_note("scale", v))
-    log("мост: on_state/on_msg/on_letter/on_word/on_say/on_log/on_boot зарегистрированы")
+    # v2.96: камера по проводу — скетч шлёт кадр, счётчики и зрение САМ
+    Bridge.provide("on_cam", on_cam)
+    Bridge.provide("on_cam_info", on_cam_info)
+    Bridge.provide("on_cam_vis", on_cam_vis)
+    log("мост: on_state/on_msg/on_letter/on_word/on_say/on_log/on_boot/on_cam зарегистрированы")
 
 
 # v2.68: ЖУРНАЛ И ДИАГНОСТИКА СКЕТЧА --------------------------------------
@@ -12754,6 +13052,7 @@ def _game_mood():
     idle = time.time() - _last_user_ts()
     return {"idle_s": idle, "talk_s": idle, "strain": _GRAV.get("strain") or 0.0,
             "hz": _signed_hz(), "invite": bool(cg.get("invite")) and fresh,
+            "invite_by": str(cg.get("invite_by") or "владелец"),
             "game_on": bool(CFG.get("game_on", True)),
             "cloud_game": fresh and bool(cg.get("on")),
             "breath": breath_mod("Игрок «РОК-12»", 1.0, 1.0) - 1.0}   # v2.74
@@ -12764,6 +13063,7 @@ def _game_say(text, force=False):
     if not force and time.time() - _GAME["last_thought"] < 60:
         return ""
     _GAME["last_thought"] = time.time()
+    _GAME["say_pending"] = str(text)[:160]       # v2.96: и в общий чат игры
     try:
         _thought_push(text)
     except Exception:
@@ -12835,6 +13135,17 @@ def game_worker():
             if t0 - last_brain > 2.0:
                 payload["brain"] = b.info()
                 last_brain = t0
+            # v2.96: плата САМА предлагает своей LLM сыграть вместе — когда
+            # играет одна дольше минуты (ни людей, ни LLM), не чаще раза в 10 мин
+            if _GAME.get("alone_since") and t0 - _GAME["alone_since"] > 60 and \
+                    t0 - _GAME.get("llm_invited_ts", 0.0) > 600 and not _GAME.get("llm_in"):
+                _GAME["llm_invited_ts"] = t0
+                payload["want"]["invite_llm"] = True
+                payload["want"]["invite_why"] = "играю один уже минуту — сыграем вместе?"
+                add_message("system", "🎮 Зову свою LLM облака сыграть со мной в «РОК-12»", "Игра")
+                _game_say("Зову свою LLM сыграть со мной в РОК-12", force=True)
+            if _GAME.get("say_pending"):
+                payload["say"] = _GAME.pop("say_pending")
             r, err = _http_json_err(url + "/api/doom/bot", payload, token=token, timeout=4)
             _GAME["calls"] += 1
             _GAME["ms"] = int((time.time() - t0) * 1000)
@@ -12854,7 +13165,12 @@ def game_worker():
             if not r.get("playing"):
                 break
             _GAME["level"] = r.get("level") or 0
-            evs = r.get("events") or []
+            _GAME["llm_in"] = bool(r.get("llm"))
+            if r.get("llm") or (r.get("humans") or 0) > 0:
+                _GAME["alone_since"] = 0.0
+            elif not _GAME.get("alone_since"):
+                _GAME["alone_since"] = time.time()
+            evs = [e for e in (r.get("events") or []) if not str(e).startswith("💭")]
             b.on_events(evs)
             for ev in evs:
                 if "пройден" in ev:
@@ -13070,7 +13386,15 @@ def mic_send_worker():
             "wav": base64.b64encode(_mic_wav(pcm)).decode("ascii")},
             token=token, timeout=60)
         if not r or not r.get("ok"):
-            _MIC["err"] = "облако: %s" % str(err or (r or {}).get("error") or "?")[:120]
+            e_ = str(err or (r or {}).get("error") or "?")
+            if "503" in e_ or "starting" in e_ or "запускается" in e_:
+                # v2.96: облако перезапускается (обновление) — это не ошибка
+                # платы: фразу вернём в очередь и подождём
+                _MIC["err"] = "облако перезапускается — жду (фраза подождёт)"
+                _MIC_Q.appendleft((pcm, lvl, ts))
+                time.sleep(10)
+                continue
+            _MIC["err"] = "облако: %s" % e_[:120]
             if "404" in _MIC["err"]:
                 _MIC["err"] = "облако старше v3.128 — уши не поддерживает"
                 time.sleep(300)
@@ -13146,40 +13470,69 @@ def vosk_text(pcm):
         return ""
 
 
-def vosk_install_worker():
-    """Поставить Vosk на плату (один раз, в фоне)."""
+_VOSK_LOCK = threading.Lock()
+
+
+def api_vosk_install(data: dict = None):
+    """v2.96: кнопка «поставить Vosk на плату» (панель платы / облако)."""
+    if _VOSK_ST.get("state") == "готов":
+        return {"ok": True, "state": "готов", "note": "Vosk уже установлен"}
+    if _VOSK_LOCK.locked():
+        return {"ok": True, "state": _VOSK_ST.get("state"), "note": "установка уже идёт"}
+    _VOSK_ST["force"] = True
+    threading.Thread(target=vosk_install_once, kwargs={"force": True}, daemon=True).start()
+    add_message("system", "🧠 Ставлю распознавание речи Vosk на плату (в папку приложения pylib) — "
+                "несколько минут", "Слух")
+    return {"ok": True, "state": "ставлю vosk"}
+
+
+def vosk_install_once(force=False):
+    """Поставить Vosk (пакет -> <приложение>/pylib, модель -> vosk-ru).
+    -> True, если готов. v2.96: пакет ставится в ПОСТОЯННУЮ папку pylib
+    (контейнер пересоздаётся при обновлении — обычный pip install пропадал)."""
     import subprocess
-    import sys
     import zipfile
-    time.sleep(40)                      # сперва пусть поднимется всё остальное
-    while True:
-        if not CFG.get("mic_board_asr", True):
+    if not _VOSK_LOCK.acquire(blocking=False):
+        return False
+    try:
+        if not force and not CFG.get("mic_board_asr", True):
             _VOSK_ST["state"] = "выкл"
-            time.sleep(60)
-            continue
+            return False
         try:
             try:
                 import vosk  # noqa: F401
+                _VOSK_ST.setdefault("where", os.path.dirname(os.path.dirname(vosk.__file__)))
             except Exception:
                 _VOSK_ST.update(state="ставлю vosk", err="")
-                log("СЛУХ", "ставлю распознаватель речи Vosk на плату (pip install vosk)…")
+                log("СЛУХ", "ставлю распознаватель речи Vosk на плату (pip install --target %s vosk)…" % PYLIB_DIR)
                 ok = False
-                for extra in ([], ["--user"], ["--break-system-packages"]):
+                try:
+                    os.makedirs(PYLIB_DIR, exist_ok=True)
+                except Exception:
+                    pass
+                # сначала — в окружение приложения (App Lab держит venv в
+                # /app/.cache/.venv — папка приложения, переживает пересоздание
+                # контейнера), затем — в постоянную pylib, затем --user
+                for extra in ([], ["--target", PYLIB_DIR, "--upgrade"], ["--user"],
+                              ["--break-system-packages"]):
                     r = subprocess.run([sys.executable, "-m", "pip", "install",
                                         "--disable-pip-version-check", "-q", "vosk"] + extra,
                                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                        timeout=1200)
                     if r.returncode == 0:
                         ok = True
+                        _VOSK_ST["where"] = PYLIB_DIR if extra and extra[0] == "--target" else \
+                            (" ".join(extra) or os.path.dirname(sys.executable))
                         break
                     _VOSK_ST["err"] = r.stdout.decode("utf-8", "replace").strip()[-200:]
                 if not ok:
                     _VOSK_ST["state"] = "ошибка pip"
-                    time.sleep(1800)
-                    continue
+                    return False
                 import importlib
                 import site
                 importlib.invalidate_caches()
+                if PYLIB_DIR not in sys.path:
+                    sys.path.insert(0, PYLIB_DIR)
                 try:
                     sys.path.append(site.getusersitepackages())
                 except Exception:
@@ -13222,11 +13575,25 @@ def vosk_install_worker():
                 log("СЛУХ", "модель Vosk установлена на плату (из %s)" % src)
             _VOSK_ST["model"] = _VOSK_ST["model"] or "vosk-model-small-ru"
             _VOSK_ST.update(state="готов", err="")
-            return
+            log("СЛУХ", "Vosk готов: пакет в %s, модель %s" % (_VOSK_ST.get("where") or "site", _vosk_dir()))
+            add_message("system", "🧠 Vosk на плате готов — речь с микрофона распознаётся прямо на плате", "Слух")
+            return True
         except Exception as e:
             _VOSK_ST.update(state="ошибка", err="%s: %s" % (type(e).__name__, str(e)[:150]))
             log("СЛУХ", "Vosk на плату не встал: %s" % _VOSK_ST["err"])
-            time.sleep(1800)
+            return False
+    finally:
+        _VOSK_LOCK.release()
+
+
+def vosk_install_worker():
+    """Фон: поставить Vosk один раз (через 40 с после старта), при неудаче —
+    повтор через 30 мин. Кнопка (api_vosk_install) ставит сразу."""
+    time.sleep(40)                      # сперва пусть поднимется всё остальное
+    while True:
+        if vosk_install_once():
+            return
+        time.sleep(60 if _VOSK_ST.get("state") == "выкл" else 1800)
 
 
 # ===========================================================================
@@ -13724,6 +14091,7 @@ def register_web():
     ui.expose_api("GET", "/api/state", api_state)
     ui.expose_api("GET", "/api/alive", api_alive)          # v2.62: сторож
     ui.expose_api("POST", "/api/game/reset", api_game_reset)  # v2.69: игра
+    ui.expose_api("POST", "/api/vosk/install", api_vosk_install)  # v2.96: Vosk по кнопке
     ui.expose_api("GET", "/api/messages", api_messages)
     ui.expose_api("POST", "/api/send", api_send)
     ui.expose_api("POST", "/api/think", api_think)          # v2.58
