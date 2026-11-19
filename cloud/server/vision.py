@@ -72,43 +72,92 @@ def _bad(cam, why):
         pass
 
 
-def frame(img_b64, cam="cam", conf=0.35, board=""):
-    """Кадр на распознавание. Возврат: {ok, detections:[{name,conf}]}"""
+def _mend(data):
+    """v3.186: неполный/битый кадр -> показываемый. Оборванный JPEG получает
+    маркер конца FFD9 (браузер и Pillow рисуют пришедшую часть, низ — серым).
+    Если начало JPEG потеряно — из байтов делаем серую картинку (нужен
+    Pillow); без Pillow такой кадр показать нечем — вернём None."""
+    if _looks_jpeg(data):
+        if not data.endswith(b"\xff\xd9"):
+            data = data + b"\xff\xd9"
+        try:                                  # Pillow есть — пересжимаем: целый JPEG для всех
+            from PIL import Image, ImageFile
+            import io
+            ImageFile.LOAD_TRUNCATED_IMAGES = True
+            im = Image.open(io.BytesIO(data))
+            im.load()
+            out = io.BytesIO()
+            im.convert("RGB").save(out, "JPEG", quality=85)
+            return out.getvalue()
+        except Exception:
+            return data
+    try:
+        from PIL import Image
+        import io
+        w = 64
+        h = max(1, min(256, len(data) // w))
+        im = Image.frombytes("L", (w, h), bytes(data[:w * h]))
+        im = im.resize((w * 4, h * 4))
+        out = io.BytesIO()
+        im.save(out, "JPEG", quality=80)
+        return out.getvalue()
+    except Exception:
+        return None
+
+
+def _accept(img_b64, cam, broken):
+    """Общий приём кадра: (данные для показа, битый?, ошибка)."""
     data = _decode_b64(img_b64)
-    if not _looks_jpeg(data):
-        _bad(cam, "пришёл не JPEG (%d байт)" % len(data))
-        return {"ok": False, "error": "ожидался JPEG (base64)"}
-    if not _complete(data):
-        _bad(cam, "оборванный JPEG (%d КБ без конца кадра)" % (len(data) // 1024))
-        return {"ok": False, "error": "оборванный JPEG — кадр не сохранён"}
+    if len(data) < 16:
+        _bad(cam, "пустой кадр (%d байт)" % len(data))
+        return None, True, "пустой кадр"
+    try:
+        broken = int(broken or 0)
+    except (TypeError, ValueError):
+        broken = 1
+    if broken or not _complete(data):
+        why = ("оборван" if _looks_jpeg(data) else "начало потеряно") + \
+            (", CRC не сошёлся" if broken == 2 else "") + " (%d КБ)" % (len(data) // 1024)
+        _bad(cam, "битый кадр принят как есть: " + why)
+        view = _mend(data)
+        if view is None:
+            return None, True, "кадр без начала JPEG, а Pillow нет — показать нечем"
+        return view, True, ""
+    return data, False, ""
+
+
+def frame(img_b64, cam="cam", conf=0.35, board="", broken=0):
+    """Кадр на распознавание. Возврат: {ok, detections:[{name,conf}]}.
+    v3.186: оборванные и битые кадры НЕ отбрасываются — их видит и YOLO,
+    и страница камеры (с меткой «битый»)."""
+    data, brk, err = _accept(img_b64, cam, broken)
+    if data is None:
+        return {"ok": False, "error": err, "broken": True}
     det = _yolo(data, conf)
     names = [n for n, _c in det]
     _save_frame(cam, data, names, src="yolo" if det else "frame",
-                board=board)
-    return {"ok": True, "detections": [{"name": n, "conf": round(c, 3)}
-                                       for n, c in det]}
+                board=board, broken=brk)
+    return {"ok": True, "broken": brk,
+            "detections": [{"name": n, "conf": round(c, 3)} for n, c in det]}
 
 
-def raw(img_b64, cam="cam", board=""):
-    """Сырой кадр в стрим (без YOLO)."""
-    data = _decode_b64(img_b64)
-    if not _looks_jpeg(data):
-        _bad(cam, "пришёл не JPEG (%d байт)" % len(data))
-        return {"ok": False, "error": "ожидался JPEG (base64)"}
-    if not _complete(data):
-        _bad(cam, "оборванный JPEG (%d КБ без конца кадра)" % (len(data) // 1024))
-        return {"ok": False, "error": "оборванный JPEG — кадр не сохранён"}
-    _save_frame(cam, data, [], src="raw", board=board)
-    return {"ok": True}
+def raw(img_b64, cam="cam", board="", broken=0):
+    """Сырой кадр в стрим (без YOLO). v3.186: битые — тоже."""
+    data, brk, err = _accept(img_b64, cam, broken)
+    if data is None:
+        return {"ok": False, "error": err, "broken": True}
+    _save_frame(cam, data, [], src="raw", board=board, broken=brk)
+    return {"ok": True, "broken": brk}
 
 
-def _save_frame(cam, data, names, src="raw", board=""):
+def _save_frame(cam, data, names, src="raw", board="", broken=False):
     with _LOCK:
         d, safe = _cam_dir(cam)
         with open(os.path.join(d, "last.jpg"), "wb") as f:
             f.write(data)
         item = {"cam": safe, "names": [str(n)[:24] for n in names],
-                "src": src, "board": str(board)[:40], "ts": time.time()}
+                "src": src, "board": str(board)[:40], "ts": time.time(),
+                "broken": bool(broken)}
         buf = store.load_json(os.path.join("vision", "buffer.json"), []) or []
         buf.append(item)
         store.save_json(os.path.join("vision", "buffer.json"), buf[-_BUF_MAX:])
@@ -154,6 +203,8 @@ def cams():
             st = store.load_json(os.path.join("vision", name, "status.json"), {}) or {}
             out.append({"cam": name, "ts": hist[-1]["ts"] if hist else 0,
                         "names": (hist[-1].get("names") or []) if hist else [],
+                        "broken": bool(hist[-1].get("broken")) if hist else False,
+                        "broken_n": sum(1 for h in hist if h.get("broken")),
                         "bytes": os.path.getsize(os.path.join(d, "last.jpg")),
                         "bad": st.get("bad") or 0, "bad_ts": st.get("bad_ts"),
                         "bad_why": st.get("why") or ""})

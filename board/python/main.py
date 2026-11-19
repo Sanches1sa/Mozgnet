@@ -278,7 +278,7 @@ except Exception:
 # App Lab отсутствует (из-за него приложение не запускалось), arduino:tts
 # тоже не подключён. LLM и TTS работают ЧЕРЕЗ ОБЛАКО — см. секции [4] и [6].
 
-APP_VERSION = "2.98.0"
+APP_VERSION = "2.99.0"
 
 # ---------------------------------------------------------------------------
 #   v2.33 (2026): МОСТ-КАНАЛ БЕЗ ТАЙМАУТОВ — фикс «word_push не работает,
@@ -1158,31 +1158,59 @@ def _cam_push_on():
     return time.time() - _CAM_PUSH["info_ts"] < 15.0
 
 
-def on_cam(seq, off, total, b64):
+def _cam_push_close(why):
+    """v2.99: недособранный кадр не выбрасываем — отдаём как есть (с меткой)."""
+    P = _CAM_PUSH
+    buf = P.get("buf")
+    if buf is not None and len(buf) >= 64:
+        P["broken"] += 1
+        P.update(frame=bytes(buf), frame_ts=time.time(), frame_seq=P["seq"],
+                 frame_brk=max(1, int(P.get("brk") or 0)), frame_why=why,
+                 frames=P["frames"] + 1)
+    P["buf"] = None
+
+
+def on_cam(seq, off, total, b64, brk=0):
     """Кусок кадра от скетча (v2.96). Собираем по порядку; кадр сменился —
-    начинаем заново (куски старого seq выбрасываем)."""
+    начинаем заново. v2.99: брошенный/дырявый кадр не теряется — дыры
+    заполняются нулями, недособранный кадр уходит дальше с меткой «битый»
+    (brk: 0 целый, 1 оборван, 2 CRC не сошёлся — метка от скетча 2.99)."""
     try:
         seq, off, total = int(seq), int(off), int(total)
+        brk = int(brk or 0)
         raw = base64.b64decode(str(b64 or ""))
     except Exception:
         return
     if total <= 0 or total > 200000 or not raw:
         return
     P = _CAM_PUSH
-    if seq != P["seq"] or off == 0:
-        if P["buf"] is not None and P["off"] < P["len"]:
-            P["broken"] += 1
-        P.update(seq=seq, len=total, buf=bytearray(), off=0)
-    if off != P["off"]:
-        P["broken"] += 1
-        P["buf"] = None
-        return
+    if seq != P["seq"] or off == 0 or P.get("buf") is None:
+        if P.get("buf") is not None and P["off"] < P["len"]:
+            _cam_push_close("скетч начал новый кадр, этот не дошёл до конца (%d из %d байт)"
+                            % (P["off"], P["len"]))
+        P.update(seq=seq, len=total, buf=bytearray(), off=0, brk=brk, holes=0)
+    if off > P["off"]:                       # кусок потерялся — дыра нулями
+        P["buf"].extend(b"\x00" * (off - P["off"]))
+        P["holes"] = int(P.get("holes") or 0) + 1
+        P["off"] = off
+        P["brk"] = max(1, P["brk"])
+    elif off < P["off"]:                     # повтор/откат — перезаписываем
+        del P["buf"][off:]
+        P["off"] = off
     P["buf"].extend(raw)
     P["off"] += len(raw)
     P["ts"] = time.time()
     if P["off"] >= P["len"]:
-        P.update(frame=bytes(P["buf"]), frame_ts=time.time(), frame_seq=seq,
+        P.update(frame=bytes(P["buf"][:P["len"]]), frame_ts=time.time(), frame_seq=seq,
+                 frame_brk=P["brk"], frame_why=("дыры в %d местах" % P["holes"]) if P["holes"] else "",
                  buf=None, frames=P["frames"] + 1)
+
+
+def _cam_push_stale():
+    """Куски перестали приходить посреди кадра (>2 с) — отдать что есть."""
+    P = _CAM_PUSH
+    if P.get("buf") is not None and time.time() - float(P.get("ts") or 0) > 2.0:
+        _cam_push_close("куски перестали приходить (%d из %d байт)" % (P["off"], P["len"]))
 
 
 def on_cam_info(info):
@@ -1253,6 +1281,7 @@ def _cam_uart_frame():
     собранный, RPC не трогаем; RPC-опрос только для старого скетча."""
     P = _CAM_PUSH
     if _cam_push_on():
+        _cam_push_stale()
         if P["frame"] and time.time() - P["frame_ts"] < 20.0:
             P["taken_seq"] = P["frame_seq"]   # свежий кадр (камера шлёт чаще, чем опрос)
             return P["frame"]
@@ -1450,15 +1479,19 @@ def cam_worker():
                 # v2.30: камера ПО ПРОВОДУ — кадр собирается из приёмника
                 # UART скетча (RPC cam_frame_info/cam_chunk)
                 jpeg = _cam_uart_frame()
-                if len(jpeg) < 500 or not jpeg.startswith(b"\xff\xd8"):
+                if len(jpeg) < 64:
                     _cam_state("нет кадра", "по проводу (UART) кадр не пришёл: " +
                                (_cam_uart_diag().get("why") or
                                 "скетч не принял ни одного JPEG (проверь TX камеры → RX платы и скорость)"))
                     continue
-                if not _jpeg_complete(jpeg):
-                    _cam_state("битый кадр", "по проводу пришёл оборванный JPEG "
-                               "(%d КБ без конца кадра) — потеря байтов на UART" % (len(jpeg) // 1024))
-                    continue
+                # v2.99: оборванный/битый кадр НЕ выбрасываем — он идёт дальше
+                brk = int(_CAM_PUSH.get("frame_brk") or 0) if _cam_push_on() else 0
+                if brk or not _jpeg_complete(jpeg):
+                    brk = brk or 1
+                    _CAM_ST["brk_n"] = int(_CAM_ST.get("brk_n") or 0) + 1
+                    _CAM_ST["brk_why"] = ({1: "оборван", 2: "CRC не сошёлся"}.get(brk, "битый") +
+                                          ("; " + _CAM_PUSH.get("frame_why") if _CAM_PUSH.get("frame_why") else "") +
+                                          ", %d байт" % len(jpeg))
             else:
                 if "://" not in cam:
                     cam = "http://" + cam
@@ -1472,16 +1505,20 @@ def cam_worker():
                     _cam_state("не отвечает", "ESP32-CAM не отвечает по адресу %s: %s"
                                % (snap, str(e)[:100]))
                     continue
-                if len(jpeg) < 500 or not jpeg.startswith(b"\xff\xd8"):
-                    _cam_state("не JPEG", "по адресу %s пришёл не JPEG (%d байт, начало %r) — "
-                               "нужен адрес, отдающий снимок /snap" % (snap, len(jpeg), jpeg[:12]))
+                if len(jpeg) < 64:
+                    _cam_state("не JPEG", "по адресу %s пришло %d байт — "
+                               "нужен адрес, отдающий снимок /snap" % (snap, len(jpeg)))
                     continue
-                if not _jpeg_complete(jpeg):
-                    _cam_state("битый кадр", "ESP32-CAM отдала оборванный JPEG (%d КБ)"
-                               % (len(jpeg) // 1024))
-                    continue
+                brk = 0 if _jpeg_complete(jpeg) else 1     # v2.99: оборванный — тоже идёт дальше
+                if brk:
+                    _CAM_ST["brk_n"] = int(_CAM_ST.get("brk_n") or 0) + 1
+                    _CAM_ST["brk_why"] = "Wi-Fi: оборван, %d байт" % len(jpeg)
+            jpeg = _jpeg_mend(jpeg)
             _CAM_ST["ok_ts"], _CAM_ST["kb"] = time.time(), len(jpeg) // 1024
-            _cam_state("кадры идут")
+            _CAM_ST["brk"] = brk
+            _cam_state("кадры идут" if not brk else "битый кадр идёт",
+                       "" if not brk else "кадр неполный (%s) — показан нейросети как есть"
+                       % _CAM_ST.get("brk_why", ""))
             try:
                 _cam_to_d6(jpeg)              # v2.48: кадр растром на D6
             except Exception:
@@ -1503,7 +1540,7 @@ def cam_worker():
                 try:
                     r, _e = _http_json_err(
                         url + "/api/vision/frame",
-                        {"img": img_b64, "cam": _hostname(), "conf": 0.35},
+                        {"img": img_b64, "cam": _hostname(), "conf": 0.35, "broken": brk},
                         token=token, timeout=30)
                     if r and r.get("ok"):
                         _CAM_ST["sent_ts"], _CAM_ST["up_err"] = time.time(), ""
@@ -1520,7 +1557,7 @@ def cam_worker():
                 if not det:                   # YOLO нет — сырой кадр в стрим
                     try:
                         _http_json_err(url + "/api/vision/raw",
-                                       {"img": img_b64, "cam": _hostname()},
+                                       {"img": img_b64, "cam": _hostname(), "broken": brk},
                                        token=token, timeout=30)
                         src = "raw"
                     except Exception:
@@ -1543,7 +1580,7 @@ def cam_worker():
                 parts.append("вижу: " + ", ".join(
                     ("%s %d%%" % (nm, int(c * 100)) if c else str(nm))
                     for nm, c in det))
-            parts.append("кадр #%d, %d КБ, движение %d%%" % (seq, kb, motion))
+            parts.append("кадр #%d%s, %d КБ, движение %d%%" % (seq, " (битый)" if brk else "", kb, motion))
             if src:
                 parts.append("стрим в облаке (%s)" % src)
             summary = " | ".join(parts)[:120]
@@ -7162,9 +7199,12 @@ D6_IMG_CYCLE_S = 207 * 4 * 0.05        # одна развёртка: 207 цик
 def _cam_raster(jpeg, w=16, h=12):
     """JPEG -> w*h точек (1..254) | None. Сначала Pillow на плате, иначе
     уменьшает облако (/api/vision/raster) — декодера JPEG у платы нет."""
+    have_pil = False
     try:
-        from PIL import Image, ImageOps
+        from PIL import Image, ImageOps, ImageFile
         import io
+        have_pil = True
+        ImageFile.LOAD_TRUNCATED_IMAGES = True     # v2.99: оборванный кадр — тоже кадр
         im = Image.open(io.BytesIO(jpeg))
         im.load()
         g = ImageOps.autocontrast(im.convert("L").resize((w, h),
@@ -7172,7 +7212,9 @@ def _cam_raster(jpeg, w=16, h=12):
         _D6CAM["src"] = "плата"
         return bytes(1 + (v * 253) // 255 for v in g.getdata())
     except Exception:
-        pass
+        if have_pil:                                # Pillow есть, но кадр не открылся
+            _D6CAM["src"] = "байты (кадр битый)"
+            return _bytes_raster(jpeg, w, h)
     try:
         url, token = _cloud_base()
         if not url:
@@ -7186,7 +7228,8 @@ def _cam_raster(jpeg, w=16, h=12):
         _D6CAM["err"] = str((r or {}).get("error") or _e or "нет растра")[:80]
     except Exception as e:
         _D6CAM["err"] = str(e)[:80]
-    return None
+    _D6CAM["src"] = "байты (кадр битый)"
+    return _bytes_raster(jpeg, w, h)          # v2.99: даже без декодера — что пришло
 
 
 _BAYER4 = ((0, 8, 2, 10), (12, 4, 14, 6), (3, 11, 1, 9), (15, 7, 13, 5))
@@ -7554,6 +7597,30 @@ def _cam_state(state, err=""):
     _CAM_ST["err"] = str(err or "")[:160]
     if err:
         _CAM_ST["fails"] = int(_CAM_ST.get("fails") or 0) + 1
+
+
+def _jpeg_mend(b):
+    """v2.99: неполный JPEG -> такой, что декодер откроет: дописываем маркер
+    конца FFD9 (Pillow с LOAD_TRUNCATED_IMAGES дорисует недостающее серым).
+    Не JPEG (начало потерялось) возвращаем как есть — растр сделаем из байтов."""
+    if b[:2] == b"\xff\xd8" and not b.endswith(b"\xff\xd9"):
+        return b + b"\xff\xd9"
+    return b
+
+
+def _bytes_raster(data, w, h):
+    """v2.99: кадр не декодируется вовсе — растр прямо из байтов (среднее по
+    полосам): нейросеть всё равно получает «что пришло», а не пустоту."""
+    n = w * h
+    if not data:
+        return bytes([1]) * n
+    out = []
+    L = len(data)
+    for i in range(n):
+        a, b = i * L // n, max(i * L // n + 1, (i + 1) * L // n)
+        seg = data[a:b]
+        out.append(1 + (sum(seg) // len(seg)) * 253 // 255)
+    return bytes(out)
 
 
 def _jpeg_complete(b):
@@ -13325,9 +13392,65 @@ def _mic_rms(chunk):
     return math.sqrt(sum(x * x for x in a) / float(len(a)))
 
 
+# v2.99: ЧТЕНИЕ МИКРОФОНА БЕЗ ЗАВИСАНИЙ. Раньше p.stdout.read(960) ждал целый
+# кадр вечно: если устройство отдавало пару байт и замолкало (I2S/USB-микрофон
+# без тактов, «default» без захвата, занятое устройство), поток слуха вис
+# навсегда в состоянии «слушаю». Теперь: читаем os.read() через select с
+# таймаутом, короткие куски копятся до кадра 30 мс; нет данных 3 с — arecord
+# убиваем и пробуем следующий вариант «устройство × формат». Форматы, которые
+# устройство умеет без plughw (48 кГц, стерео), переводим в 16 кГц моно сами.
+_MIC_FORMATS = ((16000, 1), (48000, 1), (48000, 2), (44100, 2), (32000, 1), (8000, 1))
+MIC_STALL_S = 3.0
+
+
+def _mic_to16k(raw, sr, ch):
+    """PCM s16le sr/ch -> 16 кГц моно (без audioop: его нет в Python 3.13)."""
+    import array
+    if sr == MIC_SR and ch == 1:
+        return raw
+    a = array.array("h")
+    a.frombytes(raw[:len(raw) // (2 * ch) * (2 * ch)])
+    if ch > 1:
+        a = array.array("h", [sum(a[i:i + ch]) // ch for i in range(0, len(a), ch)])
+    if sr == MIC_SR:
+        return a.tobytes()
+    if sr % MIC_SR == 0:                     # 48000/32000 -> среднее по k отсчётам
+        k = sr // MIC_SR
+        out = array.array("h", [sum(a[i:i + k]) // k for i in range(0, len(a) - k + 1, k)])
+        return out.tobytes()
+    step = sr / float(MIC_SR)                # 44100/8000 -> линейная интерполяция
+    out = array.array("h")
+    n = len(a)
+    t = 0.0
+    while t < n - 1:
+        i = int(t)
+        f = t - i
+        out.append(int(a[i] * (1 - f) + a[i + 1] * f))
+        t += step
+    return out.tobytes()
+
+
+def _mic_variants(dev, cards):
+    """Список (устройство, частота, каналы) для перебора."""
+    devs = []
+    for d in [dev] + list(cards) + ["default", "sysdefault", "dsnoop"]:
+        if d and d not in devs:
+            devs.append(d)
+    if dev != "default" and str(CFG.get("mic_dev") or "default") != "default":
+        devs = [dev]                         # устройство задано вручную — только его
+    out = []
+    for d in devs:
+        for sr, ch in _MIC_FORMATS:
+            out.append((d, sr, ch))
+    return out
+
+
 def mic_listen_worker():
+    import select
     import shutil
     import subprocess
+    vi = 0                                    # номер текущего варианта
+    good = None                               # вариант, который уже давал звук
     while True:
         if not CFG.get("mic_on", True):
             _MIC["state"] = "выкл"
@@ -13344,101 +13467,156 @@ def mic_listen_worker():
             time.sleep(120)
             continue
         dev = str(CFG.get("mic_dev") or "default")
-        try:                                # v2.94.1: есть ли вообще устройство записи
-            import subprocess as _sp
-            lst = _sp.run(["arecord", "-l"], stdout=_sp.PIPE, stderr=_sp.STDOUT,
-                          timeout=10).stdout.decode("utf-8", "replace")
+        try:
+            lst = subprocess.run(["arecord", "-l"], stdout=subprocess.PIPE,
+                                 stderr=subprocess.STDOUT, timeout=10).stdout.decode("utf-8", "replace")
         except Exception:
             lst = "card"
-        # v2.94.2: «default» часто не умеет 16 кГц моно (audio open error: Invalid
-        # argument) — пробуем найденные карты через plughw (сам переводит формат)
-        cards = re.findall(r"card (\d+):[^\n]*device (\d+):", lst)
-        _MIC["cards"] = ["plughw:%s,%s" % c for c in cards]
-        if dev == "default" and _MIC.get("dev_auto"):
-            dev = _MIC["dev_auto"]
+        cards = ["plughw:%s,%s" % c for c in re.findall(r"card (\d+):[^\n]*device (\d+):", lst)]
+        cards += ["hw:%s" % c[3:] for c in list(cards)]
+        _MIC["cards"] = cards
         if "card" not in lst.lower():
-            _MIC["state"] = "нет USB-микрофона"
-            _MIC["err"] = ("у платы нет устройства записи звука: речь в облако, Vosk и живой "
-                           "звук работают только с USB-микрофоном (через USB-C хаб). Модуль "
-                           "VR3 слушает своим микрофоном только обученные команды — они "
-                           "приходят отдельно (🗣 Модуль VR3)")
+            _MIC["state"] = "нет устройства записи"
+            _MIC["err"] = ("Linux платы не видит ни одного устройства записи звука (arecord -l "
+                           "пуст): речь в облако, Vosk и живой звук идут только через звуковую "
+                           "карту Linux (USB-микрофон/веб-камера через USB-C хаб). Модуль VR3 и "
+                           "KY-037 на D10/D11 слушает скетч — их слова/громкость приходят отдельно")
             time.sleep(60)
             continue
-        cmd = ["arecord", "-q", "-D", dev, "-f", "S16_LE", "-r", str(MIC_SR),
-               "-c", "1", "-t", "raw"]
+        variants = _mic_variants(dev, cards)
+        if good in variants:
+            var = good
+        else:
+            var = variants[vi % len(variants)]
+        vdev, vsr, vch = var
+        cmd = ["arecord", "-q", "-D", vdev, "-f", "S16_LE", "-r", str(vsr),
+               "-c", str(vch), "-t", "raw"]
         try:
-            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=0,
+                                 start_new_session=True)
         except Exception as e:
             _MIC["state"], _MIC["err"] = "ошибка", "arecord: %s" % str(e)[:100]
-            time.sleep(60)
+            time.sleep(30)
             continue
         _MIC["state"], _MIC["err"] = "слушаю", ""
-        _MIC["dev_used"] = dev
-        log("СЛУХ", "микрофон платы: arecord -D %s (16 кГц), фразы -> облако" % dev)
+        _MIC["dev_used"] = "%s %d Гц %s" % (vdev, vsr, "моно" if vch == 1 else "стерео")
+        log("СЛУХ", "микрофон платы: arecord -D %s -r %d -c %d -> 16 кГц, фразы -> облако"
+            % (vdev, vsr, vch))
         floor, speech, pre = 0.0, None, deque(maxlen=10)
         silent = voiced = 0
+        got = 0                               # байт от arecord в этом запуске
+        last_data = time.time()
+        t0 = time.time()
+        pend = b""
+        why = ""
+        fd = p.stdout.fileno()
         try:
             while CFG.get("mic_on", True):
-                chunk = p.stdout.read(MIC_FRAME * 2)
-                if not chunk or len(chunk) < MIC_FRAME * 2:
+                r, _w, _x = select.select([fd], [], [], 0.5)
+                if not r:
+                    if p.poll() is not None:
+                        why = "arecord завершился"
+                        break
+                    if time.time() - last_data > MIC_STALL_S:
+                        why = ("устройство замолчало: %d байт за %.0f с, потом %d с тишины в "
+                               "проводе" % (got, last_data - t0, int(time.time() - last_data)))
+                        break
+                    continue
+                data = os.read(fd, 65536)
+                if not data:
+                    why = "arecord закрыл поток"
                     break
-                rms = _mic_rms(chunk)
-                _MIC["rms"] = int(rms)
-                if time.time() < _MIC["live_until"]:
-                    _MIC_LIVE.append(chunk)          # v2.93: живой звук в облако
-                if time.time() < _MIC["mute_until"]:
-                    speech, silent, voiced = None, 0, 0     # сама говорит
-                    pre.clear()
-                    continue
-                thr = max(float(CFG.get("mic_min_rms") or 350), floor * 3.0)
-                thr = breath_mod("Слух", thr, -0.15)   # v2.75: вдох — чутче
-                if speech is None:
-                    floor = rms if floor <= 0 else 0.98 * floor + 0.02 * rms
-                    _MIC["floor"] = int(floor)
-                    pre.append(chunk)
-                    if rms > thr:
-                        speech, silent, voiced = list(pre), 0, 1
+                got += len(data)
+                last_data = time.time()
+                _MIC["bytes"] = int(_MIC.get("bytes") or 0) + len(data)
+                _MIC["run_bytes"] = got
+                pend += data
+                blk = MIC_FRAME * 2 * vch * vsr // MIC_SR      # 30 мс исходного формата
+                while len(pend) >= blk:
+                    raw, pend = pend[:blk], pend[blk:]
+                    chunk = _mic_to16k(raw, vsr, vch)
+                    if len(chunk) < MIC_FRAME * 2:
+                        chunk += b"\x00" * (MIC_FRAME * 2 - len(chunk))
+                    chunk = chunk[:MIC_FRAME * 2]
+                    if got > 32000:
+                        good = var                    # этот вариант даёт звук
+                    rms = _mic_rms(chunk)
+                    _MIC["rms"] = int(rms)
+                    if time.time() < _MIC["live_until"]:
+                        _MIC_LIVE.append(chunk)
+                    if time.time() < _MIC["mute_until"]:
+                        speech, silent, voiced = None, 0, 0
                         pre.clear()
-                    continue
-                speech.append(chunk)
-                if rms > thr:
-                    silent, voiced = 0, voiced + 1
-                else:
-                    silent += 1
-                if silent >= MIC_END_FR or len(speech) >= MIC_MAX_FR:
-                    if voiced >= MIC_MIN_VOICED:
-                        _MIC["phrases"] += 1
-                        _MIC_Q.append((b"".join(speech), int(rms), time.time()))
-                    speech, silent, voiced = None, 0, 0
+                        continue
+                    thr = max(float(CFG.get("mic_min_rms") or 350), floor * 3.0)
+                    thr = breath_mod("Слух", thr, -0.15)
+                    if speech is None:
+                        floor = rms if floor <= 0 else 0.98 * floor + 0.02 * rms
+                        _MIC["floor"] = int(floor)
+                        pre.append(chunk)
+                        if rms > thr:
+                            speech, silent, voiced = list(pre), 0, 1
+                            pre.clear()
+                        continue
+                    speech.append(chunk)
+                    if rms > thr:
+                        silent, voiced = 0, voiced + 1
+                    else:
+                        silent += 1
+                    if silent >= MIC_END_FR or len(speech) >= MIC_MAX_FR:
+                        if voiced >= MIC_MIN_VOICED:
+                            _MIC["phrases"] += 1
+                            _MIC_Q.append((b"".join(speech), int(rms), time.time()))
+                        speech, silent, voiced = None, 0, 0
         except Exception as e:
-            _MIC["err"] = "чтение микрофона: %s" % str(e)[:100]
-        try:
-            p.kill()
-        except Exception:
-            pass
+            why = "чтение микрофона: %s" % str(e)[:100]
         err = ""
-        try:
-            err = (p.stderr.read() or b"").decode("utf-8", "replace").strip()[-160:]
+        try:                                       # stderr — без ожидания (не виснем на нём)
+            efd = p.stderr.fileno()
+            if select.select([efd], [], [], 0.2)[0]:
+                err = os.read(efd, 4096).decode("utf-8", "replace").strip()[-160:]
         except Exception:
             pass
-        if CFG.get("mic_on", True):
-            if "Invalid argument" in err or "No such file" in err or "cannot find" in err.lower():
-                tried = _MIC.setdefault("tried", [])
-                if dev not in tried:
-                    tried.append(dev)
-                nxt = [c for c in _MIC.get("cards") or [] if c not in tried]
-                if str(CFG.get("mic_dev") or "default") == "default" and nxt:
-                    _MIC["dev_auto"] = nxt[0]          # v2.94.2: следующая карта
-                    _MIC["state"], _MIC["err"] = "подбираю устройство", "пробую %s" % nxt[0]
-                    log("СЛУХ", "arecord на %s: %s — пробую %s" % (dev, err[-80:], nxt[0]))
-                    time.sleep(2)
-                    continue
+        try:
+            import signal
+            os.killpg(p.pid, signal.SIGKILL)       # arecord и всё, что он запустил
+        except Exception:
+            try:
+                p.kill()
+            except Exception:
+                pass
+        try:
+            p.wait(timeout=3)
+        except Exception:
+            pass
+        for f_ in (p.stdout, p.stderr):
+            try:
+                f_.close()
+            except Exception:
+                pass
+        if not CFG.get("mic_on", True):
+            continue
+        if speech and voiced >= MIC_MIN_VOICED:   # оборванная фраза — тоже в облако
+            _MIC_Q.append((b"".join(speech), 0, time.time()))
+        _MIC["stalls"] = int(_MIC.get("stalls") or 0) + 1
+        long_ok = time.time() - t0 > 60 and got > 64000
+        if not long_ok:
+            if good == var:
+                good = None
+            vi += 1                                  # следующий вариант
+        _MIC["state"] = "подбираю устройство"
+        _MIC["err"] = ("%s на «%s» (%d Гц, %d кан.)%s — пробую %s" % (
+            why or "остановился", vdev, vsr, vch, (": " + err) if err else "",
+            "заново" if long_ok else "вариант %d из %d" % (vi % len(variants) + 1, len(variants))))
+        log("СЛУХ", _MIC["err"][:200])
+        if vi and vi % len(variants) == 0 and not long_ok:
             _MIC["state"] = "ошибка"
-            _MIC["err"] = ("arecord остановился на «%s»: %s (найдены: %s; устройство можно "
-                           "задать в ⚙ платы — «Устройство ALSA», например plughw:1,0)"
-                           % (dev, err or "без сообщения", ", ".join(_MIC.get("cards") or []) or "ничего"))
-            _MIC["tried"] = []
-            time.sleep(20)
+            _MIC["err"] = ("ни один вариант не дал звука (последний: %s; найдены: %s) — проверь "
+                           "микрофон или задай устройство в ⚙ платы «Устройство ALSA»"
+                           % (_MIC["err"][:160], ", ".join(cards) or "ничего"))
+            time.sleep(30)
+        else:
+            time.sleep(1.0)
 
 
 def mic_send_worker():

@@ -9,7 +9,8 @@ import io
 
 def raster(img_b64, w=16, h=12):
     try:
-        from PIL import Image, ImageOps
+        from PIL import Image, ImageOps, ImageFile
+        ImageFile.LOAD_TRUNCATED_IMAGES = True   # v3.186: оборванный кадр — тоже кадр
     except Exception:
         return {"ok": False, "error": "на сервере нет Pillow (pip install pillow)"}
     try:

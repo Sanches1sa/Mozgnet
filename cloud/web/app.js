@@ -1182,10 +1182,11 @@ async function renderVision(quiet) {
     const live = c.ts && (Date.now() / 1000 - c.ts) < 120;
     const bd = c.board || null;
     let why = '';
-    if (bd && bd.state && bd.state !== 'кадры идут') why = '📷 Плата: <b>' + esc(bd.state) + '</b>' + (bd.err ? ' — ' + esc(bd.err) : '');
+    if (bd && bd.state && bd.state !== 'кадры идут' && bd.state !== 'битый кадр идёт') why = '📷 Плата: <b>' + esc(bd.state) + '</b>' + (bd.err ? ' — ' + esc(bd.err) : '');
     else if (bd && bd.up_err) why = '📷 Плата снимает, но ' + esc(bd.up_err);
     if (c.bad && c.bad_ts && (!c.ts || c.bad_ts > c.ts))
-      why += (why ? '<br>' : '') + '⚠ Облако отвергло кадр ' + ago(c.bad_ts) + ': ' + esc(c.bad_why) + ' (показан последний целый кадр)';
+      why += (why ? '<br>' : '') + '⚠ ' + ago(c.bad_ts) + ': ' + esc(c.bad_why);
+    if (c.broken) why += (why ? '<br>' : '') + '🧩 Этот кадр <b>неполный/битый</b> — показан и отдан нейросети как есть (битых в последних 24: ' + (c.broken_n || 0) + ')';
     card.innerHTML = '<h3>📷 ' + esc(c.cam) +
       ' <span class="pill ' + (live ? 'ok' : 'bad') + '">' + (live ? 'в сети' : (c.ts ? 'молчит' : 'нет кадров')) + '</span></h3>' +
       (c.nofile ? '<div class="mini">Ни одного кадра от этой платы ещё не пришло.</div>' :
@@ -2167,7 +2168,8 @@ async function micWire() {
     if (m) {
       h += '<div>🎤 ' + esc(m.state || '?') + (m.on === false ? ' (выключен в настройках платы)' : '') + ' · уровень ' + bar(m.rms, 3000) + ' ' + (m.rms ?? '—') +
         ' (фон ' + (m.floor ?? '—') + ') · фраз ' + (m.phrases || 0) + ', отправлено ' + (m.sent || 0) + ', понято ' + (m.heard || 0) +
-        ' · устройство <code>' + esc(m.dev || 'default') + '</code> <span class="muted">(' + m.age + ' с назад)</span></div>';
+        ' · устройство <code>' + esc(m.dev_used || m.dev || 'default') + '</code> <span class="muted">(' + m.age + ' с назад)</span></div>';
+      if (m.bytes != null) h += '<div class="mini">поток arecord: всего ' + Math.round((m.bytes || 0) / 1024) + ' КБ, в этом запуске ' + Math.round((m.run_bytes || 0) / 1024) + ' КБ' + (m.stalls ? ' · перезапусков ' + m.stalls : '') + '</div>';
       if (m.err) h += '<div style="color:#e88">⚠ ' + esc(m.err) + '</div>';
       if (m.last) h += '<div class="muted">последнее: «' + esc(m.last) + '»</div>';
       if (m.live_err) h += '<div style="color:#e88">живой звук: ' + esc(m.live_err) + '</div>';
@@ -2201,9 +2203,10 @@ async function micWire() {
         (c.ok_age != null ? ' · последний кадр ' + c.ok_age + ' с назад' : '') + (c.sent_age != null ? ' · в облако ' + c.sent_age + ' с назад' : '') + '</div>';
       if (c.err) h += '<div style="color:#e88">⚠ ' + esc(c.err) + '</div>';
       if (c.up_err) h += '<div style="color:#e88">⚠ отправка: ' + esc(c.up_err) + '</div>';
+      if (c.brk_n) h += '<div>🧩 битых/неполных кадров передано нейросети: <b>' + c.brk_n + '</b>' + (c.brk_why ? ' · последний: ' + esc(c.brk_why) : '') + '</div>';
       const u = c.uart;
       if (u) h += '<div>UART: байт <b>' + (u.bytes ?? '?') + '</b> · целых кадров <b>' + (u.ok ?? '?') + '</b> · битых ' + (u.bad ?? '?') +
-        ' · оборванных ' + (u.lost ?? '?') + ' · ' + (u.baud ?? '?') + ' бод' + (u.why ? '<div style="color:#e88">→ ' + esc(u.why) + '</div>' : '') + '</div>';
+        ' · оборванных ' + (u.lost ?? '?') + ' · ' + (u.baud ?? '?') + ' бод' + (u.part != null ? ' · отдано неполных ' + u.part + ', с плохим CRC ' + (u.crcbad || 0) : '') + (u.why ? '<div style="color:#e88">→ ' + esc(u.why) + '</div>' : '') + '</div>';
     } else h += '<div class="muted">📷 плата не прислала состояние камеры</div>';
     h += '</div>';
   });

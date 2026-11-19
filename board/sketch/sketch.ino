@@ -1484,6 +1484,10 @@ static uint16_t camLen = 0;        // его длина
 static uint8_t  camFrameSeq = 0;   // seq последнего целого кадра
 static uint32_t camLastMs = 0;     // когда кадр положили
 static uint32_t camOk = 0, camBad = 0;          // счётчики целых/битых
+/* v2.99: оборванные и битые кадры НЕ выбрасываются — уходят в Linux с меткой:
+ * camBroken 0 = целый, 1 = оборван (пауза в приёме), 2 = CRC не сошёлся */
+static uint8_t  camBroken = 0;
+static uint32_t camPartN = 0, camCrcN = 0;
 static volatile bool camCopying = false;   // v2.94.1: кадр копируется в camBuf
 static volatile uint32_t camGen = 0;       // v2.94.1: счётчик смен кадра (чётный — кадр целый)
 static uint32_t camBytes = 0;      // v2.93: сколько байт пришло по UART вообще (0 = провод/питание)
@@ -1504,6 +1508,7 @@ static uint8_t  camState = 0;      // 0=ищем A5, 1=ждём 5C, 2=загол
 static bool     camPush = false;
 static uint16_t camPushOff = 0;
 static uint8_t  camPushSeq = 0;
+static uint8_t  camPushBrk = 0;   // v2.99: метка кадра, который сейчас отдаём
 static uint32_t camPushMs = 0, camPushStartMs = 0, camInfoMs = 0, camPushed = 0;
 #define CAMPUSH_GAP_MS    12     // пауза между кусками (мосту — продохнуть)
 #define CAMPUSH_PERIOD_MS 600    // не чаще одного кадра в Linux за это время
@@ -1564,11 +1569,38 @@ static bool camAsciiOnly(const char *s, uint16_t n) {
   return true;
 }
 
+/* v2.99: положить кадр (целый или нет) в camBuf и поставить на отдачу */
+static void camKeepFrame(uint16_t n, uint8_t seq, uint8_t brk) {
+  if (n == 0 || n > CAMRX_BUF) return;
+  camCopying = true;
+  camGen++;
+  memcpy(camBuf, camRx, n);
+  camLen = n;
+  camFrameSeq = seq;
+  camBroken = brk;
+  camGen++;
+  camCopying = false;
+  camLastMs = millis();
+  if (camPush) {                    // буфер сменился во время отдачи — отдаём заново с начала
+    camPushOff = 0; camPushSeq = seq; camPushBrk = brk;
+  } else if ((uint32_t)(millis() - camPushStartMs) >= CAMPUSH_PERIOD_MS) {
+    camPush = true; camPushOff = 0; camPushSeq = camFrameSeq; camPushBrk = brk;
+    camPushStartMs = millis();
+  }
+}
+
 /* Неблокирующий приём байтов камеры — вызывать из loop() каждую итерацию */
 void camUartTick() {
   /* v2.93: пакет оборвался (байты потеряны, пока loop был занят) — не ждём
    * его вечно, иначе съедим заголовок следующего кадра и испортим и его */
-  if (camState >= 2 && (uint32_t)(millis() - camByteMs) > 60) { camState = 0; camLost++; }
+  if (camState >= 2 && (uint32_t)(millis() - camByteMs) > 60) {
+    /* v2.99: оборванный JPEG (>=64 байт) не выбрасываем — отдаём как есть */
+    if (camState == 3 && camPkt[2] == 0x01 && camPktGotData >= 64) {
+      camKeepFrame(camPktGotData, camPkt[3], 1);
+      camPartN++;
+    }
+    camState = 0; camLost++;
+  }
   while (CAMRX.available()) {
     uint8_t b = (uint8_t)CAMRX.read();
     camBytes++; camByteMs = millis();
@@ -1595,25 +1627,24 @@ void camUartTick() {
         camState = 0;
         uint16_t crc = camCrc16(camRx, camPktLen);
         uint16_t want = (uint16_t)camPkt[6] | (uint16_t)((uint16_t)camPkt[7] << 8);
-        if (crc != want) { camBad++; continue; }
         uint8_t typ = camPkt[2];
+        if (crc != want) {
+          camBad++;
+          if (typ == 0x01 && camPktLen >= 64) {   // v2.99: битый кадр — тоже в Linux
+            camKeepFrame(camPktLen, camPkt[3], 2);
+            camCrcN++;
+          }
+          continue;
+        }
         if (typ == 0x01) {                // JPEG-кадр — целиком в camBuf
           if (camRx[0] == 0xFF && camRx[1] == 0xD8) {
-            camCopying = true;                // v2.94.1: поток моста не читает кадр, пока копируем
-            camGen++;
-            memcpy(camBuf, camRx, camPktLen);
-            camLen = camPktLen;
-            camFrameSeq = camPkt[3];
-            camGen++;
-            camCopying = false;
-            camLastMs = millis();
+            camKeepFrame(camPktLen, camPkt[3], 0);   // v2.96: целый кадр -> Linux
             camOk++;
-            /* v2.96: новый целый кадр — отдать в Linux сами (кусками в loop) */
-            if ((uint32_t)(millis() - camPushStartMs) >= CAMPUSH_PERIOD_MS) {
-              camPush = true; camPushOff = 0; camPushSeq = camFrameSeq;
-              camPushStartMs = millis();
-            }
-          } else camBad++;                // не JPEG — в мусор
+          } else {                        // v2.99: CRC сошёлся, но начало не JPEG — отдаём битым
+            camBad++;
+            camKeepFrame(camPktLen, camPkt[3], 2);
+            camCrcN++;
+          }
         } else if (typ == 0x03 && camPktLen < CAMVIS_MAX) {   // v2.88: зрение
           if (camRx[0] != '{' || !camAsciiOnly((const char *)camRx, camPktLen)) {
             camBad++;                     // v2.96.2: не JSON/не ASCII — мусор, в мост нельзя
@@ -1657,12 +1688,13 @@ void camPushTick() {
   if ((uint32_t)(now - camPushMs) < CAMPUSH_GAP_MS) return;
   camPushMs = now;
   if (camPushSeq != camFrameSeq) {                   // кадр сменился — с начала
-    camPushOff = 0; camPushSeq = camFrameSeq;
+    camPushOff = 0; camPushSeq = camFrameSeq; camPushBrk = camBroken;
   }
+  if (camPushOff >= camLen) camPushOff = 0;           // v2.99: кадр стал короче — с начала
   uint16_t n = (uint16_t)(camLen - camPushOff);
   if (n > CAMRX_CHUNK) n = CAMRX_CHUNK;
   Bridge.notify("on_cam", (int)camPushSeq, (int)camPushOff, (int)camLen,
-                camB64(camBuf + camPushOff, n));
+                camB64(camBuf + camPushOff, n), (int)camPushBrk);   // v2.99: + метка битости
   camPushOff = (uint16_t)(camPushOff + n);
   if (camPushOff >= camLen) { camPush = false; camPushed++; }
 #endif
@@ -1678,7 +1710,8 @@ String rpcCamFrameInfo() {
          ";ok=" + String(camOk) + ";bad=" + String(camBad) +
          ";age_ms=" + String(millis() - camLastMs) +
          ";baud=" + String(CAMRX_BAUD) +
-         ";bytes=" + String(camBytes) + ";lost=" + String(camLost);
+         ";bytes=" + String(camBytes) + ";lost=" + String(camLost) +
+         ";brk=" + String(camBroken) + ";part=" + String(camPartN) + ";crcbad=" + String(camCrcN);
 }
 
 /* RPC cam_chunk("seq:off"): base64-кусок кадра; "" — кадр уже сменился
@@ -3719,7 +3752,7 @@ void loop() {
   static uint32_t sverMs = 0;            // v2.94.6: версия СКЕТЧА — видно, залился ли новый
   if ((uint32_t)(millis() - sverMs) >= 10000) {
     sverMs = millis();
-    Bridge.notify("on_sver", String("2.98.0;up=") + String(millis() / 1000UL) + ";loops=" + String((unsigned long)loopCount));
+    Bridge.notify("on_sver", String("2.99.0;up=") + String(millis() / 1000UL) + ";loops=" + String((unsigned long)loopCount));
   }
 #endif
   /* v2.96.2 (проверено на плате): ни сон 1 мс каждые 2 мс, ни yield()

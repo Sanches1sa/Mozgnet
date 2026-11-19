@@ -1212,13 +1212,13 @@ def h_vision_frame(req):
     b = req.body or {}
     return 200, vision.frame(b.get("img"), b.get("cam") or "cam",
                              float(b.get("conf") or 0.35),
-                             board=str(b.get("cam") or ""))
+                             board=str(b.get("cam") or ""), broken=b.get("broken") or 0)
 
 
 def h_vision_raw(req):
     b = req.body or {}
     return 200, vision.raw(b.get("img"), b.get("cam") or "cam",
-                           board=str(b.get("cam") or ""))
+                           board=str(b.get("cam") or ""), broken=b.get("broken") or 0)
 
 
 def h_vision_raster(req):
