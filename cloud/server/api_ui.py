@@ -2890,6 +2890,39 @@ def h_maxbot_scan(req):
 
 
 _r("GET", "api/maxbot/scan", h_maxbot_scan)
+
+
+def h_maxbot_sources(req):
+    """v3.188: ЧАТЫ-ИСТОЧНИКИ ОТВЕТОВ (maxsrc). GET — состояние.
+    POST {chats:[id|ссылка...]} — сохранить список (новые читаются сразу);
+    {scope:"all"|"same"}; {on:bool}; {sync:<id>, full:bool} — перечитать;
+    {forget:<id>} — стереть индекс чата (база знаний не затрагивается);
+    {ask:"вопрос"} — проверить, что бот ответит из чатов."""
+    import maxsrc
+    b = req.body or {}
+    out = {"ok": True}
+    if str(getattr(req, "method", "") or "").upper() == "POST":
+        if "on" in b:
+            store.update_settings({"maxbot_src_on": bool(b.get("on"))})
+        if "chats" in b:
+            out["chats_saved"] = maxsrc.set_sources(b.get("chats") or [], b.get("scope"))
+        elif b.get("scope") in ("all", "same"):
+            store.update_settings({"maxbot_src_scope": b.get("scope")})
+        if b.get("sync"):
+            out["started"] = maxsrc.start_sync(maxsrc.parse_chat(b["sync"]) or str(b["sync"]),
+                                               full=bool(b.get("full")))
+        if b.get("forget"):
+            maxsrc.forget(maxsrc.parse_chat(b["forget"]) or str(b["forget"]))
+        if b.get("ask"):
+            r = maxsrc.answer_for(str(b["ask"])[:500], None, any_scope=True)
+            out["answer"] = r or {"level": "", "text": "В истории чатов-источников "
+                                  "подходящего ответа не нашёл."}
+    out["sources"] = maxsrc.status()
+    return 200, out
+
+
+_r("GET", "api/maxbot/sources", h_maxbot_sources)
+_r("POST", "api/maxbot/sources", h_maxbot_sources)
 _r("POST", "api/maxbot/scan", h_maxbot_scan)
 
 

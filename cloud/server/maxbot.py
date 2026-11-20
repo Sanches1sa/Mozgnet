@@ -922,13 +922,19 @@ def _think(text, sender, chat_id=None):
     брать. v3.142: к ответу добавляется ПАМЯТЬ ИНСТРУКЦИЙ (chatmem).
     Отдельная функция — чтобы тест мог подменить."""
     import brain
+    src = _src_answer(text, chat_id)              # v3.188: чаты-источники
+    if src and src.get("level") == "high":
+        return src["text"], "чаты-источники"
     # v3.29: ЕДИНЫЙ МОЗГ — слабый ответ облака дополняет плата: успела за
     # unify_wait — в этот же ответ, позже — отдельным сообщением (только
     # знание с опорой; заготовки зон в мессенджер не идут)
     reply, zone, info = brain.think(
         text, sender=sender, ctx=_mem_ctx(chat_id),
         deliver=({"kind": "max", "chat_id": chat_id} if chat_id else None))
-    return _with_instructions(reply, text), zone
+    reply = _with_instructions(reply, text)
+    if src:
+        reply = str(reply or "").rstrip() + "\n\n" + src["text"]
+    return reply, zone
 
 
 def _with_instructions(reply, question):
@@ -1638,11 +1644,22 @@ def scan_history(chat_id="", pages=None, auto=False):
         return {"ok": False, "error": "бот выключен — включи его и сохрани "
                                       "настройки"}
     chats = _load().get("chats") or {}
+    try:                                       # v3.188: чаты-источники ответов
+        import maxsrc                          # в базу знаний не заучиваются
+        src = set(maxsrc.chats())
+    except Exception:
+        src = set()
     if str(chat_id).strip():
         targets = [str(chat_id).strip()]
+        if targets[0] in src:
+            return {"ok": False, "error": "этот чат выбран источником ответов — его "
+                    "история в базу знаний не заучивается (бот читает её в отдельный "
+                    "индекс сам). Убери чат из «Чатов-источников», если хочешь "
+                    "заучить его в базу знаний"}
         _see_chat(targets[0], "chat")          # v3.31: чат по ссылке — в список
     else:
-        targets = sorted(chats, key=lambda k: -(chats[k].get("seen") or 0))
+        targets = sorted((k for k in chats if k not in src),
+                         key=lambda k: -(chats[k].get("seen") or 0))
         if not targets:
             return {"ok": False, "error": "известных чатов нет — чаты "
                     "собираются по событиям: напиши боту в личку или добавь "
@@ -2191,9 +2208,19 @@ def _on_message(msg):
     # название мессенджера; раньше при пустом name приветствие шло «МАКС»
     name = (sender.get("first_name") or sender.get("name")
             or sender.get("username") or "друг")
+    # v3.188: ЧАТ-ИСТОЧНИК ОТВЕТОВ — сообщение в отдельный индекс (maxsrc),
+    # в базу знаний / статьи / документы из этого чата ничего не идёт
+    src_chat = False
+    try:
+        import maxsrc
+        src_chat = maxsrc.is_source(chat_id)
+        if src_chat:
+            maxsrc.note(msg)
+    except Exception as e:
+        store.log("МАКС", "чат-источник: %s" % e)
     if ctype == "dialog":
         parts = []
-        if atts:                                 # v3.23: документ(ы) -> база
+        if atts and not src_chat:                # v3.23: документ(ы) -> база
             doc_ans = _handle_files(msg, chat_id)
             if doc_ans:
                 parts.append(doc_ans)
@@ -2216,8 +2243,9 @@ def _on_message(msg):
         return
     # ---- группа / канал ----
     asked = _addressed(text, msg, bot) if text else None
-    _learn_from_group(msg, chat_id, addressed=bool(asked))
-    doc_ans = _handle_files(msg, chat_id) if atts else None
+    if not src_chat:                      # v3.188: источник — не в базу знаний
+        _learn_from_group(msg, chat_id, addressed=bool(asked))
+    doc_ans = _handle_files(msg, chat_id) if atts and not src_chat else None
     if ctype == "channel":
         return                                   # в каналах боты не пишут
     cmd_txt = text if text.startswith("/") else None
@@ -2288,6 +2316,16 @@ def _status_end(mid):
         store.log("МАКС", "статус-сообщение не убралось: %s" % str(e)[:80])
 
 
+def _src_answer(text, chat_id):
+    """v3.188: ответ из чатов-источников (maxsrc) или None."""
+    try:
+        import maxsrc
+        return maxsrc.answer_for(text, chat_id)
+    except Exception as e:
+        store.log("МАКС", "чаты-источники: %s" % e)
+        return None
+
+
 def _deliver_answer(chat_id, text, name, pre=None):
     """v3.30: ответ на реплику через общий движок (dialog.respond):
     [документы] -> [💭 мысли мозга] -> [ответ облака, 1–2 сообщения].
@@ -2295,12 +2333,19 @@ def _deliver_answer(chat_id, text, name, pre=None):
     начале диалога; всё отправленное попадает в память диалога."""
     import dialog
     _st_mid = _status_begin(chat_id)
+    src = _src_answer(text, chat_id)              # v3.188: чаты-источники
     try:
-        msgs, zone, d_info = dialog.respond(
-            text, ctx=_mem_ctx(chat_id), chat_key="max:%s" % chat_id,
-            name=name, sender="МАКС: " + name,
-            deliver={"kind": "max", "chat_id": chat_id},
-            limit=MAX_REPLY, template=bool(_tpl_on()))
+        if src and src.get("level") == "high":
+            # уверенный ответ из истории выбранного чата — он и есть ответ
+            msgs, zone, d_info = [src["text"]], "чаты-источники", {}
+        else:
+            msgs, zone, d_info = dialog.respond(
+                text, ctx=_mem_ctx(chat_id), chat_key="max:%s" % chat_id,
+                name=name, sender="МАКС: " + name,
+                deliver={"kind": "max", "chat_id": chat_id},
+                limit=MAX_REPLY, template=bool(_tpl_on()))
+            if src and msgs:                  # средняя уверенность — дописать
+                msgs[-1] = msgs[-1].rstrip() + "\n\n" + src["text"]
     except Exception as e:
         store.log("МАКС", "движок диалога: %s" % e)
         reply, zone = _think(text, "МАКС: " + name, chat_id=chat_id)
@@ -2498,6 +2543,11 @@ def _loop(gen=0):
                     pass
                 _save()
             _autoscan_tick()
+            try:                          # v3.188: чаты-источники — сверка хвоста
+                import maxsrc
+                maxsrc.tick()
+            except Exception:
+                pass
             ups, marker = _poll(_load().get("marker") or marker)
             if gen != _GEN[0]:            # v3.184: пока ждали — бота перезагрузили
                 break
@@ -2681,4 +2731,13 @@ def status():
         "marker_set": bool(st.get("marker")),
         "last_ok": st.get("last_ok") or 0.0,
         "last_error": st.get("last_error") or "",
+        "sources": _src_status(),                    # v3.188
     }
+
+
+def _src_status():
+    try:
+        import maxsrc
+        return maxsrc.status()
+    except Exception as e:
+        return {"err": str(e)[:120]}

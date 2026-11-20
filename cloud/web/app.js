@@ -4338,6 +4338,83 @@ function tabSecurity() {
 }
 
 /* ---------------------------- Макс-бот (v3.23) ---------------------------- */
+// v3.188: ЧАТЫ-ИСТОЧНИКИ ОТВЕТОВ МАКС-бота (maxsrc): бот берёт ответы из
+// истории выбранных чатов, история — в отдельный индекс, НЕ в базу знаний
+function mxSrcRender(m) {
+  const box = $('#mxSrc'); if (!box) return;
+  const S = m.sources || {}, src = S.chats || [];
+  const sel = new Set(src.map(c => String(c.chat_id)));
+  const known = (m.chats || []).filter(c => c.chat_id != null && !sel.has(String(c.chat_id)));
+  const ago = ts => ts ? new Date(ts * 1000).toLocaleString() : '—';
+  const row = (c, on) => '<tr><td><input type="checkbox" class="mxSrcCb" data-id="' + esc(String(c.chat_id)) + '"' + (on ? ' checked' : '') + '></td>' +
+    '<td>' + esc(c.title || ('чат ' + c.chat_id)) + '<div class="mini">' + esc(String(c.chat_id)) + '</div></td>' +
+    (on ? '<td class="mini">' + (c.msgs || 0) + ' сообщ.' + (c.oldest ? '<br>с ' + new Date(c.oldest * 1000).toLocaleDateString() : '') + '</td>' +
+      '<td class="mini">' + (c.running ? '<b>читаю историю…</b> стр. ' + (c.pages || 0) + ', новых ' + (c.new || 0) :
+        c.complete ? '✓ прочитан целиком' + (c.full_ts ? ' (' + ago(c.full_ts) + ')' : '') : 'прочитан частично') +
+        (c.synced ? '<br>сверка: ' + ago(c.synced) : '') + (c.err ? '<br><span style="color:#e88">' + esc(c.err) + '</span>' : '') + '</td>' +
+      '<td><button class="btn ghost mxSrcSync" data-id="' + esc(String(c.chat_id)) + '">Перечитать</button> ' +
+      '<button class="btn ghost mxSrcForget" data-id="' + esc(String(c.chat_id)) + '" title="Стереть индекс этого чата у бота (база знаний не затрагивается)">Стереть индекс</button></td>'
+      : '<td class="mini" colspan="3">не источник</td>') + '</tr>';
+  box.innerHTML = '<h3 style="margin-top:16px">📚 Чаты-источники ответов</h3>' +
+    '<div class="hint">Отметь чаты, из которых бот будет брать ответы. Бот прочитает <b>всю историю</b> отмеченного чата в свой отдельный индекс — ' +
+    '<b>в базу знаний она не попадает</b> (живая учёба, документы и скан истории для этих чатов выключены). На вопрос бот проходит по всей истории: ' +
+    'находит, где такое уже спрашивали, и выбирает <b>правильный</b> ответ — прямой ответ на вопрос, который потом подтвердили («спасибо, работает»), ' +
+    'не опровергли («нет, не так»), с которым согласились другие, или решение, которое нашёл сам спросивший. Уверенный ответ из чата бот присылает ' +
+    'с автором и датой; если уверенность средняя — дописывает его к обычному ответу. В группах бот должен быть администратором, чтобы читать историю.</div>' +
+    '<label class="switch"><input type="checkbox" id="mxSrcOn"' + (S.on !== false ? ' checked' : '') + '> искать ответы в чатах-источниках</label> ' +
+    '<select id="mxSrcScope" style="margin-left:10px"><option value="all"' + (S.scope !== 'same' ? ' selected' : '') + '>отвечать из них в любом чате и в личке</option>' +
+    '<option value="same"' + (S.scope === 'same' ? ' selected' : '') + '>только в том же чате (переписка группы не уходит посторонним)</option></select>' +
+    '<table class="tbl" style="margin-top:8px"><tr><th></th><th>Чат</th><th>В индексе</th><th>История</th><th></th></tr>' +
+    src.map(c => row(c, true)).join('') + known.map(c => row(c, false)).join('') +
+    (!src.length && !known.length ? '<tr><td colspan="5" class="mini">Чатов пока нет — бот узнаёт чаты по событиям (добавь его в группу) или впиши ссылку ниже.</td></tr>' : '') +
+    '</table>' +
+    '<div class="row" style="margin-top:6px"><input type="text" id="mxSrcAdd" placeholder="ссылка на чат (web.max.ru/-68414748216062) или ID" style="flex:1"> ' +
+    '<button class="btn" id="mxSrcSave">Сохранить список</button></div>' +
+    '<div class="row" style="margin-top:6px"><input type="text" id="mxSrcAsk" placeholder="проверить: какой вопрос задать боту?" style="flex:1"> ' +
+    '<button class="btn ghost" id="mxSrcAskB">Что ответит из чатов</button></div>' +
+    '<pre id="mxSrcAns" class="mini" style="white-space:pre-wrap;display:none"></pre>';
+  const post = async body => {
+    const r = await api('/api/maxbot/sources', { body });
+    if (!r || !r.ok) { toast((r && r.error) || 'не вышло', 'err'); return r; }
+    m.sources = r.sources; mxSrcRender(m); return r;
+  };
+  $('#mxSrcSave').onclick = async () => {
+    const ids = [...document.querySelectorAll('.mxSrcCb')].filter(x => x.checked).map(x => x.dataset.id);
+    const add = $('#mxSrcAdd').value.trim();
+    if (add) ids.push(add);
+    const r = await post({ chats: ids, scope: $('#mxSrcScope').value, on: $('#mxSrcOn').checked });
+    if (r && r.ok) toast('Чатов-источников: ' + (r.chats_saved || []).length + '. Новые читаю целиком — это идёт в фоне.', 'ok');
+    mxSrcPoll(m);
+  };
+  $('#mxSrcScope').onchange = () => post({ scope: $('#mxSrcScope').value });
+  $('#mxSrcOn').onchange = () => post({ on: $('#mxSrcOn').checked });
+  document.querySelectorAll('.mxSrcSync').forEach(b => b.onclick = async () => { await post({ sync: b.dataset.id, full: true }); mxSrcPoll(m); });
+  document.querySelectorAll('.mxSrcForget').forEach(b => b.onclick = async () => {
+    if (!confirm('Стереть индекс этого чата у бота? База знаний не затрагивается; чат останется источником и прочитается заново по кнопке «Перечитать».')) return;
+    post({ forget: b.dataset.id });
+  });
+  $('#mxSrcAskB').onclick = async () => {
+    const q = $('#mxSrcAsk').value.trim(); if (!q) return;
+    const r = await api('/api/maxbot/sources', { body: { ask: q } });
+    const pre = $('#mxSrcAns'); pre.style.display = '';
+    pre.textContent = (r && r.answer) ? ((r.answer.level ? '[' + (r.answer.level === 'high' ? 'уверенно' : 'средняя уверенность') + ', вес ' + r.answer.score + ']\n' : '') + r.answer.text) : 'не получил ответ';
+  };
+}
+function mxSrcPoll(m) {
+  if (window.MX_SRC_TIMER) clearTimeout(window.MX_SRC_TIMER);
+  window.MX_SRC_TIMER = setTimeout(async () => {
+    if (!$('#mxSrc')) return;
+    let r; try { r = await api('/api/maxbot/sources'); } catch (e) { return; }
+    if (!r || !r.sources) return;
+    m.sources = r.sources;
+    const busy = (r.sources.chats || []).some(c => c.running);
+    // не перерисовываем, пока владелец печатает в полях раздела
+    const act = document.activeElement;
+    if (!(act && (act.id === 'mxSrcAdd' || act.id === 'mxSrcAsk'))) mxSrcRender(m);
+    if (busy) mxSrcPoll(m);
+  }, 2000);
+}
+
 async function tabMaxbot() {
   if (window.MX_SCAN_TIMER) { clearTimeout(window.MX_SCAN_TIMER); window.MX_SCAN_TIMER = null; }
   const p = $('[data-pane="maxbot"]');
@@ -4399,6 +4476,7 @@ async function tabMaxbot() {
     '<button class="btn ghost" id="mxProbe">Обновить статус и чаты</button>' +
     ' <button class="btn" id="mxRestart" title="Бот завис — перезапустить опрос и обработчики (облако не перезапускается, сообщения не теряются)">🔄 Перезагрузить бота</button>' +
     '<div id="mxBot" class="hint"></div>' +
+    '<div id="mxSrc"></div>' +
     '<div id="mxChats"></div>';
   let r;
   try { r = await api('/api/maxbot/status'); }
@@ -4454,6 +4532,8 @@ async function tabMaxbot() {
     (c.seen ? new Date(c.seen * 1000).toLocaleString() : '—') + '</td></tr>')
     .join('') + '</table><div class="hint">В группах бот отвечает и ' +
     'учится, только если он администратор чата.</div>') : ''));
+  mxSrcRender(m);                      // v3.188: чаты-источники ответов
+  if (((m.sources || {}).chats || []).some(c => c.running)) mxSrcPoll(m);
   const tok = $('#mxToken');
   const mn = $('#mxMin');
   const gp = $('#mxGap');
