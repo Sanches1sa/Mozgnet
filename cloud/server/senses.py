@@ -292,12 +292,26 @@ def mic_in(board, wav_b64, level=None, text_board=None, ip=None):
     if a is None:
         return {"ok": False, "error": why}
     props = hearing.analyze(a)
+    # v3.186.1: сетевой гул 50 Гц — не речь. Раньше ровный гул с плохо
+    # подключённого микрофона распознавался как «ха» и шёл мозгу как фраза.
+    low, voice = hearing.hum_check(a)
+    board = str(board or "плата")[:40]
+    if low > 0.6 and voice < 150:
+        why = ("сетевой гул 50 Гц: %d%% энергии ниже 100 Гц, речи нет (голосовая полоса %d) — "
+               "микрофон ловит наводку: проверь землю/питание микрофона и провод"
+               % (int(low * 100), int(voice)))
+        _heard_add({"ts": time.time(), "board": board, "text": "", "kind": "гул 50 Гц",
+                    "sec": props.get("sec"), "loud_db": props.get("loud_db"), "level": level,
+                    "why": why, "board_text": "", "ip": str(ip or "")[:45]})
+        store.log("СЛУХ", "микрофон %s: %s" % (board, why))
+        return {"ok": True, "text": "", "kind": "гул 50 Гц", "asr_why": why, "hum": round(low, 2)}
+    if low > 0.3:
+        a = hearing.dehum(a)                       # речь поверх гула — гул вырезаем
     text, why2 = hearing.transcribe(a)
     text = " ".join(str(text or "").split())
     tb = " ".join(str(text_board or "").split())[:600]
     if not text and tb:              # v3.178: Vosk на плате разобрал, облако — нет
         text, why2 = tb, ""
-    board = str(board or "плата")[:40]
     item = {"ts": time.time(), "board": board, "text": text[:600],
             "kind": props.get("kind"), "sec": props.get("sec"),
             "loud_db": props.get("loud_db"), "level": level,

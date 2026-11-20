@@ -278,7 +278,7 @@ except Exception:
 # App Lab отсутствует (из-за него приложение не запускалось), arduino:tts
 # тоже не подключён. LLM и TTS работают ЧЕРЕЗ ОБЛАКО — см. секции [4] и [6].
 
-APP_VERSION = "2.99.0"
+APP_VERSION = "2.99.1"
 
 # ---------------------------------------------------------------------------
 #   v2.33 (2026): МОСТ-КАНАЛ БЕЗ ТАЙМАУТОВ — фикс «word_push не работает,
@@ -13383,6 +13383,24 @@ def _mic_wav(pcm):
     return b.getvalue()
 
 
+def _mic_levels(chunk):
+    """v2.99.1: (громкость, громкость речи без гула). Сетевой гул 50 Гц на
+    входе (нет земли/питания у микрофона, наводка на провод) даёт большую
+    ровную громкость — раньше она считалась речью, а распознаватель делал из
+    неё «ха». Речевая громкость — по разности соседних отсчётов (это фильтр
+    верхних частот: 50 Гц ослабляется в ~50 раз, 1 кГц — нет), ×2.5, чтобы
+    шкала совпадала с обычной громкостью для голоса."""
+    import array
+    a = array.array("h")
+    a.frombytes(chunk[:len(chunk) // 2 * 2])
+    n = len(a)
+    if n < 2:
+        return 0.0, 0.0
+    s2 = sum(x * x for x in a)
+    d2 = sum((a[i] - a[i - 1]) ** 2 for i in range(1, n))
+    return math.sqrt(s2 / float(n)), 2.5 * math.sqrt(d2 / float(n - 1))
+
+
 def _mic_rms(chunk):
     import array
     a = array.array("h")
@@ -13540,8 +13558,10 @@ def mic_listen_worker():
                     chunk = chunk[:MIC_FRAME * 2]
                     if got > 32000:
                         good = var                    # этот вариант даёт звук
-                    rms = _mic_rms(chunk)
-                    _MIC["rms"] = int(rms)
+                    rms_all, rms = _mic_levels(chunk)     # v2.99.1: rms — без гула 50 Гц
+                    _MIC["rms"] = int(rms_all)
+                    _MIC["rms_voice"] = int(rms)
+                    _MIC["hum"] = int(max(0.0, 1.0 - rms / rms_all) * 100) if rms_all > 200 else 0
                     if time.time() < _MIC["live_until"]:
                         _MIC_LIVE.append(chunk)
                     if time.time() < _MIC["mute_until"]:

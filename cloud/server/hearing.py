@@ -168,6 +168,53 @@ def _acf_peak(env, lo, hi):
     return bl, max(0.0, best)
 
 
+def hum_check(a, sr=SR):
+    """v3.186.1: сетевой гул 50 Гц. Возврат (доля энергии ниже 100 Гц 0..1,
+    громкость речевой полосы 300–3400 Гц). Без numpy — оценка по разности
+    соседних отсчётов (фильтр верхних частот)."""
+    n = len(a) if a else 0
+    if n < sr // 4:
+        return 0.0, 0.0
+    try:
+        import numpy as np
+        x = np.asarray(a, dtype=np.float64)
+        X = np.abs(np.fft.rfft(x * np.hanning(n))) ** 2
+        f = np.fft.rfftfreq(n, 1.0 / sr)
+        tot = float(X.sum()) or 1.0
+        low = float(X[f < 100].sum()) / tot
+        voice = float(np.sqrt(X[(f >= 300) & (f <= 3400)].sum() / tot) * x.std())
+        return low, voice
+    except Exception:
+        pass
+    s2 = sum(v * v for v in a) / float(n)
+    d2 = sum((a[i] - a[i - 1]) ** 2 for i in range(1, n)) / float(n - 1)
+    rms, hp = math.sqrt(s2), 2.5 * math.sqrt(d2)
+    return (max(0.0, 1.0 - hp / rms) if rms > 1 else 0.0), hp
+
+
+def dehum(a, sr=SR):
+    """v3.186.1: вырезать сетевой гул: всё ниже 80 Гц и узкие полосы ±3 Гц
+    вокруг 100/150/…/450 Гц (гармоники 50 Гц). Речь почти не задевается.
+    Нужен numpy; без него звук возвращается как есть."""
+    try:
+        import numpy as np
+    except Exception:
+        return a
+    n = len(a)
+    if n < sr // 4:
+        return a
+    x = np.asarray(a, dtype=np.float64)
+    X = np.fft.rfft(x)
+    f = np.fft.rfftfreq(n, 1.0 / sr)
+    X[f < 80] = 0
+    for h in range(100, 500, 50):
+        X[np.abs(f - h) <= 3] = 0
+    y = np.clip(np.fft.irfft(X, n), -32768, 32767).astype(np.int16)
+    out = array.array("h")
+    out.frombytes(y.tobytes())
+    return out
+
+
 def analyze(a, sr=SR):
     """Свойства звука: {sec, loud_db, silence, zcr, speech, beat_bpm, kind,
     text}. Чистый stdlib; на минуту звука — доли секунды."""

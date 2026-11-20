@@ -2169,6 +2169,7 @@ async function micWire() {
       h += '<div>🎤 ' + esc(m.state || '?') + (m.on === false ? ' (выключен в настройках платы)' : '') + ' · уровень ' + bar(m.rms, 3000) + ' ' + (m.rms ?? '—') +
         ' (фон ' + (m.floor ?? '—') + ') · фраз ' + (m.phrases || 0) + ', отправлено ' + (m.sent || 0) + ', понято ' + (m.heard || 0) +
         ' · устройство <code>' + esc(m.dev_used || m.dev || 'default') + '</code> <span class="muted">(' + m.age + ' с назад)</span></div>';
+      if (m.hum != null && m.hum >= 50) h += '<div style="color:#e8a">⚡ ' + m.hum + '% звука — сетевой гул 50 Гц (речевая громкость ' + (m.rms_voice ?? '—') + '). Гул речью не считается. Если гул почти 100% — микрофон не подключён как надо: нет земли или питания, провод ловит наводку от сети.</div>';
       if (m.bytes != null) h += '<div class="mini">поток arecord: всего ' + Math.round((m.bytes || 0) / 1024) + ' КБ, в этом запуске ' + Math.round((m.run_bytes || 0) / 1024) + ' КБ' + (m.stalls ? ' · перезапусков ' + m.stalls : '') + '</div>';
       if (m.err) h += '<div style="color:#e88">⚠ ' + esc(m.err) + '</div>';
       if (m.last) h += '<div class="muted">последнее: «' + esc(m.last) + '»</div>';

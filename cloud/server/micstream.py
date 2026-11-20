@@ -44,7 +44,7 @@ def note_link(board, mic=None, cam=None, sketch=None):
             _MIC[board] = dict({k: mic.get(k) for k in (
                 "state", "err", "phrases", "sent", "heard", "last", "rms", "floor",
                 "on", "dev", "queue", "live", "live_sent", "live_err", "reply", "vosk", "vr",
-                "bytes", "run_bytes", "dev_used", "stalls")}, ts=now)
+                "bytes", "run_bytes", "dev_used", "stalls", "rms_voice", "hum")}, ts=now)
         if isinstance(sketch, dict):
             _SK[board] = dict(sketch, ts=now)
         if isinstance(cam, dict):
