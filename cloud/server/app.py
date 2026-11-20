@@ -633,6 +633,10 @@ def main():
         store.log("СТАРТ", msg)
         return
     STARTING[0] = True
+    try:                       # v3.186.2: вывод ошибок — в cloud_err.log с потолком
+        store.redirect_std()
+    except Exception:
+        pass
     want = int(os.environ.get("NEURO_PORT") or 8077)
     port = _pick_port(want)
     token = store.ensure_dirs()
@@ -831,12 +835,6 @@ def main():
         pass
     STARTING[0] = False
     store.log("СТАРТ", "облако готово за %.1f с" % (time.time() - t_start))
-    try:
-        big = store.trim_restart_log()
-        if big:
-            store.log("СТАРТ", "restart.log был %.0f МБ — обрезан (хвост в restart.log.1)" % (big / 1048576.0))
-    except Exception:
-        pass
     try:                              # v3.186.2: мусор прошлых сбоев записи
         n, mb = store.cleanup_stale_tmp()
         if n:

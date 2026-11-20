@@ -201,28 +201,65 @@ def save_json(rel, data):
                     pass
 
 
-def trim_restart_log(limit=10 * 1048576, keep=512 * 1024):
-    """v3.186.2: restart.log (stderr облака после перезапуска из панели)
-    рос без предела — у владельца 85 МБ. Если больше limit: хвост keep байт
-    сохраняем в restart.log.1, сам файл обнуляем (он может быть открыт как
-    наш stderr — дописывание продолжится с начала)."""
-    path = p("restart.log")
+class _CappedLog:
+    """Файл-журнал с потолком размера: после limit байт дописывание
+    прекращается (одна строка-предупреждение), процесс не забивает диск."""
+
+    def __init__(self, f, limit):
+        self._f, self._limit, self._full = f, int(limit), False
+
+    def write(self, s):
+        if self._full:
+            return len(s)
+        try:
+            if self._f.tell() > self._limit:
+                self._full = True
+                self._f.write("\n[журнал ошибок достиг %d МБ — дальше не пишу до перезапуска]\n"
+                              % (self._limit // 1048576))
+                return len(s)
+            return self._f.write(s)
+        except Exception:
+            return len(s)
+
+    def flush(self):
+        try:
+            self._f.flush()
+        except Exception:
+            pass
+
+    def isatty(self):
+        return False
+
+    def fileno(self):
+        return self._f.fileno()
+
+
+def redirect_std(limit=20 * 1048576):
+    """v3.186.2: облако без консоли (запуск из лаунчера/перезапуск из панели)
+    писало stdout+stderr в data/restart.log без предела — у владельца 85 МБ.
+    stdout дублирует log.txt — его не храним; stderr (трассировки) — в
+    data/cloud_err.log с потолком limit, прошлый журнал — в cloud_err.log.1.
+    При запуске из консоли (start.bat) ничего не меняем."""
+    import sys as _sys
     try:
-        size = os.path.getsize(path)
+        if _sys.stderr is not None and _sys.stderr.isatty():
+            return ""
     except Exception:
-        return 0
-    if size <= limit:
-        return 0
+        pass
+    path = p("cloud_err.log")
     try:
-        with open(path, "rb") as f:
-            f.seek(max(0, size - keep))
-            tail = f.read()
-        with open(path + ".1", "wb") as f:
-            f.write(tail)
-        os.truncate(path, 0)
-        return size
+        if os.path.getsize(path) > 2 * 1048576:
+            os.replace(path, path + ".1")
     except Exception:
-        return 0
+        pass
+    try:
+        f = open(path, "a", encoding="utf-8", errors="replace", buffering=1)
+        f.write("\n=== старт %s pid %d ===\n" % (time.strftime("%Y-%m-%d %H:%M:%S"), os.getpid()))
+        _sys.stderr = _CappedLog(f, limit)
+        _sys.stdout = open(os.devnull, "w", encoding="utf-8")
+        return path
+    except Exception:
+        return ""
 
 
 def cleanup_stale_tmp(max_age=3600.0):

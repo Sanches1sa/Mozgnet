@@ -533,9 +533,15 @@ env = dict(os.environ)
 env["NEURO_PORT"] = str(PORT)
 env["NEURO_DATA"] = DATA
 logp = os.path.join(DATA, "restart.log")
-try:                       # v3.186.2: журнал перезапусков не растёт бесконечно
-    if os.path.getsize(logp) > 5 * 1048576:
-        os.replace(logp, logp + ".1")
+try:                       # v3.186.2: журнал перезапусков не растёт бесконечно:
+    sz = os.path.getsize(logp)  # больше 5 МБ — хвост 1 МБ в .1, сам файл заново
+    if sz > 5 * 1048576:
+        with open(logp, "rb") as f:
+            f.seek(sz - 1048576)
+            tail = f.read().replace(b"\x00", b"")
+        with open(logp + ".1", "wb") as f:
+            f.write(tail)
+        os.remove(logp)
 except Exception:
     pass
 try:
