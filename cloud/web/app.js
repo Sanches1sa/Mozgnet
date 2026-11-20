@@ -4622,19 +4622,21 @@ function pollVersion(want, box, requireDown) {
     box.innerHTML = 'Жду перезапуск… попытка ' + n +
       '. Сейчас отвечает: <b>' + (v ? ('v' + esc(v)) : 'сервер перезапускается') +
       '</b>';
-    if (v === want && v && (!requireDown || sawDown)) {
+    // v3.186.3: при ручном перезапуске версия могла смениться (файлы обновили
+    // на месте) — после «сервер молчал» засчитываем ЛЮБУЮ ответившую версию
+    if (v && (requireDown ? sawDown : v === want)) {
       clearInterval(timer);
       box.className = 'okbox';
       box.innerHTML = 'Готово: облако <b>v' + esc(v) + '</b> работает. ' +
         'Страница обновится сама…';
       setTimeout(() => location.reload(), 1600);
-    } else if (n > 90) {
+    } else if (n > 375) {        // v3.186.3: ~5 мин — большая база сохраняется и стартует долго
       clearInterval(timer);
       box.className = 'errbox';
       box.textContent = (requireDown && !sawDown) ?
         'Похоже, сервер так и не перезапустился сам. Перезапусти вручную ' +
         '(start.sh или neuro12-cloud.exe).' :
-        'Версия не изменилась за ~75 секунд — сервер не перезапустился ' +
+        'Версия не изменилась за ~5 минут — сервер не перезапустился ' +
         'сам. Данные в порядке, перезапусти вручную (start.sh или ' +
         'neuro12-cloud.exe) — обновление уже записано.';
     }
