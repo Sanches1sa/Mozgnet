@@ -314,6 +314,16 @@ header{padding:10px 20px}
       </div>
     </div>
 
+    <div class="msec" id="vpnSec">
+      <h4>🛡 VPN и домашняя сеть</h4>
+      <div class="hint" style="margin-top:0" id="vpnState">VPN на компьютере не замечен.</div>
+      <div class="hint">VPN «весь интернет через туннель» (AmneziaWG, WireGuard, hidemy.name и другие) обычно включает <b>kill-switch</b> — блок всего, что идёт мимо туннеля, в том числе <b>домашней сети</b>. Тогда плата не достучится до облака на этом компьютере, а лаунчер — до платы, хотя само облако работает. Лаунчер настройки VPN не меняет — сделай одно из двух сам:<br>
+      <b>1. Проще всего.</b> AmneziaWG / WireGuard: «Изменить» туннель → <b>сними галочку «Block untunneled traffic (kill-switch)»</b> → Сохранить. Интернет пойдёт через VPN, домашняя сеть — напрямую. hidemy.name и другие: в настройках разреши <b>«доступ к локальной сети»</b> (Allow LAN) или выключи kill-switch.<br>
+      <b>2. Точнее.</b> В туннеле AmneziaWG / WireGuard замени строку <span class="mono">AllowedIPs = 0.0.0.0/0</span> на список ниже — весь интернет через VPN, только подсеть платы мимо (kill-switch тогда выключится сам).</div>
+      <textarea id="vpnAllowed" class="mono" readonly style="width:100%;height:74px;font-size:11px"></textarea>
+      <div class="row" style="margin-top:6px"><button class="b" id="bVpnCopy">Скопировать строку AllowedIPs</button></div>
+    </div>
+
     <div class="msec">
       <h4>🔄 Вращение MAC — виртуальное тело</h4>
       <div class="hint" style="margin-top:0">Поворот переворачивает MAC платы: 6-й октет становится 1-м, 5-й — 2-м, 4-й меняется с 3-м (aa:bb:cc:dd:ee:ff → ff:ee:dd:cc:bb:aa). Следующий поворот возвращает прямой адрес. Если последний октет нечётный (например 61), он заменяется на 62 в обоих адресах — нечётный первый октет сетевая карта не примет. Во время поворота плата на несколько секунд пропадает из сети и может получить новый IP — лаунчер найдёт её сам. Нужен «Вход по ключу» и sudo на плате.</div>
@@ -424,6 +434,17 @@ async function call(path, body) {
   return r.json();
 }
 const act = (d, extra) => call("/api/action", Object.assign({do: d}, extra || {}));
+// v3.166: VPN и домашняя сеть
+let vpnLast = "";
+function vpnShow(v) {
+  const box = $("vpnState"); if (!box) return;
+  const key = v ? v.names + "|" + v.lan : "";
+  if (key === vpnLast) return;
+  vpnLast = key;
+  if (!v) { box.textContent = "VPN на компьютере не замечен."; return; }
+  box.innerHTML = "Сейчас включён VPN: <b>" + esc(v.names) + "</b>" + (v.lan ? " · подсеть платы <span class=\"mono\">" + esc(v.lan) + "</span>" : "") + ".";
+  if (v.allowed) $("vpnAllowed").value = "AllowedIPs = " + v.allowed;
+}
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 
 const fields = {fCloud: "cloud", fApp: "app", fIp: "ip", fUser: "user", fPorts: "ports", fRange: "range"};
@@ -517,7 +538,7 @@ function renderSplit() {
   const bOk = !!(ip && bs.ok);
   $("frB").style.display = bOk ? "" : "none"; $("peB").style.display = bOk ? "none" : "";
   if (bOk) setSrc($("frB"), boardUrl(ip));
-  else $("peBt").textContent = !ip ? "плата ещё не найдена — сканер ищет её в сети" : (bs.ssh ? "плата в сети, приложение не запущено" : "плата " + ip + " не отвечает");
+  else $("peBt").textContent = !ip ? "плата ещё не найдена — сканер ищет её в сети" : (bs.ssh ? "плата в сети, приложение не запущено" : bs.vpn ? "плата " + ip + " не отвечает: включён VPN (" + bs.vpn.names + "), он закрыл домашнюю сеть. Облако на этом компьютере работает. Как совместить VPN и плату — ⚙ → «VPN и домашняя сеть»." : "плата " + ip + " не отвечает");
 }
 document.querySelectorAll("[data-max]").forEach(b => b.onclick = () => {
   const p = $(b.dataset.max), on = !p.classList.contains("max");
@@ -697,7 +718,8 @@ function render() {
     bt = "приложение v" + bs.ver + (bs.sketch_alive ? " · скетч жив" : bs.sketch_seen ? " · скетч молчит" :
       " · скетч не отвечает (⚙ → «Починить сборку»)") + (bs.stuck ? " · " + bs.stuck : "");
     if (!bs.sketch_alive) bc = "warn";
-  } else { bc = bs.ssh ? "warn" : "bad"; bt = bs.ssh ? "в сети (SSH), приложение не запущено" : "не отвечает"; }
+  } else { bc = bs.ssh ? "warn" : "bad"; bt = bs.ssh ? "в сети (SSH), приложение не запущено" : bs.vpn ? "не отвечает — включён VPN (" + bs.vpn.names + "), он закрыл домашнюю сеть · ⚙ → «VPN и домашняя сеть»" : "не отвечает"; }
+  vpnShow(bs.vpn);
   $("dB").className = "dot " + bc; $("sB").textContent = bt;
   const running = !!busy.run;
   $("bRun").disabled = running;
@@ -710,7 +732,7 @@ function render() {
   // короткие статусы под кнопкой
   $("mdC").className = $("dC").className; $("mdB").className = $("dB").className;
   $("msC").textContent = cs.ok ? "работает" + (cs.version ? " · v" + cs.version : "") : busy.cloud ? "запускается…" : "не запущено";
-  $("msB").textContent = !bs.ip ? "ищу в сети…" : bs.ip + " · " + (bs.ok ? (bs.sketch_alive ? "скетч жив" : "приложение работает") : bs.ssh ? "в сети, приложение не запущено" : "не отвечает");
+  $("msB").textContent = !bs.ip ? "ищу в сети…" : bs.ip + " · " + (bs.ok ? (bs.sketch_alive ? "скетч жив" : "приложение работает") : bs.ssh ? "в сети, приложение не запущено" : bs.vpn ? "не отвечает — мешает VPN" : "не отвечает");
   const mm = st.mac || {};
   // v3.161: спин всегда на главном экране — как облако и плата
   const sHz = hzOf(c), mBusy = !!busy.mac;
@@ -843,6 +865,13 @@ function licText() {
     setTimeout(() => $("bLicCopy").textContent = "Скопировать список", 1800);
   };
 })();
+$("bVpnCopy").onclick = async () => {
+  const t = $("vpnAllowed").value;
+  if (!t) { $("bVpnCopy").textContent = "VPN не замечен — строки нет"; setTimeout(() => $("bVpnCopy").textContent = "Скопировать строку AllowedIPs", 2500); return; }
+  try { await navigator.clipboard.writeText(t); $("bVpnCopy").textContent = "Скопировано ✓"; }
+  catch (e) { $("vpnAllowed").select(); try { document.execCommand("copy"); $("bVpnCopy").textContent = "Скопировано ✓"; } catch (e2) { $("bVpnCopy").textContent = "Выдели текст и Ctrl+C"; } }
+  setTimeout(() => $("bVpnCopy").textContent = "Скопировать строку AllowedIPs", 2500);
+};
 setInterval(refresh, 1000);
 </script>
 </body>

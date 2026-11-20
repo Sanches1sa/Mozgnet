@@ -35,7 +35,7 @@ import (
 	"time"
 )
 
-const VER = "3.165.0"
+const VER = "3.166.0"
 
 //go:embed ui.html
 var uiHTML string
@@ -442,7 +442,14 @@ func pcIPFor(board string) string {
 	}
 	pfx := strings.Join(strings.Split(board, ".")[:min(3, len(strings.Split(board, ".")))], ".") + "."
 	for _, n := range ns {
-		if strings.HasPrefix(n.ip.String(), pfx) {
+		if strings.HasPrefix(n.ip.String(), pfx) && !isVPNNet(n) {
+			return n.ip.String()
+		}
+	}
+	// v3.166: адрес VPN-туннеля плате как адрес облака не годится — плата из
+	// домашней сети до него не дойдёт; берём настоящую сетевую карту
+	for _, n := range ns {
+		if !isVPNNet(n) {
 			return n.ip.String()
 		}
 	}
@@ -946,6 +953,7 @@ func keySetup() {
 
 // ------------------------------------------------------------- мониторинг
 var lastLearn time.Time
+var vpnLogged bool
 
 func monitor() {
 	miss, lastAuto := 0, time.Time{}
@@ -974,6 +982,10 @@ func monitor() {
 				bs["ssh"] = portOpen(c.IP, 22, 800*time.Millisecond)
 			}
 		}
+		// v3.166: включён VPN — честная причина, почему плата «не отвечает»
+		if v := vpnAdvice(c.IP); v != nil {
+			bs["vpn"] = v
+		}
 		mu.Lock()
 		cloudSt, boardSt = cs, bs
 		running := busy["run"] || busy["scan"] || busy["mac"]
@@ -997,8 +1009,21 @@ func monitor() {
 		} else {
 			miss = 0
 		}
+		// v3.166: плата молчит при включённом VPN — искать её сканером бесполезно
+		// (VPN закрыл домашнюю сеть), а «найти» можно чужое устройство
+		vpnBlock := bs["vpn"] != nil && bs["ok"] != true && bs["ssh"] != true
+		if vpnBlock && !vpnLogged {
+			vpnLogged = true
+			v := bs["vpn"].(map[string]interface{})
+			logf("Плата %s не отвечает, а на компьютере включён VPN (%v) — он, скорее всего, закрыл домашнюю сеть (kill-switch). Плату по сети не ищу, пока VPN включён. Как совместить VPN и плату — в ⚙ → «VPN и домашняя сеть».", c.IP, v["names"])
+		} else if !vpnBlock {
+			vpnLogged = false
+		}
+		if vpnBlock {
+			miss = 0
+		}
 		// v3.155: плата не ответила — сразу пробуем предсказать её адрес по MAC
-		if c.IP != "" && bs["ok"] != true && bs["ssh"] != true && !running && time.Since(lastPredict) > 5*time.Second {
+		if !vpnBlock && c.IP != "" && bs["ok"] != true && bs["ssh"] != true && !running && time.Since(lastPredict) > 5*time.Second {
 			go predictBoard("по " + c.IP + " не отвечает")
 		}
 		if bs["ok"] == true && time.Since(lastLearn) > time.Minute {
