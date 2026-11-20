@@ -533,13 +533,18 @@ env = dict(os.environ)
 env["NEURO_PORT"] = str(PORT)
 env["NEURO_DATA"] = DATA
 logp = os.path.join(DATA, "restart.log")
+try:                       # v3.186.2: журнал перезапусков не растёт бесконечно
+    if os.path.getsize(logp) > 5 * 1048576:
+        os.replace(logp, logp + ".1")
+except Exception:
+    pass
 try:
     lf = open(logp, "ab")
     kw = {"start_new_session": True} if os.name == "posix" else {
         "creationflags": (getattr(subprocess, "DETACHED_PROCESS", 0) |
                           getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))}
     p = subprocess.Popen([PYEXE, os.path.join("server", "app.py")],
-                         cwd=ROOT, env=env, stdout=lf, stderr=lf,
+                         cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=lf,
                          stdin=subprocess.DEVNULL, **kw)
     with open(os.path.join(DATA, "restart_pid.txt"), "w") as f:
         f.write(str(p.pid))

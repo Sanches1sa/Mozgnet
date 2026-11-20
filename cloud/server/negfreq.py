@@ -60,6 +60,20 @@ def _save():
                                      "seen": seen})
 
 
+def _save_locked():
+    with _LOCK:
+        _save()
+
+
+def _save_soon():
+    """v3.186.2: negfreq.json — не чаще раза в минуту (см. bgwork)."""
+    try:
+        import bgwork
+        bgwork.debounce("negfreq", _save, _save_locked, 60.0)
+    except Exception:
+        _save()
+
+
 def sign_by_delta(hz, ema, dead=3.0):
     """-1, если частота ниже сглаженной больше чем на dead Гц, иначе +1."""
     try:
@@ -101,7 +115,7 @@ def learn_bundle(dev, bundle, gen):
             _ST["new"] += 1
             n += 1
         if n:
-            _save()
+            _save_soon()
     if n:
         _maybe_finetune()
     return n

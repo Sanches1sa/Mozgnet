@@ -174,8 +174,17 @@ def save_json(rel, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with _file_lock(path):
         tmp = "%s.%d.%d.tmp" % (path, os.getpid(), threading.get_ident())
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=1)
+        try:
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=1)
+        except BaseException:
+            # v3.186.2: сбой записи (данные поменялись прямо во время dump,
+            # кончилось место) — не оставлять .tmp мусором в data/
+            try:
+                os.remove(tmp)
+            except Exception:
+                pass
+            raise
         for attempt in range(10):
             try:
                 os.replace(tmp, path)
@@ -190,6 +199,56 @@ def save_json(rel, data):
                     os.remove(tmp)
                 except Exception:
                     pass
+
+
+def trim_restart_log(limit=10 * 1048576, keep=512 * 1024):
+    """v3.186.2: restart.log (stderr облака после перезапуска из панели)
+    рос без предела — у владельца 85 МБ. Если больше limit: хвост keep байт
+    сохраняем в restart.log.1, сам файл обнуляем (он может быть открыт как
+    наш stderr — дописывание продолжится с начала)."""
+    path = p("restart.log")
+    try:
+        size = os.path.getsize(path)
+    except Exception:
+        return 0
+    if size <= limit:
+        return 0
+    try:
+        with open(path, "rb") as f:
+            f.seek(max(0, size - keep))
+            tail = f.read()
+        with open(path + ".1", "wb") as f:
+            f.write(tail)
+        os.truncate(path, 0)
+        return size
+    except Exception:
+        return 0
+
+
+def cleanup_stale_tmp(max_age=3600.0):
+    """v3.186.2: удалить «x.json.<pid>.<tid>.tmp» старше часа в data/ — следы
+    записей, прерванных падением процесса. Свежие (идёт запись) не трогаем."""
+    import re as _re
+    n, size = 0, 0
+    now = time.time()
+    try:
+        names = os.listdir(DATA_DIR)
+    except Exception:
+        return 0, 0.0
+    for nm in names:
+        if not _re.match(r".+\.\d+\.\d+\.tmp$", nm):
+            continue
+        fp = os.path.join(DATA_DIR, nm)
+        try:
+            st = os.stat(fp)
+            if now - st.st_mtime < max_age:
+                continue
+            os.remove(fp)
+            n += 1
+            size += st.st_size
+        except Exception:
+            pass
+    return n, size / 1048576.0
 
 
 # ------------------------------ настройки -----------------------------------

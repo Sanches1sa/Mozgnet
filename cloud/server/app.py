@@ -172,7 +172,7 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             if self.command != "HEAD" and body:
                 self.wfile.write(body)
-        except (BrokenPipeError, ConnectionResetError):
+        except ConnectionError:   # v3.186.2: и WinError 10053 (ConnectionAbortedError)
             pass
 
     def _send_json(self, code, obj, extra=None):
@@ -192,11 +192,11 @@ class Handler(BaseHTTPRequestHandler):
                     try:
                         self.wfile.write(chunk)
                         self.wfile.flush()
-                    except (BrokenPipeError, ConnectionResetError):
+                    except ConnectionError:   # v3.186.2: и WinError 10053 (ConnectionAbortedError)
                         break
             else:
                 self.wfile.write(data)
-        except (BrokenPipeError, ConnectionResetError):
+        except ConnectionError:   # v3.186.2: и WinError 10053 (ConnectionAbortedError)
             pass
 
     def _send_file(self, code, fpath, ctype, fname):
@@ -218,7 +218,7 @@ class Handler(BaseHTTPRequestHandler):
                     if not chunk:
                         break
                     self.wfile.write(chunk)
-        except (BrokenPipeError, ConnectionResetError):
+        except ConnectionError:   # v3.186.2: и WinError 10053 (ConnectionAbortedError)
             pass
 
     # ------------------------------- вход -----------------------------------
@@ -264,7 +264,7 @@ class Handler(BaseHTTPRequestHandler):
     def handle_one_request(self):
         try:
             super().handle_one_request()
-        except (ConnectionResetError, BrokenPipeError, TimeoutError):
+        except (ConnectionError, TimeoutError):   # v3.186.2: + ConnectionAbortedError (Windows)
             self.close_connection = True
 
     def _cookie(self, name):
@@ -452,7 +452,7 @@ class Handler(BaseHTTPRequestHandler):
                     (req.method != "GET" or "chat" in path):
                 store.log("HTTP", req.method, path, code,
                           "%d мс" % int(dt))
-        except (BrokenPipeError, ConnectionResetError):
+        except ConnectionError:   # v3.186.2: и WinError 10053 (ConnectionAbortedError)
             pass
         except Exception as e:
             import traceback
@@ -646,6 +646,16 @@ def main():
         # по умолчанию очередь listen() = 5: при одновременных запросах
         # (лаунчер, плата, веб) лишние соединения сбрасываются (RST)
         request_queue_size = 128
+
+        def handle_error(self, request, client_address):
+            # v3.186.2: клиент сам закрыл соединение (браузер ушёл со страницы,
+            # плата оборвала запрос) — это не ошибка облака. Раньше каждый
+            # такой обрыв (WinError 10053) печатал трассировку: десятки тысяч
+            # в restart.log. Настоящие исключения печатаем как прежде.
+            et = sys.exc_info()[0]
+            if et is not None and issubclass(et, (ConnectionError, TimeoutError)):
+                return
+            ThreadingHTTPServer.handle_error(self, request, client_address)
     try:
         httpd = _Srv(("0.0.0.0", port), Handler)
     except OSError as e:
@@ -821,6 +831,18 @@ def main():
         pass
     STARTING[0] = False
     store.log("СТАРТ", "облако готово за %.1f с" % (time.time() - t_start))
+    try:
+        big = store.trim_restart_log()
+        if big:
+            store.log("СТАРТ", "restart.log был %.0f МБ — обрезан (хвост в restart.log.1)" % (big / 1048576.0))
+    except Exception:
+        pass
+    try:                              # v3.186.2: мусор прошлых сбоев записи
+        n, mb = store.cleanup_stale_tmp()
+        if n:
+            store.log("СТАРТ", "убраны недописанные *.tmp прошлых сбоев: %d файлов, %.1f МБ" % (n, mb))
+    except Exception:
+        pass
     try:                              # v3.27: сеть сохраняется фоном раз в
         import atexit                 # 3 мин — при остановке дописываем её
         atexit.register(lambda: brain.mn_save(force=True))

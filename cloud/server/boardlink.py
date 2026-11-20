@@ -53,6 +53,22 @@ _SY = {"hz": 440.0, "act": [], "spread": [], "ts": 0.0}
 # Температура, фактор скорости обучения, top_p и сила связи плавно
 # меняются вместе с общим ритмом. Используется облаком, Макс-ботом и LLM.
 import math
+
+_TS = r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d"
+
+
+def _crash_tidy(text):
+    """v3.186.2: плата до 2.99.2 при каждой неудачной связи приклеивала к
+    отчёту о падении ещё одну дату — приходило «дата дата дата … причина».
+    Оставляем одну (самую раннюю — момент падения) и обрезанный хвост даты
+    в начале убираем."""
+    t = str(text or "")
+    t = re.sub(r"^[\d:\- ]{1,18}(?=\d{4}-\d\d-\d\d )", "", t)        # обрубок даты
+    t = re.sub(r"^-?\d\d-\d\d \d\d:\d\d:\d\d\s+", "", t)
+    t = re.sub(r"((?:%s\s+){2,})" % _TS,
+               lambda m: re.findall(_TS, m.group(1))[-1] + " ", t)
+    return t.strip()
+
 def floating_params(now=None):
     """Плавающие параметры на основе текущего ритма (hz) и времени."""
     now = now or time.time()
@@ -376,6 +392,7 @@ def _health(board, b, up, rss, crash, ver, ip):
         except (TypeError, ValueError):
             pass
     if crash:
+        crash = _crash_tidy(crash)
         b["crash"] = str(crash)[:1500]
         b["crash_ts"] = time.time()
         store.log("СВЯЗЬ МОЗГОВ", "плата «%s» сообщила о прошлом падении: %s"
@@ -384,6 +401,30 @@ def _health(board, b, up, rss, crash, ver, ip):
         b["ver"] = str(ver)[:20]
     if ip:
         b["ip"] = str(ip)[:60]
+
+
+def _learn_phrases(board, ph):
+    """Фоновая учёба на мыслях платы из /api/link (см. link)."""
+    for t, _s in ph:
+        try:                               # v3.121: вердикт связности
+            import coherence
+            coherence.verdict(board, t, coherence.judge(t))
+        except Exception:
+            pass
+    try:                                   # v3.133: мысли плат -> общий словарь
+        import worddict
+        for t, s in ph:
+            worddict.learn(t, hz=s)
+    except Exception:
+        pass
+    try:                                   # мысль + её частота -> смысл частоты
+        import genmod
+        for t, s in ph:
+            if s is not None and genmod.learn_frame(board, t, s):
+                with _LOCK:
+                    _ST["n"]["frames"] += 1
+    except Exception:
+        pass
 
 
 def link(board, hz=0, shz=None, ema=0, phrases=None, answers=None,
@@ -413,24 +454,12 @@ def link(board, hz=0, shz=None, ema=0, phrases=None, answers=None,
         t = store._tclean(t)                   # v3.118: без «англ н н»
         if len(t) >= 6:
             ph.append((t[:240], s))
-            try:                               # v3.121: вердикт связности
-                import coherence
-                coherence.verdict(board, t, coherence.judge(t))
-            except Exception:
-                pass
-    try:                                   # v3.133: мысли плат -> общий словарь
-        import worddict
-        for t, s in ph:
-            worddict.learn(t, hz=s)
-    except Exception:
-        pass
-    try:                                   # мысль + её частота -> смысл частоты
-        import genmod
-        for t, s in ph:
-            if s is not None and genmod.learn_frame(board, t, s):
-                _ST["n"]["frames"] += 1
-    except Exception:
-        pass
+    if ph:
+        # v3.186.2: судья связности, словарь и «смысл частоты» — ФОНОМ (одна
+        # очередь). Раньше прямо в запросе: genmod на каждую мысль переписывал
+        # 7,5 МБ под общей блокировкой, и связь плат стояла в очереди часами.
+        import bgwork
+        bgwork.lane("link-learn", maxlen=400).submit(None, _learn_phrases, board, list(ph))
     with _LOCK:
         b = _ST["boards"].setdefault(board, {"recent": []})
         b.update({"hz": int(hz or 0), "shz": shz, "ts": now,

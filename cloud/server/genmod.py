@@ -260,6 +260,22 @@ def _asave():
                                       "pairs": _A["pairs"][-600:]})
 
 
+def _asave_locked():
+    with _ALOCK:
+        _asave()
+
+
+def _asave_soon():
+    """v3.186.2: genassoc.json (~7,5 МБ) — не чаще раза в минуту. Раньше
+    писался целиком на КАЖДУЮ мысль платы под _ALOCK: связь плат и
+    сохранение их памяти стояли в очереди за записью на диск часами."""
+    try:
+        import bgwork
+        bgwork.debounce("genassoc", _asave, _asave_locked, 60.0)
+    except Exception:
+        _asave()
+
+
 def _stems(text):
     return [w[:5] for w in _re.findall(r"[а-яё]{3,}", str(text).lower())]
 
@@ -304,7 +320,7 @@ def learn_bundle(dev, bundle):
             n += 1
         if n:
             _A["bias_key"] = None
-            _asave()
+            _asave_soon()
     if n:
         maybe_finetune()
     return n
@@ -373,7 +389,7 @@ def learn_frame(dev, text, signed_hz, tn=None):
         _A["new"] += 1
         _A["frames"] = int(_A.get("frames") or 0) + 1
         _A["bias_key"] = None
-        _asave()
+        _asave_soon()
     maybe_finetune()
     return True
 

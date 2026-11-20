@@ -2356,7 +2356,11 @@ function tabCommon() {
       (L.mem_total_mb ? ' из ' + fmtN(L.mem_total_mb) + ' МБ (свободно ' + fmtN(L.mem_free_mb) + ')' : '') +
       ' · потоков: ' + L.threads + ' · данные облака: ' + fmtN(L.data_mb) + ' МБ, файлов ' +
       fmtN(L.data_files) + ' · Python ' + esc(L.python || '') + ' (' + esc(L.os || '') + ')' +
-      '</div><div class="mini" id="llmLoad"></div></div>' : '') +
+      '</div>' + (L.lanes && Object.keys(L.lanes).length ? '<div class="mini">Фоновая учёба на данных плат: ' +
+        Object.entries(L.lanes).map(([k, v]) => esc(k) + ' — в очереди ' + v.queue + ', сделано ' + v.done +
+          (v.replaced ? ', заменено свежими ' + v.replaced : '') + (v.dropped ? ', <b>выброшено ' + v.dropped + '</b>' : '') +
+          (v.last_sec ? ', последняя ' + v.last_sec + ' с' : '') + (v.errors ? ', <span style="color:#e88">ошибок ' + v.errors + ': ' + esc(v.last_err) + '</span>' : '')).join(' · ') +
+        '</div>' : '') + '<div class="mini" id="llmLoad"></div></div>' : '') +
     '<div class="card" id="partBox" style="margin:8px 0 12px"><h3 style="margin-top:0">⚛ Кванты на D6 (плата v2.92+)</h3>' +
     '<div class="mini">Скетч платы выдаёт на пин D6 дискретные уровни ШИМ: короткие вспышки, пакеты и низкий фон. ' +
     'Шум конденсатора на A4 становится стимулом нейронам и ускоряет подбор весов. Это имитация квантов: настоящие частицы конденсатор не рождает.</div>' +

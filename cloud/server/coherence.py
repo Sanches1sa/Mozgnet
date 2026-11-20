@@ -98,6 +98,7 @@ def _build():
                   "настоящих текстов" % (_ST["n_pairs"], nw))
     except Exception as e:
         _ST["err"] = "%s: %s" % (type(e).__name__, e)
+        _ST["ts"] = time.time()
     finally:
         _ST["busy"] = False
 
@@ -108,6 +109,10 @@ def warm():
         if _ST["busy"]:
             return
         if _ST["arr"] is not None and time.time() - _ST["ts"] < REBUILD_S:
+            return
+        # v3.186.2: текстов ещё нет (или сборка упала) — не пересобирать на
+        # каждой мысли, а не чаще раза в 5 минут
+        if _ST["arr"] is None and time.time() - float(_ST.get("ts") or 0) < 300:
             return
         if _ST["arr"] is not None:     # v3.132: перестройка — только на вдохе
             try:

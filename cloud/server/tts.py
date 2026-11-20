@@ -11,6 +11,7 @@
 # не требуются и не устанавливаются.
 # ===========================================================================
 import math
+import io
 import os
 import struct
 import subprocess
@@ -108,15 +109,12 @@ def synth_builtin(text, voice="neuro"):
         samples.extend([0] * gap)
     if len(samples) > _RATE * 12:            # потолок ~12 c
         samples = samples[:_RATE * 12]
-    path = tempfile.gettempdir() + "/n12_tts_%d.wav" % os.getpid()
-    _wav_from_samples(samples or [0] * 100, path)
-    with open(path, "rb") as f:
-        data = f.read()
-    try:
-        os.remove(path)
-    except Exception:
-        pass
-    return data
+    # v3.186.2: WAV собираем в памяти. Раньше общий файл n12_tts_<pid>.wav во
+    # временной папке: два одновременных запроса /api/tts удаляли файл друг у
+    # друга -> FileNotFoundError и 500 у платы/чата.
+    buf = io.BytesIO()
+    _wav_from_samples(samples or [0] * 100, buf)
+    return buf.getvalue()
 
 
 def synth_espeak(text, voice="neuro"):

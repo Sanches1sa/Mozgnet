@@ -20,6 +20,15 @@ _DATA = {"bytes": 0, "files": 0, "ts": 0.0, "busy": False}
 _START = time.time()
 
 
+def _lanes():
+    """v3.186.2: фоновые очереди учёбы на данных плат (bgwork)."""
+    try:
+        import bgwork
+        return bgwork.stats()
+    except Exception:
+        return {}
+
+
 def _rss_mb():
     try:
         if sys.platform.startswith("win"):
@@ -144,4 +153,5 @@ def snapshot():
             "uptime_s": int(now - _START), "loadavg": load,
             "data_mb": round(_DATA["bytes"] / 1048576.0, 1),
             "data_files": _DATA["files"],
-            "python": sys.version.split()[0], "os": sys.platform}
+            "python": sys.version.split()[0], "os": sys.platform,
+            "lanes": _lanes()}

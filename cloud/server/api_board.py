@@ -391,6 +391,33 @@ def h_brains_ask(req):
 
 
 # ----------------------------- облачная память ------------------------------
+def _memory_learn(dev, bundle, gen):
+    """Фоновая учёба на пакете памяти платы (см. h_memory_save)."""
+    try:                                  # v3.47: генератор скетча -> LLM
+        import genmod
+        genmod.note(dev, gen)
+        genmod.learn_bundle(dev, bundle)
+        try:
+            import negfreq
+            negfreq.learn_bundle(dev, bundle, gen)
+        except Exception:
+            pass
+    except Exception:
+        pass
+    # v3.46: память платы -> ЕДИНАЯ сеть (реплики, диалоги, заметки, слова)
+    try:
+        import onenet
+        onenet.ingest_bundle(dev, bundle)
+    except Exception:
+        try:
+            for m in (bundle["chat"] or [])[-20:]:
+                txt = str(m.get("text") or "")[:800]
+                if txt:
+                    brain.mn_learn(txt, title="диалог %s" % dev, src="плата")
+        except Exception:
+            pass
+
+
 def h_memory_save(req):
     """Бандл памяти платы: {app, device, memory[], chat[], state{}}."""
     b = req.body or {}
@@ -424,30 +451,15 @@ def h_memory_save(req):
         hist = hist[-5:]
         store.save_json("memory/%s.history.json" % safe, hist)
     store.save_json("memory/%s.json" % safe, bundle)
-    try:                                  # v3.47: генератор скетча -> LLM
-        import genmod
-        genmod.note(dev, b.get("gen"))
-        genmod.learn_bundle(dev, bundle)
-        try:
-            import negfreq
-            negfreq.learn_bundle(dev, bundle, b.get("gen"))
-        except Exception:
-            pass
-    except Exception:
-        pass
-    # v3.46: память платы -> ЕДИНАЯ сеть (реплики, диалоги, заметки, слова)
-    try:
-        import onenet
-        onenet.ingest_bundle(dev, bundle)
-    except Exception:
-        try:
-            for m in (bundle["chat"] or [])[-20:]:
-                txt = str(m.get("text") or "")[:800]
-                if txt:
-                    brain.mn_learn(txt, title="диалог %s" % dev, src="плата")
-        except Exception:
-            pass
-    return 200, {"ok": True, "device": dev,
+    # v3.186.2: учёба на пакете — ФОНОМ. Раньше шла прямо в запросе (генератор,
+    # отрицательные частоты, единая сеть + запись больших JSON): плата не
+    # дожидалась ответа и слала снова, запросы копились тысячами и висели
+    # часами. Теперь ответ сразу; от каждой платы в очереди — только самый
+    # свежий пакет (старый, ещё не начатый, заменяется).
+    import bgwork
+    bgwork.lane("memory-learn", maxlen=16).submit(
+        dev, _memory_learn, dev, bundle, b.get("gen"), coalesce=True)
+    return 200, {"ok": True, "device": dev, "queued": True,
                  "memory": len(bundle["memory"]), "chat": len(bundle["chat"]),
                  "tensor_samples": len((bundle.get("tensor") or {})
                                        .get("samples") or [])}

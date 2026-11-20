@@ -48,6 +48,20 @@ def _save():
     store.save_json("onenet.json", {"seen": seen, "stats": _ST.get("stats")})
 
 
+def _save_locked():
+    with _LOCK:
+        _save()
+
+
+def _save_soon():
+    """v3.186.2: onenet.json — не чаще раза в минуту (см. bgwork)."""
+    try:
+        import bgwork
+        bgwork.debounce("onenet", _save, _save_locked, 60.0)
+    except Exception:
+        _save()
+
+
 def _items(dev, b):
     """Бандл памяти платы -> [(заголовок, текст)] (только текст людей)."""
     out = []
@@ -91,7 +105,7 @@ def ingest_bundle(dev, bundle):
         if n:
             stt = _ST.setdefault("stats", {})
             stt["from_boards"] = int(stt.get("from_boards") or 0) + n
-            _save()
+            _save_soon()
     return n
 
 

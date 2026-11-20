@@ -278,7 +278,7 @@ except Exception:
 # App Lab отсутствует (из-за него приложение не запускалось), arduino:tts
 # тоже не подключён. LLM и TTS работают ЧЕРЕЗ ОБЛАКО — см. секции [4] и [6].
 
-APP_VERSION = "2.99.1"
+APP_VERSION = "2.99.2"
 
 # ---------------------------------------------------------------------------
 #   v2.33 (2026): МОСТ-КАНАЛ БЕЗ ТАЙМАУТОВ — фикс «word_push не работает,
@@ -2297,6 +2297,18 @@ def _crash_write(text):
         pass
 
 
+def _crash_restore(text):
+    """v2.99.2: вернуть неотправленный отчёт в файл КАК ЕСТЬ. Раньше шёл
+    через _crash_write и при каждой неудачной связи (раз в ~15 с, пока облако
+    недоступно) получал ещё одну дату впереди — облако потом показывало
+    десятки дат подряд вместо причины падения."""
+    try:
+        with open(_crash_path(), "a", encoding="utf-8") as f:
+            f.write(str(text).rstrip("\n")[-3000:] + "\n")
+    except Exception:
+        pass
+
+
 def _crash_take():
     """Прошлые падения (один раз) -> текст | ''."""
     out = ""
@@ -2509,7 +2521,7 @@ def link_once():
     if r and r.get("ok"):
         _CRASH_SENT[0] = True
     elif crash:
-        _crash_write(crash)             # не дошло — пошлём в следующий раз
+        _crash_restore(crash)           # не дошло — пошлём в следующий раз
     if not r or not r.get("ok"):
         _LINK["fail"] += 1
         _LINK["err"] = str(err or (r or {}).get("error") or "?")[:120]
