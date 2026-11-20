@@ -130,6 +130,25 @@ def _read(topic):
     return None, "", ""
 
 
+def remember(title, text, src, topic="", why=""):
+    """v3.187: прочитанное в другом месте (проверка факта в ответе —
+    llmfact) — тоже в корпус своей LLM: она дообучится на этой статье."""
+    title = str(title or "").strip()
+    body = " ".join(str(text or "").split())[:MAX_CHARS]
+    if not title or len(body) < 200:
+        return False
+    _load()
+    with _LOCK:
+        _ST["items"] = [x for x in _ST["items"] if x.get("t") != title]
+        _ST["items"].append({"t": title[:160], "x": body, "src": src,
+                             "q": str(topic or "")[:120], "why": why,
+                             "ts": time.time()})
+        del _ST["items"][:-MAX_KEEP]
+        _ST["want"] = [w for w in _ST["want"] if w.lower() != str(topic or "").lower()]
+    _save()
+    return True
+
+
 def read_once(topic=None, why="сама"):
     """Одно чтение. -> {"ok", "title"} | {"ok": False, "why"}."""
     _load()

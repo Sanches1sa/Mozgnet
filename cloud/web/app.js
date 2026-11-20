@@ -561,7 +561,7 @@ function setRoute(r) {
   $('#headSub').textContent =
     r === 'auto' ? 'авто: тот же ИИ, что в боте МАКС' :
     r === 'board' ? 'отвечает живая плата (мозг-почта)' :
-    r === 'talk' ? 'разговор: пишет сам мозг, своя LLM дополняет (без фактов)' :
+    r === 'talk' ? 'разговор: пишет сам мозг, своя LLM дополняет и, если нужно, сверяет факт в интернете' :
     r === 'code' ? 'режим «Код»: ИИ-агент — задача, план, код, проверка' :
     'облако: тот же ИИ, что в боте МАКС';
 }
@@ -2479,6 +2479,14 @@ function tabCommon() {
     (rset.settings && rset.settings.llm_web_on !== false ? ' checked' : '') + '>' +
     '<label for="setLlmWeb"><b>Своя LLM сама ходит в интернет</b> (v3.169): раз в 5 мин читает Википедию/Рувики и Confluence по темам, где промолчала в ответе, по мыслям мозга и вопросам чата — в свой корпус (не в базу знаний) и дообучается. <button class="btn ghost" id="llmWebNow" type="button">Прочитать сейчас</button></label>' +
     '<div class="mini" id="llmWebState"></div></div>' +
+    '<div class="fgroup switch"><input type="checkbox" id="setLlmFact"' +
+    (rset.settings && rset.settings.llm_web_check !== false ? ' checked' : '') + '>' +
+    '<label for="setLlmFact"><b>Своя LLM подкрепляет факты в интернете</b> (v3.187): когда ответ пишет своя LLM (мозг + своя LLM, речь мозга), а не статья базы, и это вопрос о факте, в ответе есть числа, имена, определения или ты просишь «проверь» — она ищет в Википедии/Рувики и поисковиках, сверяет каждое утверждение и дописывает раздел «Проверка в интернете»: что подтвердилось, что источник пишет иначе, главный факт и ссылки. Прочитанная статья идёт ей в обучение. Ждёт не дольше <input type="number" id="setLlmFactS" min="3" max="40" step="1" style="width:58px" value="' +
+    ((rset.settings && rset.settings.llm_web_check_s) || 12) + '"> с.</label></div>' +
+    '<div class="fgroup switch"><input type="checkbox" id="setLlmFactTalk"' +
+    (rset.settings && rset.settings.llm_web_check_talk !== false ? ' checked' : '') + '>' +
+    '<label for="setLlmFactTalk"><b>И в режиме «Разговор»</b>: если нужно подкрепить факт, проверка приходит следующим сообщением, сплошным текстом.</label>' +
+    '<div class="mini" id="llmFactState"></div></div>' +
     '<div class="fgroup switch"><input type="checkbox" id="setReadFirst"' +
     (rset.settings && rset.settings.answer_read_first !== false ? ' checked' : '') + '>' +
     '<label for="setReadFirst"><b>Читать статью перед ответом, как «Любопытство»</b> (v3.165): статьи по теме в базе нет — облако сначала читает её в Википедии целиком, сохраняет в базу и отвечает по ней. Прочитанное получают мозг облака (сеть материалов), мозг neuro-12 на платах (выжимка) и своя LLM (чтение статьи). Практические и свежие вопросы («как установить…», «погода», «курс») — по страницам Google/Яндекса, как раньше.</label></div>' +
@@ -2570,6 +2578,10 @@ function tabCommon() {
     box.textContent = 'Своя LLM прочитала сама: ' + (r.reads || 0) + ' (в корпусе ' + (r.kept || 0) + ')' +
       (r.last ? ', последнее «' + r.last + '»' : '') + ((r.want || []).length ? '; хочет прочитать: ' + r.want.join(', ') : '') +
       (r.result && !r.result.ok ? ' — ' + (r.result.why || '') : '') + (r.err ? ' · ' + r.err : '');
+    const f = r.facts, fb = $('#llmFactState');
+    if (f && fb) fb.textContent = 'Проверок фактов: ' + (f.checks || 0) + ' · подтверждено утверждений ' + (f.ok || 0) +
+      ', источник пишет иначе ' + (f.diff || 0) + ', без подтверждения ' + (f.no || 0) +
+      (f.nothing ? ', источники молчали ' + f.nothing : '') + (f.last ? ' · последняя тема «' + f.last + '»' : '') + (f.err ? ' · ' + f.err : '');
   };
   api('/api/llm/web').then(llmWebShow).catch(() => {});
   if ($('#llmWebNow')) $('#llmWebNow').onclick = async (ev) => {
@@ -2642,6 +2654,9 @@ function tabCommon() {
       web_first: $('#setWebSrc').value !== 'off',
       web_pages: Math.max(1, Math.min(10, parseInt($('#setWebPages').value, 10) || 10)),
       answer_read_first: $('#setReadFirst').checked, llm_web_on: $('#setLlmWeb').checked,
+      llm_web_check: $('#setLlmFact') ? $('#setLlmFact').checked : true,
+      llm_web_check_talk: $('#setLlmFactTalk') ? $('#setLlmFactTalk').checked : true,
+      llm_web_check_s: $('#setLlmFactS') ? Number($('#setLlmFactS').value) || 12 : 12,
       brain_strict: $('#setBrainStrict').checked, brain_llm_thought: $('#setBrainLlm').checked,
       brain_strict_min: parseFloat($('#setBrainMin').value) || 0, brain_strict_nobrain: $('#setBrainNo').value,
       answer_passage: $('#setPassage').checked,

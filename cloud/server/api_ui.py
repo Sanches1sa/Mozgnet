@@ -2294,8 +2294,17 @@ def h_llm_web(req):
     if req.method == "POST":
         t = str((req.body or {}).get("topic") or "").strip()[:120]
         r = llmweb.read_once(t or None, why="по кнопке владельца")
-        return 200, dict(llmweb.status(), ok=True, result=r)
-    return 200, dict(llmweb.status(), ok=True)
+        return 200, dict(llmweb.status(), ok=True, result=r, facts=_llmfact_status())
+    return 200, dict(llmweb.status(), ok=True, facts=_llmfact_status())
+
+
+def _llmfact_status():
+    """v3.187: проверки фактов своей LLM в интернете (llmfact)."""
+    try:
+        import llmfact
+        return llmfact.status()
+    except Exception as e:
+        return {"err": str(e)[:120]}
 
 
 _r("GET", "api/llm/web", h_llm_web)

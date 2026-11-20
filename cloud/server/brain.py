@@ -1580,6 +1580,23 @@ def think(text, long_mode=False, route="cloud", chat_id=None,
         reply, zone, info = _strict_post(text, reply, zone, info, route)
     except Exception as e:
         store.log("НЕ БРЕД", "проверка не удалась: %s" % e)
+    # v3.187: ответ написала своя LLM (не статья и не страницы интернета) —
+    # если нужно, она сама проверяет факты в интернете и подкрепляет ответ
+    # (llmfact.py). Не в ответах из базы/интернета, не при «без сети».
+    if not pre and not no_web and route != "board" and _llm_authored(zone, info):
+        try:
+            import llmfact
+            # ответ из подтверждённой памяти (👍, «правильный ответ») уже
+            # проверен человеком — в интернет только по прямой просьбе
+            if (info or {}).get("honest") and not llmfact._FORCE.search(str(text)):
+                raise StopIteration
+            reply, _wc = llmfact.augment(text, reply)
+            if _wc:
+                info = dict(info or {}, web_check=_wc)
+        except StopIteration:
+            pass
+        except Exception as e:
+            store.log("LLM-ФАКТЫ", "не удалось: %s" % e)
     after = mn_size()
     if after != before and isinstance(info, dict):
         info["net"] = {"nodes": after[0] - before[0],
@@ -1611,6 +1628,30 @@ def think(text, long_mode=False, route="cloud", chat_id=None,
         except Exception:
             pass
     return reply, zone, info
+
+
+_FACT_ZONES = None
+
+
+def _llm_authored(zone, info):
+    """v3.187: ответ написала своя LLM / мозг сам (без статьи и страниц)?"""
+    global _FACT_ZONES
+    if _FACT_ZONES is None:
+        _FACT_ZONES = {Z["membrain"], Z["speech"], Z["board"], Z["talk"],
+                       Z["mind"], Z["thought"], Z["imagine"], Z["hypo"]}
+    info = info or {}
+    if info.get("web_check") is not None or info.get("offline"):
+        return False
+    if zone in (Z["kb"], Z["web"], Z["wiki"], Z["qa"], Z["math"], Z["code"],
+                Z["sys"], Z["doc"], Z["media"], Z["vision"], Z["hearing"],
+                Z["skill"], Z["mn"], Z["curiosity"]):
+        return False
+    if info.get("src_zone") in (Z["kb"], Z["web"], Z["wiki"]):
+        return False                    # LLM переписала материалы — они и есть опора
+    if info.get("llm") or info.get("mem_brain") or \
+            "LLM" in str(info.get("by") or ""):
+        return True
+    return zone in _FACT_ZONES
 
 
 _STRICT_GEN = None

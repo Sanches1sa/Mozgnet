@@ -12,8 +12,10 @@ talkmind.py — v3.132: режим «Разговор» в панели обла
      (wordmind: слова, которые сейчас «думает» сеть материалов);
   2) СВОЯ LLM продолжает мысль мозга своими словами (затравка — мысль мозга
      и реплика), температура дышит вместе с платами.
-База знаний, интернет и проверки фактов здесь НЕ участвуют — это разговор,
-а не справка (для справки — режимы «Авто» и «Облако»).
+База знаний здесь не участвует — это разговор, а не справка (для справки —
+режимы «Авто» и «Облако»). v3.187: если нужно подкрепить факт (вопрос о
+факте, числа/имена в ответе, «проверь») — своя LLM выходит в интернет и
+пишет проверку следующим сообщением (llmfact.py, llm_web_check_talk).
 Ответ — одним сплошным текстом: без смайликов, кавычек, заголовков, меток.
 """
 import re
@@ -174,9 +176,26 @@ def respond_parts(text, ctx=None):
     if not parts[0]:
         parts = ["Пока не удалось сформулировать связный ответ. "
                  "Модель могла ещё не обучиться; случайные слова я не буду выдавать за ответ."]
-    return parts, {"talk_by": by, "talk_msgs": 1,
-                   "talk_stop": "ответ проверен" if by else "нет связного ответа",
-                   "talk_ms": int((time.time() - t0) * 1000), "no_facts": True}
+    # v3.187: своя LLM выходит в интернет, если нужно подкрепить факт —
+    # вопрос о факте, в ответе числа/имена/определения или просят «проверь».
+    # Проверка — отдельным сообщением, сплошным текстом (llmfact.py).
+    wc = None
+    if store.settings().get("llm_web_check_talk", True):
+        try:
+            import llmfact
+            _a, wc = llmfact.augment(text, parts[0] if by else "", talk=True)
+            if wc and wc.get("text"):
+                parts.append(clean(wc.pop("text")))
+        except Exception as e:
+            store.log("LLM-ФАКТЫ", "разговор: %s" % e)
+            wc = None
+    out = {"talk_by": by, "talk_msgs": len(parts),
+           "talk_stop": "ответ проверен" if by else "нет связного ответа",
+           "talk_ms": int((time.time() - t0) * 1000),
+           "no_facts": not (wc and wc.get("found"))}
+    if wc:
+        out["web_check"] = wc
+    return parts, out
 
 
 def respond(text, ctx=None):
