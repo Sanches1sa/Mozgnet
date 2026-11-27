@@ -81,7 +81,7 @@ fi
 UNIT=/etc/systemd/system/neuro12.service
 {
   echo "[Unit]"
-  echo "Description=neuro_12 (Мозг-12) via arduino-app-cli"
+  echo "Description=neuro_12 (Star Gate) via arduino-app-cli"
   echo "After=network-online.target"
   echo "Wants=network-online.target"
   echo ""

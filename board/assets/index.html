@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- neuro_12 — веб-интерфейс приложения «Мозг-12» (Arduino App Lab).
+<!-- neuro_12 — веб-интерфейс приложения «Star Gate» (Arduino App Lab).
      Раздаётся кирпичом arduino:web_ui из папки assets (порт 7000).
      v2.19: буквы и слова буквогенератора скрыты (ленты/чипов больше нет) —
      буквы уходят на пин D6, наружу только готовые фразы; мозг тихо создаёт
@@ -8,7 +8,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>neuro_12 — Мозг-12</title>
+<title>neuro_12 — Star Gate</title>
 <meta name="theme-color" content="#0f1115">
 <link rel="stylesheet" href="style.css">
 <link rel="stylesheet" href="ui12.css">
@@ -20,7 +20,7 @@ if(a&&a!=='teal')document.documentElement.setAttribute('data-accent',a);}catch(e
 </head>
 <body>
 <header>
-  <div class="brand"><span class="logo12">🧠</span><span>neuro_12 <span class="sub">Мозг-12 · фразы из словаря</span></span></div>
+  <div class="brand"><span class="logo12">🧠</span><span>neuro_12 <span class="sub">Star Gate · фразы из словаря</span></span></div>
   <div class="chips">
     <span class="chip" id="c-bridge" title="Мост RouterBridge к скетчу (MCU)">мост</span>
     <span class="chip" id="c-cloud" title="Доступность облака: проверяется автоматически каждые ~20 с">облако</span>
@@ -60,7 +60,7 @@ if(a&&a!=='teal')document.documentElement.setAttribute('data-accent',a);}catch(e
 
   <aside id="panel" class="hidden">
     <h3>⚙ Настройки</h3>
-    <label>Облако (адрес платформы мозг-12)
+    <label>Облако (адрес платформы Star Gate)
       <input id="s-cloud" type="text" placeholder="http://192.168.1.50:8077"></label>
     <label>Токен облака (X-Mozg-Token)
       <input id="s-token" type="password" placeholder="оставь пустым — не менять"></label>
@@ -73,7 +73,8 @@ if(a&&a!=='teal')document.documentElement.setAttribute('data-accent',a);}catch(e
     <label class="adv">Голос TTS облака (можно пусто)
       <input id="s-tvoice" type="text" placeholder="по умолчанию"></label>
     <div class="checks">
-      <label class="chk"><input id="s-tts" type="checkbox"> TTS-речь фраз (через облако)</label>
+      <label>Выход русской речи<select id="s-toutput"><option value="pwm9">PWM D9 → фильтр → усилитель (экспериментальный)</option><option value="alsa">Аудиоустройство Linux / USB</option></select></label>
+      <label class="chk"><input id="s-tts" type="checkbox"> Русская озвучка принятых фраз</label>
       <label class="chk"><input id="s-teach" type="checkbox"> LLM-вердикты фраз (мягко)</label>
       <label class="chk"><input id="s-dictate" type="checkbox"> диктант: целевые слова для мозга</label>
       <label class="chk"><input id="s-curious" type="checkbox"> любопытство: сам ищет новое в облаке</label>

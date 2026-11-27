@@ -295,7 +295,10 @@ def default_settings():
         "route": "auto",             # auto | cloud | board — кому отвечает чат
         "long_default": False,       # длинные ответы сети материалов по умолчанию
         "gen_on": True,              # генератор длинных текстов (mozgnet.write)
-        "web_on": True, "web_mig91": False, "web_any": True, "web_engines": "mailru,mojeek", "sources_on": True, "sources_max_pages": 150, "sources_refresh_h": 24, "conf_on": True, "conf_url": "https://confluence.softrust.ru/collector/pages.action?key=docEMIAS", "conf_space": "", "conf_user": "", "conf_password": "", "conf_token": "", "google_api_key": "", "google_cx": "", "yandex_api_key": "", "yandex_folder": "",              # доступ к Википедии через /api/web/fetch
+        "conversation_web": True, "conversation_style": "normal", "conversation_sources": True,
+        "support_public_url": "", "support_max_bot_token": "", "support_connector_key_id": "",
+        "llm_loop_on": False, "llm_loop_passes": 2, "llm_loop_mix": 0.25,
+        "llm_zones_on": True, "coupling_zone_mix": 50, "web_on": True, "web_mig91": False, "web_any": True, "web_engines": "mailru,mojeek", "sources_on": True, "sources_max_pages": 150, "sources_refresh_h": 24, "conf_on": True, "conf_url": "https://confluence.softrust.ru/collector/pages.action?key=docEMIAS", "conf_space": "", "conf_user": "", "conf_password": "", "conf_token": "", "google_api_key": "", "google_cx": "", "yandex_api_key": "", "yandex_folder": "",              # доступ к Википедии через /api/web/fetch
         "web_first": True,           # v3.13: вопрос-формат ищет в интернете
                                      # первым делом и подписывает источники
                                      # (режим «как у Алисы»)
@@ -322,6 +325,8 @@ def default_settings():
                                      # отвечает мозгом облака и учится по
                                      # статьям из групп, куда его добавили
         "maxbot_token": "",          # v3.20: токен бота МАКС (Bot API)
+        "maxbot_mode": "talk",       # v3.212: talk — мысли мозга, web — только интернет
+        "maxbot_talk_chars": 3500,   # v3.212: потолок ответа-разговора (знаков)
         "maxbot_src_chats": [],      # v3.188: чаты-источники ответов (ID)
         "maxbot_src_scope": "all",   # v3.188: all — везде, same — только в том же чате
         "maxbot_src_on": True,       # v3.188: искать ответ в чатах-источниках
@@ -436,6 +441,16 @@ def default_settings():
         "llm_link_net": True, "llm_link_gen": True, "llm_link_ext": True, "llm_link_read": True, "llm_link_learn": True, "media_hear": True, "hear_max_s": 240, "llm_link_gen_minq": 0.5, "llm_link_every": 600, "llm_link_minq": 0.5, "llm_mig119": False, "brain_coh_min": 0.5, "sync_on": True, "sync_k": 30, "answer_strict": True, "answer_offline": True, "mic_wake": "мозг, робот, нейро", "mic_answer_all": False, "answer_honest": True, "answer_read_first": True, "llm_web_on": True, "llm_web_check": True, "llm_web_check_talk": True, "llm_web_check_s": 12, "brain_strict": True, "brain_strict_min": 0.10, "brain_strict_nobrain": "pause", "brain_llm_thought": True, "llm_free": True, "llm_free_budget_s": 15, "part_grav": False, "part_frz": False, "part_frz_n": 64, "part_muon": False, "part_phot": False, "part_cpu_link": False, "part_gen_hz": 0, "part_min_mhz": 100.0, "part_max_ghz": 4.0, "llm_code_stream": True, "llm_code_mix": 2, "llm_stream_code": True, "llm_stream_max": True, "llm_stream_talk": True, "llm_stream_admin": True, "code_board_check": True, "srv_auto_ok": False, "doom_llm_tired": True, "board_auto_restore": True, "blocked_ips": ["157.22.190.54"], "board_restore_map": {}, "doom_tired_hz": 483.0, "llm_streams_mig177": False, "llm_code_every_min": 10, "llm_code_repeat_min": 60, "llm_code_steps": 120, "llm_code_seconds": 150, "answer_passage": True, "ctx_llm_on": True, "ctx_llm_timeout": 3,
         "maxbot_images": True,       # v3.30: формулы в МАКС — картинками
         "maxbot_ctx_gap": 600,       # v3.31: окно склейки сообщений в статью
+        "admin_mode": "both",        # v3.189: агент «Администрирование»: both | brain | llm
+        "agent_auto_ok": False,      # v3.189: изменяющие шаги агента «Администрирование» без вопросов (опасные — всегда спросит)
+        "admin_selfwrite": True,     # v3.237: нет в памяти — искать в интернете и записать инструкцию
+        "netbus_on": True,           # v3.237: «дружба нейросетей» — обмен пакетами без чата
+        "netbus_d6": True,           # v3.237: пакеты шины — на пин D6 плат
+        "netbus_period": 120,        # v3.237: круг обмена, с
+        "llm_push": {},              # v3.237: своя LLM в очереди на платы {sig, boards, ts, bytes}
+        "osc_on": True,              # v3.238: колебания частиц на отдельных пинах D5/D7/A5
+        "osc_m": True, "osc_g": True, "osc_p": True,   # мюон / гравитон / фотон
+        "osc_gain": 1.0,             # яркость (множитель фотона/активности)
         "max_cloud_reply": True,
         "max_brain_reply": True,
         "unify_on": True,
@@ -662,6 +677,19 @@ def chat_new(cid=None, title="", kind="chat", owner=""):
     return obj
 
 
+SPECIAL_CHATS = {"admin": ("chat-admin", "🛠 Администрирование"), "code": ("chat-code", "⌨ Код и App Lab")}
+
+
+def chat_special(kind):
+    """v3.226: постоянные общие чаты «Администрирование» и «Код и App Lab» — вся
+    переписка пишется в историю (chats/chat-admin.json, chat-code.json)."""
+    cid, title = SPECIAL_CHATS[kind]
+    c = chat_load(cid)
+    if not c:
+        c = chat_new(cid, title=title, kind=kind, owner="")
+    return c
+
+
 def chat_allowed(chat, ip):
     """v3.24.2: можно ли работать с чатом с адреса ip. Чаты без владельца
     (созданные до v3.24.2) и лента «Мысли плат» — общие. Настройка
@@ -683,11 +711,24 @@ def chat_delete(cid):
 # --------------------- мысли / хроника / задания ----------------------------
 def _tclean(t):
     """v3.118: чистка мысли от «англ», «н», шума (llm2.thought_clean)."""
+    t = str(t or "")
     try:
         import llm2
+        if "```" in t:                  # v3.212: код (латиница) в ```…``` не чистим
+            import re as _re
+            parts = _re.split(r"(```[^\n]*\n.*?```)", t, flags=_re.S)
+            out = []
+            for part in parts:
+                if part.startswith("```"):
+                    out.append(part)
+                elif part.strip():
+                    c = llm2.thought_clean(part)
+                    if c:
+                        out.append(c)
+            return "\n\n".join(out) if any(x.startswith("```") for x in out) else llm2.thought_clean(t)
         return llm2.thought_clean(t)
     except Exception:
-        return str(t or "")
+        return t
 
 
 def thoughts_add(board, text, kind="say"):
@@ -696,7 +737,7 @@ def thoughts_add(board, text, kind="say"):
         return False                  # шум («англ н н») — не мысль
     with LOCK:
         t = load_json("thoughts.json", []) or []
-        t.append({"board": str(board)[:40], "text": str(text)[:400],
+        t.append({"board": str(board)[:40], "text": str(text)[:6000],
                   "kind": str(kind)[:16], "ts": time.time()})
         save_json("thoughts.json", t[-3000:])   # v3.95: не терять мысли плат
     return True
@@ -708,7 +749,7 @@ def thoughts_list(limit=80):
 
 
 # ----------------- мысли зон -> пин D6 платы (v3.17) ------------------------
-def d6_add(board, text, zone="", sign=0, by=""):
+def d6_add(board, text, zone="", sign=0, by="", nb=""):
     """Мысль зон облака в ящик платы (d6box.json): плата заберёт её опросом
     мозг-почты и проиграет на пине D6 (RPC d6seq -> PWM). Ящик короткий
     (8 мыслей): D6 — физический пин, играет мысли по одной, старое
@@ -724,6 +765,8 @@ def d6_add(board, text, zone="", sign=0, by=""):
                     "text": t, "zone": str(zone or "")[:40],
                     "sign": int(sign or 0), "by": str(by or "")[:8],
                     "ts": time.time()})
+        if nb:                                  # v3.237: id пакета шины «дружбы сетей» — плата ответит откликом
+            arr[-1]["nb"] = str(nb)[:24]
         box[b] = arr[-8:]
         save_json("d6box.json", box)
         return True
@@ -741,6 +784,36 @@ def d6_take(board):
         return arr
 
 
+def d4_add(board, text, zone="", by=""):
+    """Мысль облака в ящик D4 платы (d4box.json, v3.210): плата заберёт её
+    GET /api/brain/d4 и отправит на частотную шину D4 (RPC d4pure).
+    Частоты D4 задаёт тензорная сеть платы — тут только содержание (текст)."""
+    with LOCK:
+        b = str(board or "")[:40]
+        t = _d6_clean_text(_tclean(text))
+        if not b or not t:
+            return False
+        box = load_json("d4box.json", {}) or {}
+        arr = box.setdefault(b, [])
+        arr.append({"id": "d4%s" % int(time.time() * 1000),
+                    "text": t, "zone": str(zone or "")[:40],
+                    "by": str(by or "")[:8], "ts": time.time()})
+        box[b] = arr[-6:]
+        save_json("d4box.json", box)
+        return True
+
+
+def d4_take(board):
+    """Забрать (и снять) мысли для D4 платы — GET /api/brain/d4."""
+    with LOCK:
+        b = str(board or "")[:40]
+        box = load_json("d4box.json", {}) or {}
+        arr = box.pop(b, [])
+        if arr:
+            save_json("d4box.json", box)
+        return arr
+
+
 def _d6_clean_text(text):
     """Одна строка без переносов (в ящике храним компактно); финальную
     подготовку к PWM делает плата (_gen_d6_seq: только буквы RU33)."""
@@ -755,7 +828,7 @@ def chronicle_add(board, messages):
         for m in (messages or [])[-30:]:
             ch.append({"board": str(board)[:40],
                        "role": str(m.get("role") or "bot")[:8],
-                       "text": str(m.get("text") or "")[:600],
+                       "text": str(m.get("text") or "")[:3800],
                        "zone": str(m.get("zone") or "")[:24],
                        "ts": float(m.get("ts") or time.time() * 1000) / 1000.0})
         save_json("chronicle.json", ch[-600:])

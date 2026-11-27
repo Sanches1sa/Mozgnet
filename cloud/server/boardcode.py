@@ -20,6 +20,7 @@ _Q = collections.defaultdict(collections.deque)    # плата -> задани�
 _RES = {}                                          # id -> результат
 _EV = {}                                           # id -> Event
 _JOBS = collections.OrderedDict()                  # id -> задание (журнал)
+_BLOCKED = {}                                      # плата -> ts, когда она отказала в исполнении
 _SEEN = {}                                         # плата -> {ts, ver, codejobs}
 
 
@@ -37,6 +38,27 @@ def _ver_ok(v):
         return False
 
 
+_REFUSAL = ("питоны убраны", "питоны» сняты", "исполнение кода отключено", "запрещено настройкой")
+
+
+def is_refusal(out):
+    o = str(out or "").lower()
+    return any(x in o for x in _REFUSAL)
+
+
+def mark_blocked(board, on=True):
+    with _LOCK:
+        if on:
+            _BLOCKED[str(board)[:40]] = time.time()
+        else:
+            _BLOCKED.pop(str(board)[:40], None)
+
+
+def blocked(board, ttl=1800):
+    with _LOCK:
+        return time.time() - _BLOCKED.get(str(board)[:40], 0) < ttl
+
+
 def boards(max_age=40):
     """Платы, которые сейчас на связи и умеют задания (v2.93+)."""
     now = time.time()
@@ -48,7 +70,10 @@ def boards(max_age=40):
             cj = d.get("cj") or {}
             out.append({"board": b, "ver": d["ver"], "age": int(now - d["ts"]),
                         "ok": _ver_ok(d["ver"]) and bool(cj),
-                        "code": cj.get("code", False), "admin": cj.get("admin", False),
+                        "code": cj.get("code", False) and not blocked(b),
+                        "admin": cj.get("admin", False) and not blocked(b),
+                        "hw": cj.get("hw", False) and not blocked(b),
+                        "blocked": blocked(b),
                         "done": cj.get("done", 0)})
         return sorted(out, key=lambda x: x["age"])
 
@@ -61,10 +86,11 @@ def pick_board(need="code"):
 
 
 def submit(code, mode="py_check", board="", timeout=20):
-    mode = mode if mode in ("py_check", "py_run", "sh") else "py_check"
-    board = str(board or "")[:40] or pick_board("admin" if mode == "sh" else "code")
+    mode = mode if mode in ("py_check", "py_run", "sh", "hw") else "py_check"
+    board = str(board or "")[:40] or pick_board({"sh": "admin", "hw": "hw"}.get(mode, "code"))
     if not board:
-        return {"ok": False, "error": "нет платы v2.93+ на связи, которой разрешены задания"}
+        return {"ok": False, "error": "нет платы на связи, которой разрешены задания%s" % (
+            " аппаратного уровня (нужна плата 2.111+ с hw_on)" if mode == "hw" else "")}
     jid = uuid.uuid4().hex[:12]
     job = {"id": jid, "mode": mode, "code": str(code or "")[:60000],
            "timeout": max(2, min(120, int(timeout or 20)))}

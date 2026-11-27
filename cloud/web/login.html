@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Вход · мозг-12 облако</title>
+<title>Вход · Star Gate облако</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2310a37f'/%3E%3Ctext x='16' y='22' font-size='16' text-anchor='middle' fill='white' font-family='sans-serif'%3E%F0%9F%A7%A0%3C/text%3E%3C/svg%3E">
 <style>
   :root{--bg:#0f1115;--panel:#161a22;--line:#262b35;--text:#eceef2;
@@ -44,6 +44,8 @@
   button.go:hover{filter:brightness(1.08);box-shadow:0 8px 26px rgba(45,212,191,.32)}
   button.go:active{transform:scale(.98)}
   button:disabled{opacity:.6;cursor:wait}
+  .hint a{color:#2dd4bf;text-decoration:none}
+  .hint a:hover{text-decoration:underline}
   .err{color:var(--err);font-size:13px;margin-top:12px;min-height:18px;text-align:center}
   .shake{animation:sh .35s}
   @keyframes sh{20%,60%{transform:translateX(-6px)}40%,80%{transform:translateX(6px)}}
@@ -57,16 +59,34 @@
 <canvas id="net"></canvas>
 <div class="card">
   <div class="logo">🧠</div>
-  <h1 id="title">мозг-12 · облако</h1>
+  <h1 id="title">Star Gate · облако</h1>
   <div class="sub" id="sub">Панель защищена паролем. Войди, чтобы открыть
     чат, зрение и настройки.</div>
 
   <div id="formLogin" hidden>
-    <label for="pw">Пароль панели</label>
+    <label for="em">Почта</label>
+    <input id="em" type="email" autocomplete="username" placeholder="you@example.com (пусто — пароль панели)">
+    <label for="pw">Пароль</label>
     <div class="pw"><input id="pw" type="password" autocomplete="current-password"
            placeholder="••••••••" autofocus><button type="button" class="eye" data-for="pw" aria-label="показать пароль">👁</button></div>
     <button class="go" id="btnGo">Войти</button>
     <div class="err" id="err1"></div>
+    <div class="hint" style="text-align:center;margin-top:14px"><a href="#" id="toReg">Нет доступа? Подать заявку на регистрацию</a></div>
+  </div>
+
+  <div id="formReg" hidden>
+    <div class="sub">Заявку рассматривает владелец облака. Войти можно будет после одобрения.</div>
+    <label for="rEm">Почта</label>
+    <input id="rEm" type="email" autocomplete="email" placeholder="you@example.com">
+    <label for="rName">Имя</label>
+    <input id="rName" type="text" autocomplete="name" placeholder="Как к вам обращаться">
+    <label for="rPw">Пароль (от 8 знаков)</label>
+    <input id="rPw" type="password" autocomplete="new-password" placeholder="••••••••">
+    <label for="rNote">Зачем доступ (необязательно)</label>
+    <input id="rNote" type="text" placeholder="коротко">
+    <button class="go" id="btnReg">Отправить заявку владельцу</button>
+    <div class="err" id="err3"></div>
+    <div class="hint" style="text-align:center;margin-top:14px"><a href="#" id="toLogin">← Ко входу</a></div>
   </div>
 
   <div id="formSetup" hidden>
@@ -102,11 +122,14 @@ async function post(path, body){
 function show(which){
   document.getElementById('formLogin').hidden = which !== 'login';
   document.getElementById('formSetup').hidden = which !== 'setup';
+  document.getElementById('formReg').hidden = which !== 'reg';
 }
 
 async function login(pw, btn, errbox){
   btn.disabled = true; errbox.textContent = '';
-  const res = await post('/api/auth/login', {password: pw});
+  const em = (document.getElementById('em').value || '').trim();
+  try { if (em) localStorage.setItem('n12_login_email', em); } catch (e) {}
+  const res = await post('/api/auth/login', em ? {email: em, password: pw} : {password: pw});
   if (res.status === 200 && res.j.ok) { location.href = '/'; return; }
   errbox.textContent = res.j.error || ('Ошибка ' + res.status);
   btn.disabled = false;
@@ -155,6 +178,23 @@ document.querySelectorAll('.eye').forEach(function(b){
       'Облако не отвечает — проверь, запущен ли сервер.';
     return;
   }
+  document.getElementById('toReg').onclick = e => { e.preventDefault(); show('reg'); };
+  document.getElementById('toLogin').onclick = e => { e.preventDefault(); show('login'); };
+  document.getElementById('btnReg').onclick = async () => {
+    const err3 = document.getElementById('err3'), btn = document.getElementById('btnReg');
+    err3.textContent = ''; btn.disabled = true;
+    const res = await post('/api/auth/register', {email: document.getElementById('rEm').value.trim(),
+      name: document.getElementById('rName').value.trim(), password: document.getElementById('rPw').value,
+      note: document.getElementById('rNote').value.trim()});
+    btn.disabled = false;
+    if (res.status === 200 && res.j.ok) {
+      err3.style.color = 'var(--acc, #2dd4bf)';
+      err3.textContent = 'Заявка отправлена владельцу. Когда он одобрит — войдите с этой почтой и паролем.';
+      return;
+    }
+    err3.style.color = ''; err3.textContent = res.j.error || ('Ошибка ' + res.status);
+  };
+  try { const le = localStorage.getItem('n12_login_email'); if (le) document.getElementById('em').value = le; } catch (e) {}
   if (j.has_password) {
     show('login');
     const go = () => login(document.getElementById('pw').value,

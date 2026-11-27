@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>мозг-12 · Cyber Neural</title>
+<title>Star Gate · Cyber Neural</title>
 <meta name="theme-color" content="#0f1115">
 <script>/* v3.21: тема и акцент применяются ДО отрисовки — без «вспышки» */
 (function(){try{var a=localStorage.getItem('n12_accent');
@@ -24,7 +24,7 @@ document.addEventListener('DOMContentLoaded',function(){document.body.classList.
       <div class="brand">
         <div class="logo">🧠</div>
         <div>
-          <b>мозг-12 · Cyber Neural</b>
+          <b>Star Gate · Cyber Neural</b>
           <small id="verline">neuro12-cloud</small>
         </div>
       </div>
@@ -61,6 +61,7 @@ document.addEventListener('DOMContentLoaded',function(){document.body.classList.
         <button data-route="cloud" title="Тот же ИИ, что в боте МАКС">Облако</button>
         <button data-route="talk" title="Разговор: просто поговорить — пишет сам мозг (плата, иначе мозг облака), своя LLM дополняет; без базы знаний и фактов, сплошным текстом">💬 Разговор</button>
         <button data-route="code" title="Мозг пишет код по запросу">⌨ Код</button>
+        <button data-route="admin" title="Администрирование: агент с ядром мозга-12 и своей LLM управляет серверами и рабочим столом">🗄 Администрирование</button>
       </div>
       <label class="longtoggle" title="Длинные ответы (сеть материалов)">
         <input type="checkbox" id="chkLong"> длинно
@@ -77,16 +78,24 @@ document.addEventListener('DOMContentLoaded',function(){document.body.classList.
       <canvas id="bgnet" aria-hidden="true"></canvas>
       <button class="fab" id="btnDown" title="Вниз" aria-label="Вниз">↓</button>
       <section id="projectAgent" class="project-agent" hidden></section>
+      <section id="adminAgent" class="project-agent" hidden></section>
       <div id="msgs"><div class="inner" id="msgsInner"></div></div>
       <div class="composer">
         <div class="attach-preview" id="attachPreview"></div>
         <div class="slashbox" id="slashBox" role="listbox"></div>
         <div class="langbar" id="langBar" hidden></div>
+        <details class="agent-set" id="agentSet" hidden>
+          <summary>⚙ Настройки агента «Контур»
+            <button type="button" class="agent-set-hide" id="agentSetHide" title="Скрыть панель настроек">✕</button></summary>
+          <div class="agent-set-body" id="agentSetBody"></div>
+        </details>
+        <button class="agent-set-chip" id="agentSetShow" hidden
+                title="Показать настройки агента «Контур»">⚙ Настройки агента</button>
         <div class="cbox">
           <button class="iconbtn" id="btnAttach" title="Прикрепить файл">📎</button>
           <input type="file" id="fileInput" hidden
                  accept=".zip,.rar,.txt,.md,.csv,.json,.html,.xml,.pdf,.docx,.xlsx,.pptx,.py,.ino,.log,.yaml,.yml">
-          <textarea id="input" rows="1" placeholder="Спроси мозг-12…"
+          <textarea id="input" rows="1" placeholder="Спроси Star Gate…"
                     autocomplete="off"></textarea>
           <button class="iconbtn" id="btnVoice" title="Голосовой ввод: нажми, говори, нажми ещё раз. Правый клик / долгое нажатие — выбрать микрофон">🎙</button>
           <button class="iconbtn" id="btnTTS" title="Озвучивать ответы">🔊</button>
@@ -153,16 +162,21 @@ document.addEventListener('DOMContentLoaded',function(){document.body.classList.
       <div class="mtabs-title">Настройки</div>
       <div class="mgrp">Основное</div>
       <button data-tab="common" class="on">Общие</button>
+      <button data-tab="communication">Общение</button>
+      <button data-tab="coupling" title="Разделение воли: плата neuro-12 и своя LLM">🔗 Сопряжение</button>
       <button data-tab="devices">Устройства и платы</button>
       <button data-tab="ssh">SSH-серверы</button>
       <div class="mgrp">Знания и обучение</div>
       <button data-tab="memory">Облачная память</button>
       <button data-tab="kb">База знаний</button>
       <button data-tab="zones">Зоны мысли</button>
+      <button data-tab="loopllm">Loop Transformer</button>
+      <button data-tab="photoocr">Обучение чтению фото</button>
       <button data-tab="teacher">Учитель (LLM)</button>
       <button data-tab="instruct">Инструкции ИИ</button>
       <div class="mgrp">Каналы</div>
       <button data-tab="voice">Голос</button>
+      <button data-tab="supportapp">Приложение поддержки</button>
       <button data-tab="maxbot">Макс-бот</button>
       <button data-tab="tgbot">Телеграм-бот</button>
       <button data-tab="aiapi">API и ответы</button>
@@ -175,14 +189,19 @@ document.addEventListener('DOMContentLoaded',function(){document.body.classList.
     </aside>
     <div class="mbody">
       <div class="mpane on" data-pane="common"></div>
+      <div class="mpane" data-pane="communication"></div>
+      <div class="mpane" data-pane="coupling"></div>
       <div class="mpane" data-pane="devices"></div>
       <div class="mpane" data-pane="ssh"></div>
       <div class="mpane" data-pane="memory"></div>
       <div class="mpane" data-pane="kb"></div>
       <div class="mpane" data-pane="zones"></div>
+      <div class="mpane" data-pane="loopllm"></div>
+      <div class="mpane" data-pane="photoocr"></div>
       <div class="mpane" data-pane="teacher"></div>
       <div class="mpane" data-pane="instruct"></div>
       <div class="mpane" data-pane="voice"></div>
+      <div class="mpane" data-pane="supportapp"></div>
       <div class="mpane" data-pane="maxbot"></div>
       <div class="mpane" data-pane="tgbot"></div>
       <div class="mpane" data-pane="aiapi"></div>

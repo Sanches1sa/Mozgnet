@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Серверный лаунчер: neuro12-server install|start|stop|status|logs|enable|backup|firewall|update …
+D="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+N12_PROFILE=server exec python3 "$D/n12ctl.py" "$@"

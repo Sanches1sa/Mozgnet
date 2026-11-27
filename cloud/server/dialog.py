@@ -47,17 +47,13 @@ def respond(text, ctx=None, chat_key="", name="", sender="владелец",
     except Exception:
         pass
     b_on, c_on = flags(brain_on, cloud_on)
-    if c_on:
-        reply, zone, info = brain.think(text, long_mode, route="cloud",
-                                        sender=sender, ctx=ctx,
-                                        deliver=deliver)
-    else:                              # только мозг: без интернета
-        reply, zone, info = brain.think(text, long_mode, route="cloud",
-                                        sender=sender, ctx=ctx,
-                                        deliver=deliver, no_web=True)
+    import conversation
+    reply, zone, info = conversation.answer(text, ctx=ctx, sender=sender, deliver=deliver,
+                                            long_mode=long_mode, no_web=not c_on)
     info = dict(info or {})
     seq = []
-    if b_on:
+    import answer_focus
+    if b_on and not info.get('clarification') and not answer_focus.practical(answer_focus.context_question(text,ctx)):
         try:
             th = agent.cloud_thought(text, reply, zone, info, ctx)
         except Exception:
@@ -117,6 +113,10 @@ def trace(chat_key, q, zone, info, reply=""):
          "mem_brain": info.get("mem_brain") or {},
          "brain_asked": info.get("brain_asked") or {},
          "unify": info.get("unify") or {}, "strict": info.get("strict") or "",
+         "focus_rejected": bool(info.get("focus_rejected")), "focus_cleaned": bool(info.get("focus_cleaned")),
+         "web_check": info.get("web_check") or {},
+         "web_retry": bool(info.get("web_retry")), "sources": info.get("sources") or [],
+         "web_errors": info.get("web_errors") or [],
          "offline": bool(info.get("offline")), "nuclear": bool(info.get("nuclear")),
          "llm_sents": info.get("llm_sents"), "ts": __import__("time").time(),
          "understood": info.get("understood") or "", "ctx_did": info.get("ctx_did") or ""}
@@ -142,6 +142,20 @@ def explain(chat_key):
         ln.append("По понятому контексту: " + t["ctx_did"])
     if t.get("src"):
         ln.append("Источник: " + "; ".join("«%s»" % s for s in t["src"]))
+    if t.get("focus_rejected"):
+        ln.append("Первый вариант отклонён: не отвечал на вопрос или не содержал нужной команды")
+    if t.get("focus_cleaned"):
+        ln.append("Убраны посторонние дополнения и технические подписи")
+    if t.get("web_check"):
+        wc=t["web_check"]
+        ln.append("Проверка источников: подтверждено %s, без подтверждения %s" % (wc.get("ok",0),wc.get("no",0)))
+    if t.get("web_retry"):
+        ln.append("Выполнена попытка поиска в интернете")
+    for source in t.get("sources", [])[:3]:
+        if isinstance(source, dict) and source.get("url"):
+            ln.append("Сетевой источник: " + str(source["url"]))
+    if t.get("web_errors"):
+        ln.append("Диагностика поиска: " + str(t["web_errors"])[:600])
     mb = t.get("mem_brain") or {}
     if mb:
         if mb.get("memory"):

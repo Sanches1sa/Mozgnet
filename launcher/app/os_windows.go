@@ -175,11 +175,11 @@ func runUI() {
 		AutoFocus: true,
 		DataPath:  data,
 		WindowOptions: webview2.WindowOptions{
-			Title: "Мозг-12", Width: 1280, Height: 860, IconId: 1, Center: true,
+			Title: "Star Gate", Width: 1280, Height: 860, IconId: 1, Center: true,
 		},
 	})
 	if wv == nil {
-		msgBox("Мозг-12", "Не запустился встроенный браузер WebView2.\n\nОн входит в Windows 11; если его нет — установи «Microsoft Edge WebView2 Runtime» с сайта Microsoft.\nПока можно открыть облако в браузере: "+cloudURL())
+		msgBox("Star Gate", "Не запустился встроенный браузер WebView2.\n\nОн входит в Windows 11; если его нет — установи «Microsoft Edge WebView2 Runtime» с сайта Microsoft.\nПока можно открыть облако в браузере: "+cloudURL())
 		openURL(cloudURL())
 		return
 	}

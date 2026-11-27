@@ -1,0 +1,1479 @@
+[
+ {
+  "id": "str.reverse",
+  "title": "Перевернуть строку",
+  "ask": [
+   "переверни строку",
+   "строка наоборот",
+   "reverse string"
+  ],
+  "code": "def reverse_text(s):\n    return s[::-1]\n",
+  "test": "assert reverse_text('abc') == 'cba'\nassert reverse_text('') == ''\n",
+  "tags": "строки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "str.palindrome",
+  "title": "Проверить палиндром",
+  "ask": [
+   "проверь палиндром",
+   "является ли слово палиндромом",
+   "палиндром"
+  ],
+  "code": "def is_palindrome(s):\n    t = ''.join(c.lower() for c in s if c.isalnum())\n    return t == t[::-1]\n",
+  "test": "assert is_palindrome('А роза упала на лапу Азора')\nassert not is_palindrome('мозг')\n",
+  "tags": "строки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "str.count_words",
+  "title": "Посчитать слова",
+  "ask": [
+   "посчитай слова",
+   "сколько слов в тексте",
+   "количество слов"
+  ],
+  "code": "def count_words(text):\n    return len(text.split())\n",
+  "test": "assert count_words('раз два  три') == 3\nassert count_words('') == 0\n",
+  "tags": "строки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "str.word_freq",
+  "title": "Частота слов",
+  "ask": [
+   "частота слов",
+   "самые частые слова",
+   "посчитай повторы слов"
+  ],
+  "code": "import re\nfrom collections import Counter\n\n\ndef word_freq(text, top=5):\n    words = re.findall(r'\\w+', text.lower())\n    return Counter(words).most_common(top)\n",
+  "test": "r = word_freq('а б а в а б', 2)\nassert r == [('а', 3), ('б', 2)]\n",
+  "tags": "строки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "str.title",
+  "title": "Каждое слово с заглавной",
+  "ask": [
+   "сделай заглавные буквы",
+   "capitalize слова",
+   "каждое слово с большой буквы"
+  ],
+  "code": "def title_words(s):\n    return ' '.join(w[:1].upper() + w[1:] for w in s.split())\n",
+  "test": "assert title_words('мозг двенадцать') == 'Мозг Двенадцать'\n",
+  "tags": "строки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "str.vowels",
+  "title": "Посчитать гласные",
+  "ask": [
+   "посчитай гласные",
+   "сколько гласных букв"
+  ],
+  "code": "def count_vowels(s):\n    return sum(1 for c in s.lower() if c in 'аеёиоуыэюяaeiou')\n",
+  "test": "assert count_vowels('Мозг') == 1\nassert count_vowels('hello') == 2\n",
+  "tags": "строки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "str.slugify",
+  "title": "Сделать слаг из заголовка",
+  "ask": [
+   "сделай slug",
+   "преобразуй заголовок в ссылку",
+   "slugify"
+  ],
+  "code": "import re\n\n_TR = dict(zip('абвгдеёжзийклмнопрстуфхцчшщъыьэюя', ['a','b','v','g','d','e','e','zh','z','i','y','k','l','m','n','o','p','r','s','t','u','f','h','c','ch','sh','sch','','y','','e','yu','ya']))\n\n\ndef slugify(s):\n    s = ''.join(_TR.get(c, c) for c in s.lower())\n    return re.sub(r'[^a-z0-9]+', '-', s).strip('-')\n",
+  "test": "assert slugify('Star Gate: привет!') == 'star-gate-privet'\n",
+  "tags": "строки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "str.truncate",
+  "title": "Обрезать строку с многоточием",
+  "ask": [
+   "обрежь текст",
+   "укороти строку",
+   "truncate"
+  ],
+  "code": "def truncate(s, n=40):\n    return s if len(s) <= n else s[:max(0, n - 1)].rstrip() + '…'\n",
+  "test": "assert truncate('abc', 5) == 'abc'\nassert truncate('abcdefghij', 5) == 'abcd…'\n",
+  "tags": "строки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "str.is_number",
+  "title": "Проверить, что строка — число",
+  "ask": [
+   "это число",
+   "проверь число в строке",
+   "is number"
+  ],
+  "code": "def is_number(s):\n    try:\n        float(str(s).replace(',', '.'))\n        return True\n    except ValueError:\n        return False\n",
+  "test": "assert is_number('3,14')\nassert not is_number('abc')\n",
+  "tags": "строки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "str.caesar",
+  "title": "Шифр Цезаря",
+  "ask": [
+   "шифр цезаря",
+   "зашифруй сдвигом",
+   "caesar"
+  ],
+  "code": "def caesar(s, k):\n    out = []\n    for c in s:\n        if 'a' <= c <= 'z':\n            out.append(chr((ord(c) - 97 + k) % 26 + 97))\n        elif 'A' <= c <= 'Z':\n            out.append(chr((ord(c) - 65 + k) % 26 + 65))\n        else:\n            out.append(c)\n    return ''.join(out)\n",
+  "test": "assert caesar('abc', 3) == 'def'\nassert caesar(caesar('Hello', 5), -5) == 'Hello'\n",
+  "tags": "строки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "num.is_prime",
+  "title": "Простое ли число",
+  "ask": [
+   "простое число",
+   "проверь на простоту",
+   "is prime"
+  ],
+  "code": "def is_prime(n):\n    if n < 2:\n        return False\n    i = 2\n    while i * i <= n:\n        if n % i == 0:\n            return False\n        i += 1\n    return True\n",
+  "test": "assert [n for n in range(20) if is_prime(n)] == [2, 3, 5, 7, 11, 13, 17, 19]\n",
+  "tags": "числа",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "num.primes",
+  "title": "Простые числа до N (решето)",
+  "ask": [
+   "все простые до n",
+   "решето эратосфена",
+   "список простых чисел"
+  ],
+  "code": "def primes_upto(n):\n    if n < 2:\n        return []\n    s = [True] * (n + 1)\n    s[0] = s[1] = False\n    for i in range(2, int(n ** 0.5) + 1):\n        if s[i]:\n            for j in range(i * i, n + 1, i):\n                s[j] = False\n    return [i for i, v in enumerate(s) if v]\n",
+  "test": "assert primes_upto(10) == [2, 3, 5, 7]\n",
+  "tags": "числа",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "num.fib",
+  "title": "Числа Фибоначчи",
+  "ask": [
+   "фибоначчи",
+   "числа фибоначчи",
+   "fibonacci"
+  ],
+  "code": "def fib(n):\n    a, b = 0, 1\n    out = []\n    for _ in range(n):\n        out.append(a)\n        a, b = b, a + b\n    return out\n",
+  "test": "assert fib(8) == [0, 1, 1, 2, 3, 5, 8, 13]\n",
+  "tags": "числа",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "num.factorial",
+  "title": "Факториал",
+  "ask": [
+   "факториал",
+   "вычисли факториал",
+   "factorial"
+  ],
+  "code": "def factorial(n):\n    if n < 0:\n        raise ValueError('n < 0')\n    r = 1\n    for i in range(2, n + 1):\n        r *= i\n    return r\n",
+  "test": "assert factorial(5) == 120\nassert factorial(0) == 1\n",
+  "tags": "числа",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "num.gcd",
+  "title": "НОД и НОК",
+  "ask": [
+   "найди нод",
+   "наибольший общий делитель",
+   "нок"
+  ],
+  "code": "def gcd(a, b):\n    while b:\n        a, b = b, a % b\n    return abs(a)\n\n\ndef lcm(a, b):\n    return abs(a * b) // gcd(a, b) if a and b else 0\n",
+  "test": "assert gcd(12, 18) == 6\nassert lcm(4, 6) == 12\n",
+  "tags": "числа",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "num.digits_sum",
+  "title": "Сумма цифр числа",
+  "ask": [
+   "сумма цифр",
+   "посчитай сумму цифр"
+  ],
+  "code": "def digits_sum(n):\n    return sum(int(c) for c in str(abs(n)))\n",
+  "test": "assert digits_sum(1234) == 10\n",
+  "tags": "числа",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "num.clamp",
+  "title": "Ограничить число диапазоном",
+  "ask": [
+   "ограничь значение",
+   "clamp",
+   "обрежь число по границам"
+  ],
+  "code": "def clamp(x, lo, hi):\n    return max(lo, min(hi, x))\n",
+  "test": "assert clamp(5, 0, 3) == 3\nassert clamp(-1, 0, 3) == 0\nassert clamp(2, 0, 3) == 2\n",
+  "tags": "числа",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "num.map_range",
+  "title": "Перевести значение из одного диапазона в другой (map)",
+  "ask": [
+   "перемасштабируй значение",
+   "map диапазон",
+   "аналог arduino map"
+  ],
+  "code": "def map_range(x, in_lo, in_hi, out_lo, out_hi):\n    if in_hi == in_lo:\n        return out_lo\n    return (x - in_lo) * (out_hi - out_lo) / (in_hi - in_lo) + out_lo\n",
+  "test": "assert map_range(512, 0, 1023, 0, 255) == 127.75 or abs(map_range(512, 0, 1023, 0, 255) - 127.6) < 0.2\n",
+  "tags": "числа",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "num.mean_median",
+  "title": "Среднее, медиана, разброс",
+  "ask": [
+   "среднее значение",
+   "медиана",
+   "статистика списка"
+  ],
+  "code": "def stats(xs):\n    xs = sorted(xs)\n    n = len(xs)\n    if not n:\n        return {'mean': 0.0, 'median': 0.0, 'min': 0, 'max': 0}\n    mean = sum(xs) / n\n    med = xs[n // 2] if n % 2 else (xs[n // 2 - 1] + xs[n // 2]) / 2\n    return {'mean': mean, 'median': med, 'min': xs[0], 'max': xs[-1]}\n",
+  "test": "r = stats([3, 1, 2, 10])\nassert r['median'] == 2.5 and r['mean'] == 4.0 and r['max'] == 10\n",
+  "tags": "числа",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "num.roman",
+  "title": "Римские цифры",
+  "ask": [
+   "римские цифры",
+   "число в римское",
+   "roman"
+  ],
+  "code": "def to_roman(n):\n    t = [(1000,'M'),(900,'CM'),(500,'D'),(400,'CD'),(100,'C'),(90,'XC'),(50,'L'),(40,'XL'),(10,'X'),(9,'IX'),(5,'V'),(4,'IV'),(1,'I')]\n    out = ''\n    for v, s in t:\n        while n >= v:\n            out += s\n            n -= v\n    return out\n",
+  "test": "assert to_roman(1994) == 'MCMXCIV'\n",
+  "tags": "числа",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "num.base",
+  "title": "Перевод между системами счисления",
+  "ask": [
+   "двоичное число",
+   "перевод в двоичную",
+   "системы счисления"
+  ],
+  "code": "def to_base(n, b):\n    if n == 0:\n        return '0'\n    d = '0123456789abcdefghijklmnopqrstuvwxyz'\n    s = ''\n    m = abs(n)\n    while m:\n        s = d[m % b] + s\n        m //= b\n    return ('-' if n < 0 else '') + s\n",
+  "test": "assert to_base(10, 2) == '1010'\nassert to_base(255, 16) == 'ff'\n",
+  "tags": "числа",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "num.temp",
+  "title": "Температура: Цельсий, Кельвин, Фаренгейт",
+  "ask": [
+   "перевод температуры",
+   "цельсий в фаренгейт"
+  ],
+  "code": "def c_to_f(c):\n    return c * 9 / 5 + 32\n\n\ndef c_to_k(c):\n    return c + 273.15\n",
+  "test": "assert c_to_f(100) == 212\nassert abs(c_to_k(0) - 273.15) < 1e-9\n",
+  "tags": "числа",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "list.unique",
+  "title": "Убрать повторы, сохранив порядок",
+  "ask": [
+   "убери дубликаты",
+   "уникальные элементы",
+   "unique list"
+  ],
+  "code": "def unique(xs):\n    seen = set()\n    out = []\n    for x in xs:\n        if x not in seen:\n            seen.add(x)\n            out.append(x)\n    return out\n",
+  "test": "assert unique([3, 1, 3, 2, 1]) == [3, 1, 2]\n",
+  "tags": "списки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "list.flatten",
+  "title": "Разгладить вложенные списки",
+  "ask": [
+   "разверни вложенный список",
+   "flatten",
+   "плоский список"
+  ],
+  "code": "def flatten(xs):\n    out = []\n    for x in xs:\n        if isinstance(x, (list, tuple)):\n            out.extend(flatten(x))\n        else:\n            out.append(x)\n    return out\n",
+  "test": "assert flatten([1, [2, [3, 4]], 5]) == [1, 2, 3, 4, 5]\n",
+  "tags": "списки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "list.chunks",
+  "title": "Разбить список на части",
+  "ask": [
+   "разбей список на куски",
+   "chunks",
+   "пачки по n"
+  ],
+  "code": "def chunks(xs, n):\n    return [xs[i:i + n] for i in range(0, len(xs), n)]\n",
+  "test": "assert chunks([1, 2, 3, 4, 5], 2) == [[1, 2], [3, 4], [5]]\n",
+  "tags": "списки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "list.sort_by",
+  "title": "Сортировка по ключу",
+  "ask": [
+   "отсортируй список",
+   "сортировка по полю",
+   "sort by key"
+  ],
+  "code": "def sort_by(items, key, reverse=False):\n    return sorted(items, key=lambda x: x[key], reverse=reverse)\n",
+  "test": "r = sort_by([{'a': 2}, {'a': 1}], 'a')\nassert [x['a'] for x in r] == [1, 2]\n",
+  "tags": "списки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "list.bubble",
+  "title": "Сортировка пузырьком",
+  "ask": [
+   "пузырьковая сортировка",
+   "bubble sort"
+  ],
+  "code": "def bubble_sort(xs):\n    a = list(xs)\n    for i in range(len(a)):\n        for j in range(len(a) - 1 - i):\n            if a[j] > a[j + 1]:\n                a[j], a[j + 1] = a[j + 1], a[j]\n    return a\n",
+  "test": "assert bubble_sort([3, 1, 2]) == [1, 2, 3]\n",
+  "tags": "списки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "list.quick",
+  "title": "Быстрая сортировка",
+  "ask": [
+   "быстрая сортировка",
+   "quicksort"
+  ],
+  "code": "def quick_sort(xs):\n    if len(xs) <= 1:\n        return list(xs)\n    p = xs[len(xs) // 2]\n    return quick_sort([x for x in xs if x < p]) + [x for x in xs if x == p] + quick_sort([x for x in xs if x > p])\n",
+  "test": "assert quick_sort([5, 2, 9, 1, 5]) == [1, 2, 5, 5, 9]\n",
+  "tags": "списки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "list.bsearch",
+  "title": "Бинарный поиск",
+  "ask": [
+   "бинарный поиск",
+   "найди элемент в отсортированном списке"
+  ],
+  "code": "def binary_search(xs, x):\n    lo, hi = 0, len(xs) - 1\n    while lo <= hi:\n        mid = (lo + hi) // 2\n        if xs[mid] == x:\n            return mid\n        if xs[mid] < x:\n            lo = mid + 1\n        else:\n            hi = mid - 1\n    return -1\n",
+  "test": "assert binary_search([1, 3, 5, 7], 5) == 2\nassert binary_search([1, 3], 4) == -1\n",
+  "tags": "списки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "list.moving_avg",
+  "title": "Скользящее среднее",
+  "ask": [
+   "скользящее среднее",
+   "сгладь значения",
+   "moving average"
+  ],
+  "code": "def moving_average(xs, n=3):\n    out = []\n    for i in range(len(xs)):\n        w = xs[max(0, i - n + 1):i + 1]\n        out.append(sum(w) / len(w))\n    return out\n",
+  "test": "assert moving_average([1, 2, 3, 4], 2) == [1.0, 1.5, 2.5, 3.5]\n",
+  "tags": "списки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "list.ema",
+  "title": "Экспоненциальное сглаживание",
+  "ask": [
+   "экспоненциальное сглаживание",
+   "ema фильтр",
+   "фильтр датчика"
+  ],
+  "code": "def ema(xs, alpha=0.3):\n    out = []\n    s = None\n    for x in xs:\n        s = x if s is None else alpha * x + (1 - alpha) * s\n        out.append(s)\n    return out\n",
+  "test": "r = ema([10, 20], 0.5)\nassert r == [10, 15.0]\n",
+  "tags": "списки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "list.pairs",
+  "title": "Пары соседних элементов",
+  "ask": [
+   "пары соседей",
+   "попарно элементы",
+   "pairwise"
+  ],
+  "code": "def pairwise(xs):\n    return list(zip(xs, xs[1:]))\n",
+  "test": "assert pairwise([1, 2, 3]) == [(1, 2), (2, 3)]\n",
+  "tags": "списки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "list.transpose",
+  "title": "Транспонировать таблицу",
+  "ask": [
+   "транспонируй матрицу",
+   "строки в столбцы"
+  ],
+  "code": "def transpose(m):\n    return [list(r) for r in zip(*m)]\n",
+  "test": "assert transpose([[1, 2], [3, 4]]) == [[1, 3], [2, 4]]\n",
+  "tags": "списки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "list.group",
+  "title": "Сгруппировать по ключу",
+  "ask": [
+   "сгруппируй по полю",
+   "group by"
+  ],
+  "code": "from collections import defaultdict\n\n\ndef group_by(items, key):\n    g = defaultdict(list)\n    for it in items:\n        g[it[key]].append(it)\n    return dict(g)\n",
+  "test": "r = group_by([{'k': 1}, {'k': 2}, {'k': 1}], 'k')\nassert len(r[1]) == 2\n",
+  "tags": "списки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "list.top",
+  "title": "Топ-N по значению",
+  "ask": [
+   "самые большие элементы",
+   "топ n",
+   "n наибольших"
+  ],
+  "code": "import heapq\n\n\ndef top_n(xs, n=3):\n    return heapq.nlargest(n, xs)\n",
+  "test": "assert top_n([5, 1, 9, 3], 2) == [9, 5]\n",
+  "tags": "списки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "dict.merge",
+  "title": "Слить словари",
+  "ask": [
+   "объедини словари",
+   "merge dict"
+  ],
+  "code": "def merge(a, b):\n    out = dict(a)\n    for k, v in b.items():\n        if isinstance(v, dict) and isinstance(out.get(k), dict):\n            out[k] = merge(out[k], v)\n        else:\n            out[k] = v\n    return out\n",
+  "test": "assert merge({'a': {'x': 1}}, {'a': {'y': 2}}) == {'a': {'x': 1, 'y': 2}}\n",
+  "tags": "словари",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "dict.invert",
+  "title": "Поменять ключи и значения",
+  "ask": [
+   "инвертируй словарь",
+   "ключи на значения"
+  ],
+  "code": "def invert(d):\n    return {v: k for k, v in d.items()}\n",
+  "test": "assert invert({'a': 1}) == {1: 'a'}\n",
+  "tags": "словари",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "dict.get_path",
+  "title": "Достать вложенное значение по пути",
+  "ask": [
+   "достань значение по пути",
+   "вложенный ключ",
+   "get by path"
+  ],
+  "code": "def get_path(d, path, default=None):\n    cur = d\n    for p in str(path).split('.'):\n        if isinstance(cur, dict) and p in cur:\n            cur = cur[p]\n        else:\n            return default\n    return cur\n",
+  "test": "assert get_path({'a': {'b': 5}}, 'a.b') == 5\nassert get_path({}, 'a.b', 0) == 0\n",
+  "tags": "словари",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "dict.counter",
+  "title": "Подсчёт значений",
+  "ask": [
+   "посчитай сколько раз встречается",
+   "counter",
+   "гистограмма значений"
+  ],
+  "code": "from collections import Counter\n\n\ndef histogram(xs):\n    return dict(Counter(xs))\n",
+  "test": "assert histogram('aab') == {'a': 2, 'b': 1}\n",
+  "tags": "словари",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "file.read_lines",
+  "title": "Прочитать файл построчно",
+  "ask": [
+   "прочитай файл",
+   "считай строки из файла",
+   "read file"
+  ],
+  "code": "def read_lines(path):\n    with open(path, encoding='utf-8') as f:\n        return [ln.rstrip('\\n') for ln in f]\n",
+  "test": "import tempfile, os\np = os.path.join(tempfile.mkdtemp(), 'a.txt')\nopen(p, 'w', encoding='utf-8').write('а\\nб\\n')\nassert read_lines(p) == ['а', 'б']\n",
+  "tags": "файлы",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "file.write_text",
+  "title": "Записать текст в файл",
+  "ask": [
+   "запиши в файл",
+   "сохрани текст в файл",
+   "write file"
+  ],
+  "code": "import os\n\n\ndef write_text(path, text):\n    d = os.path.dirname(os.path.abspath(path))\n    os.makedirs(d, exist_ok=True)\n    tmp = path + '.tmp'\n    with open(tmp, 'w', encoding='utf-8') as f:\n        f.write(text)\n    os.replace(tmp, path)\n",
+  "test": "import tempfile, os\np = os.path.join(tempfile.mkdtemp(), 'x', 'a.txt')\nwrite_text(p, 'привет')\nassert open(p, encoding='utf-8').read() == 'привет'\n",
+  "tags": "файлы",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "file.json",
+  "title": "Прочитать и записать JSON",
+  "ask": [
+   "работа с json",
+   "сохрани в json",
+   "прочитай json"
+  ],
+  "code": "import json\nimport os\n\n\ndef load_json(path, default=None):\n    try:\n        with open(path, encoding='utf-8') as f:\n            return json.load(f)\n    except (OSError, ValueError):\n        return default\n\n\ndef save_json(path, data):\n    tmp = path + '.tmp'\n    with open(tmp, 'w', encoding='utf-8') as f:\n        json.dump(data, f, ensure_ascii=False, indent=1)\n    os.replace(tmp, path)\n",
+  "test": "import tempfile, os\np = os.path.join(tempfile.mkdtemp(), 'a.json')\nsave_json(p, {'a': 'я'})\nassert load_json(p) == {'a': 'я'}\nassert load_json(p + 'x', 7) == 7\n",
+  "tags": "файлы",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "file.csv",
+  "title": "Прочитать и записать CSV",
+  "ask": [
+   "работа с csv",
+   "прочитай csv",
+   "сохрани таблицу в csv"
+  ],
+  "code": "import csv\n\n\ndef read_csv(path):\n    with open(path, encoding='utf-8', newline='') as f:\n        return list(csv.DictReader(f))\n\n\ndef write_csv(path, rows, fields):\n    with open(path, 'w', encoding='utf-8', newline='') as f:\n        w = csv.DictWriter(f, fieldnames=fields)\n        w.writeheader()\n        w.writerows(rows)\n",
+  "test": "import tempfile, os\np = os.path.join(tempfile.mkdtemp(), 'a.csv')\nwrite_csv(p, [{'a': 1, 'b': 'я'}], ['a', 'b'])\nassert read_csv(p) == [{'a': '1', 'b': 'я'}]\n",
+  "tags": "файлы",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "file.walk",
+  "title": "Найти файлы по маске",
+  "ask": [
+   "найди файлы",
+   "список файлов в папке",
+   "поиск файлов"
+  ],
+  "code": "import fnmatch\nimport os\n\n\ndef find_files(root, pattern='*'):\n    out = []\n    for dp, _dn, fn in os.walk(root):\n        for n in fn:\n            if fnmatch.fnmatch(n, pattern):\n                out.append(os.path.join(dp, n))\n    return sorted(out)\n",
+  "test": "import tempfile, os\nd = tempfile.mkdtemp()\nopen(os.path.join(d, 'a.py'), 'w').close()\nopen(os.path.join(d, 'b.txt'), 'w').close()\nassert [os.path.basename(x) for x in find_files(d, '*.py')] == ['a.py']\n",
+  "tags": "файлы",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "file.sizes",
+  "title": "Размеры файлов в папке",
+  "ask": [
+   "размер папки",
+   "сколько весят файлы"
+  ],
+  "code": "import os\n\n\ndef dir_size(root):\n    total = 0\n    for dp, _dn, fn in os.walk(root):\n        for n in fn:\n            try:\n                total += os.path.getsize(os.path.join(dp, n))\n            except OSError:\n                pass\n    return total\n",
+  "test": "import tempfile, os\nd = tempfile.mkdtemp()\nopen(os.path.join(d, 'a'), 'w').write('12345')\nassert dir_size(d) == 5\n",
+  "tags": "файлы",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "file.backup",
+  "title": "Резервная копия файла с меткой времени",
+  "ask": [
+   "сделай копию файла",
+   "бэкап файла"
+  ],
+  "code": "import os\nimport shutil\nimport time\n\n\ndef backup_file(path):\n    dst = '%s.%s.bak' % (path, time.strftime('%Y%m%d_%H%M%S'))\n    shutil.copy2(path, dst)\n    return dst\n",
+  "test": "import tempfile, os\np = os.path.join(tempfile.mkdtemp(), 'a.txt')\nopen(p, 'w').write('x')\nd = backup_file(p)\nassert os.path.exists(d) and d.endswith('.bak')\n",
+  "tags": "файлы",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "file.tail",
+  "title": "Последние строки файла",
+  "ask": [
+   "последние строки файла",
+   "tail",
+   "хвост лога"
+  ],
+  "code": "from collections import deque\n\n\ndef tail(path, n=20):\n    with open(path, encoding='utf-8', errors='replace') as f:\n        return [ln.rstrip('\\n') for ln in deque(f, maxlen=n)]\n",
+  "test": "import tempfile, os\np = os.path.join(tempfile.mkdtemp(), 'a')\nopen(p, 'w').write('1\\n2\\n3\\n')\nassert tail(p, 2) == ['2', '3']\n",
+  "tags": "файлы",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "re.emails",
+  "title": "Найти e-mail адреса",
+  "ask": [
+   "найди email в тексте",
+   "вытащи почту",
+   "извлеки адреса"
+  ],
+  "code": "import re\n\n\ndef find_emails(text):\n    return re.findall(r'[\\w.+-]+@[\\w-]+(?:\\.[\\w-]+)+', text)\n",
+  "test": "assert find_emails('пиши a.b@x.ru или c@y.com.') == ['a.b@x.ru', 'c@y.com']\n",
+  "tags": "регулярки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "re.numbers",
+  "title": "Вытащить числа из текста",
+  "ask": [
+   "найди числа в тексте",
+   "извлеки числа"
+  ],
+  "code": "import re\n\n\ndef find_numbers(text):\n    return [float(x.replace(',', '.')) for x in re.findall(r'-?\\d+(?:[.,]\\d+)?', text)]\n",
+  "test": "assert find_numbers('t=21,5 и -3') == [21.5, -3.0]\n",
+  "tags": "регулярки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "re.ip",
+  "title": "Найти IP-адреса",
+  "ask": [
+   "найди ip адреса",
+   "извлеки ip из лога"
+  ],
+  "code": "import re\n\n\ndef find_ips(text):\n    ips = re.findall(r'\\b(?:\\d{1,3}\\.){3}\\d{1,3}\\b', text)\n    return [i for i in ips if all(0 <= int(p) <= 255 for p in i.split('.'))]\n",
+  "test": "assert find_ips('с 10.0.0.5 и 999.1.1.1') == ['10.0.0.5']\n",
+  "tags": "регулярки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "time.format",
+  "title": "Форматирование даты и времени",
+  "ask": [
+   "текущая дата",
+   "отформатируй время",
+   "дата и время строкой"
+  ],
+  "code": "import time\n\n\ndef now_str(ts=None):\n    return time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(ts))\n",
+  "test": "assert len(now_str(0)) == 19\n",
+  "tags": "время",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "time.duration",
+  "title": "Длительность человеческим языком",
+  "ask": [
+   "сколько прошло времени",
+   "секунды в часы минуты",
+   "длительность"
+  ],
+  "code": "def human_duration(sec):\n    sec = int(sec)\n    d, r = divmod(sec, 86400)\n    h, r = divmod(r, 3600)\n    m, s = divmod(r, 60)\n    parts = []\n    if d:\n        parts.append('%d д' % d)\n    if h:\n        parts.append('%d ч' % h)\n    if m:\n        parts.append('%d мин' % m)\n    if s or not parts:\n        parts.append('%d с' % s)\n    return ' '.join(parts)\n",
+  "test": "assert human_duration(3725) == '1 ч 2 мин 5 с'\nassert human_duration(0) == '0 с'\n",
+  "tags": "время",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "time.timer",
+  "title": "Замер времени выполнения",
+  "ask": [
+   "замерь время выполнения",
+   "таймер",
+   "сколько работает функция"
+  ],
+  "code": "import time\n\n\ndef timed(fn, *a, **kw):\n    t0 = time.perf_counter()\n    r = fn(*a, **kw)\n    return r, time.perf_counter() - t0\n",
+  "test": "r, dt = timed(sum, [1, 2, 3])\nassert r == 6 and dt >= 0\n",
+  "tags": "время",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "time.retry",
+  "title": "Повторять при ошибке",
+  "ask": [
+   "повтори при ошибке",
+   "retry",
+   "ретрай с задержкой"
+  ],
+  "code": "import time\n\n\ndef retry(fn, tries=3, delay=0.5):\n    last = None\n    for i in range(tries):\n        try:\n            return fn()\n        except Exception as e:\n            last = e\n            time.sleep(delay * (i + 1))\n    raise last\n",
+  "test": "n = []\n\n\ndef flaky():\n    n.append(1)\n    if len(n) < 3:\n        raise RuntimeError('x')\n    return 'ok'\n\n\nassert retry(flaky, 3, 0.001) == 'ok'\n",
+  "tags": "время",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "oop.dataclass",
+  "title": "Класс-запись (dataclass)",
+  "ask": [
+   "создай класс",
+   "dataclass",
+   "класс с полями"
+  ],
+  "code": "from dataclasses import dataclass, asdict\n\n\n@dataclass\nclass Point:\n    x: float = 0.0\n    y: float = 0.0\n\n    def dist(self, o):\n        return ((self.x - o.x) ** 2 + (self.y - o.y) ** 2) ** 0.5\n",
+  "test": "p = Point(0, 0)\nassert p.dist(Point(3, 4)) == 5.0\nassert asdict(p) == {'x': 0, 'y': 0}\n",
+  "tags": "классы",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "oop.stack",
+  "title": "Стек и очередь",
+  "ask": [
+   "стек",
+   "очередь",
+   "stack queue"
+  ],
+  "code": "from collections import deque\n\n\nclass Stack:\n    def __init__(self):\n        self._a = []\n\n    def push(self, x):\n        self._a.append(x)\n\n    def pop(self):\n        return self._a.pop()\n\n    def __len__(self):\n        return len(self._a)\n\n\nclass Queue:\n    def __init__(self):\n        self._a = deque()\n\n    def put(self, x):\n        self._a.append(x)\n\n    def get(self):\n        return self._a.popleft()\n",
+  "test": "s = Stack(); s.push(1); s.push(2)\nassert s.pop() == 2 and len(s) == 1\nq = Queue(); q.put(1); q.put(2)\nassert q.get() == 1\n",
+  "tags": "классы",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "oop.ring",
+  "title": "Кольцевой буфер (последние N значений датчика)",
+  "ask": [
+   "кольцевой буфер",
+   "последние n измерений",
+   "ring buffer"
+  ],
+  "code": "class RingBuffer:\n    def __init__(self, n):\n        self.n = n\n        self.a = []\n\n    def add(self, x):\n        self.a.append(x)\n        if len(self.a) > self.n:\n            self.a.pop(0)\n\n    def mean(self):\n        return sum(self.a) / len(self.a) if self.a else 0.0\n",
+  "test": "r = RingBuffer(2)\nfor v in (1, 2, 3):\n    r.add(v)\nassert r.a == [2, 3] and r.mean() == 2.5\n",
+  "tags": "классы",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "oop.singleton_cache",
+  "title": "Кэш с временем жизни",
+  "ask": [
+   "кэш с таймаутом",
+   "ttl кэш",
+   "cache ttl"
+  ],
+  "code": "import time\n\n\nclass TTLCache:\n    def __init__(self, ttl=60.0):\n        self.ttl = ttl\n        self.d = {}\n\n    def set(self, k, v):\n        self.d[k] = (time.time(), v)\n\n    def get(self, k, default=None):\n        t = self.d.get(k)\n        if not t or time.time() - t[0] > self.ttl:\n            self.d.pop(k, None)\n            return default\n        return t[1]\n",
+  "test": "c = TTLCache(0.05)\nc.set('a', 1)\nassert c.get('a') == 1\nimport time; time.sleep(0.08)\nassert c.get('a') is None\n",
+  "tags": "классы",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "fn.decorator_log",
+  "title": "Декоратор: журнал вызовов",
+  "ask": [
+   "напиши декоратор",
+   "декоратор логирования"
+  ],
+  "code": "import functools\n\n\ndef logged(fn):\n    @functools.wraps(fn)\n    def wrap(*a, **kw):\n        wrap.calls += 1\n        return fn(*a, **kw)\n    wrap.calls = 0\n    return wrap\n",
+  "test": "@logged\ndef f(x):\n    return x * 2\n\n\nassert f(2) == 4 and f.calls == 1 and f.__name__ == 'f'\n",
+  "tags": "функции",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "fn.memo",
+  "title": "Запоминание результатов (мемоизация)",
+  "ask": [
+   "мемоизация",
+   "кэшируй результат функции",
+   "lru cache"
+  ],
+  "code": "import functools\n\n\n@functools.lru_cache(maxsize=256)\ndef slow_square(n):\n    return n * n\n",
+  "test": "assert slow_square(4) == 16 and slow_square.cache_info().hits == 0\nslow_square(4)\nassert slow_square.cache_info().hits == 1\n",
+  "tags": "функции",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "fn.generator",
+  "title": "Генератор",
+  "ask": [
+   "напиши генератор",
+   "yield",
+   "ленивая последовательность"
+  ],
+  "code": "def countdown(n):\n    while n > 0:\n        yield n\n        n -= 1\n",
+  "test": "assert list(countdown(3)) == [3, 2, 1]\n",
+  "tags": "функции",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "fn.context",
+  "title": "Менеджер контекста",
+  "ask": [
+   "контекстный менеджер",
+   "with свой класс"
+  ],
+  "code": "import time\n\n\nclass Timer:\n    def __enter__(self):\n        self.t0 = time.perf_counter()\n        return self\n\n    def __exit__(self, *exc):\n        self.dt = time.perf_counter() - self.t0\n        return False\n",
+  "test": "with Timer() as t:\n    pass\nassert t.dt >= 0\n",
+  "tags": "функции",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "fn.safe_call",
+  "title": "Безопасный вызов с ловлей ошибок",
+  "ask": [
+   "поймай ошибку",
+   "try except",
+   "обработка исключений"
+  ],
+  "code": "import traceback\n\n\ndef safe_call(fn, *a, default=None, **kw):\n    try:\n        return fn(*a, **kw)\n    except Exception:\n        traceback.print_exc()\n        return default\n",
+  "test": "assert safe_call(int, 'x', default=-1) == -1\nassert safe_call(int, '5') == 5\n",
+  "tags": "функции",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "cli.argparse",
+  "title": "Скрипт с аргументами командной строки",
+  "ask": [
+   "скрипт с аргументами",
+   "argparse",
+   "командная строка"
+  ],
+  "code": "import argparse\n\n\ndef parse_args(argv=None):\n    p = argparse.ArgumentParser(description='Инструмент')\n    p.add_argument('path')\n    p.add_argument('-n', type=int, default=10, help='сколько')\n    p.add_argument('-v', '--verbose', action='store_true')\n    return p.parse_args(argv)\n",
+  "test": "a = parse_args(['f.txt', '-n', '5', '-v'])\nassert a.path == 'f.txt' and a.n == 5 and a.verbose\n",
+  "tags": "консоль",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "cli.env",
+  "title": "Переменные окружения с запасным значением",
+  "ask": [
+   "прочитай переменную окружения",
+   "env",
+   "настройки из окружения"
+  ],
+  "code": "import os\n\n\ndef env_int(name, default):\n    try:\n        return int(os.environ.get(name, default))\n    except ValueError:\n        return default\n",
+  "test": "import os\nos.environ['N12_X'] = '7'\nassert env_int('N12_X', 1) == 7\nos.environ['N12_X'] = 'z'\nassert env_int('N12_X', 1) == 1\n",
+  "tags": "консоль",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "cli.subprocess",
+  "title": "Запустить команду и получить вывод",
+  "ask": [
+   "запусти команду из python",
+   "subprocess",
+   "выполни команду оболочки"
+  ],
+  "code": "import subprocess\n\n\ndef run_cmd(cmd, timeout=20):\n    try:\n        r = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout)\n        return r.returncode, r.stdout.decode('utf-8', 'replace')\n    except subprocess.TimeoutExpired:\n        return -9, 'таймаут'\n",
+  "test": "rc, out = run_cmd('echo привет')\nassert rc == 0 and 'привет' in out\nassert run_cmd('sleep 2', 0.2)[0] == -9\n",
+  "tags": "консоль",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "cli.logging",
+  "title": "Журнал в файл с ротацией",
+  "ask": [
+   "настрой логирование",
+   "logging",
+   "журнал работы скрипта"
+  ],
+  "code": "import logging\nfrom logging.handlers import RotatingFileHandler\n\n\ndef setup_log(path, level=logging.INFO):\n    lg = logging.getLogger('n12')\n    lg.setLevel(level)\n    if not lg.handlers:\n        h = RotatingFileHandler(path, maxBytes=500000, backupCount=3, encoding='utf-8')\n        h.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))\n        lg.addHandler(h)\n    return lg\n",
+  "test": "import tempfile, os\np = os.path.join(tempfile.mkdtemp(), 'a.log')\nsetup_log(p).info('привет')\nfor h in setup_log(p).handlers:\n    h.flush()\nassert 'привет' in open(p, encoding='utf-8').read()\n",
+  "tags": "консоль",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "cli.menu",
+  "title": "Простой цикл команд",
+  "ask": [
+   "цикл команд",
+   "интерактивное меню",
+   "repl"
+  ],
+  "code": "def repl(lines, handlers):\n    out = []\n    for ln in lines:\n        cmd, _, arg = ln.strip().partition(' ')\n        h = handlers.get(cmd)\n        out.append(h(arg) if h else 'неизвестная команда: ' + cmd)\n    return out\n",
+  "test": "assert repl(['эхо привет', 'х'], {'эхо': lambda a: a}) == ['привет', 'неизвестная команда: х']\n",
+  "tags": "консоль",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "net.http_get",
+  "title": "HTTP-запрос без сторонних библиотек",
+  "ask": [
+   "http запрос",
+   "скачай страницу",
+   "get запрос"
+  ],
+  "code": "import urllib.request\n\n\ndef http_get(url, timeout=10):\n    req = urllib.request.Request(url, headers={'User-Agent': 'neuro12'})\n    with urllib.request.urlopen(req, timeout=timeout) as r:\n        return r.status, r.read().decode('utf-8', 'replace')\n",
+  "test": "import threading, http.server\nclass H(http.server.BaseHTTPRequestHandler):\n    def do_GET(self):\n        self.send_response(200); self.end_headers(); self.wfile.write('привет'.encode())\n    def log_message(self, *a): pass\nsrv = http.server.HTTPServer(('127.0.0.1', 0), H)\nthreading.Thread(target=srv.serve_forever, daemon=True).start()\nst, body = http_get('http://127.0.0.1:%d/' % srv.server_address[1])\nsrv.shutdown()\nassert st == 200 and body == 'привет'\n",
+  "tags": "сеть",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "net.http_post_json",
+  "title": "Отправить JSON по HTTP",
+  "ask": [
+   "отправь json",
+   "post запрос",
+   "отправь данные на сервер"
+  ],
+  "code": "import json\nimport urllib.request\n\n\ndef post_json(url, data, token='', timeout=10):\n    h = {'Content-Type': 'application/json'}\n    if token:\n        h['Authorization'] = 'Bearer ' + token\n    req = urllib.request.Request(url, json.dumps(data).encode('utf-8'), h)\n    with urllib.request.urlopen(req, timeout=timeout) as r:\n        return json.loads(r.read().decode('utf-8'))\n",
+  "test": "import threading, http.server, json\nclass H(http.server.BaseHTTPRequestHandler):\n    def do_POST(self):\n        n = int(self.headers['Content-Length']); d = json.loads(self.rfile.read(n))\n        self.send_response(200); self.end_headers(); self.wfile.write(json.dumps({'got': d}).encode())\n    def log_message(self, *a): pass\nsrv = http.server.HTTPServer(('127.0.0.1', 0), H)\nthreading.Thread(target=srv.serve_forever, daemon=True).start()\nr = post_json('http://127.0.0.1:%d/' % srv.server_address[1], {'a': 1})\nsrv.shutdown()\nassert r == {'got': {'a': 1}}\n",
+  "tags": "сеть",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "net.port_open",
+  "title": "Проверить, открыт ли порт",
+  "ask": [
+   "проверь порт",
+   "порт открыт",
+   "доступен ли сервер по порту"
+  ],
+  "code": "import socket\n\n\ndef port_open(host, port, timeout=2.0):\n    try:\n        with socket.create_connection((host, int(port)), timeout=timeout):\n            return True\n    except OSError:\n        return False\n",
+  "test": "import socket\ns = socket.socket(); s.bind(('127.0.0.1', 0)); s.listen(1)\nassert port_open('127.0.0.1', s.getsockname()[1])\ns.close()\nassert not port_open('127.0.0.1', 1, 0.2)\n",
+  "tags": "сеть",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "net.simple_server",
+  "title": "Простой HTTP-сервер с JSON",
+  "ask": [
+   "напиши http сервер",
+   "простой сервер api",
+   "веб-сервер на python"
+  ],
+  "code": "import http.server\nimport json\n\n\nclass Handler(http.server.BaseHTTPRequestHandler):\n    def do_GET(self):\n        body = json.dumps({'ok': True, 'path': self.path}, ensure_ascii=False).encode('utf-8')\n        self.send_response(200)\n        self.send_header('Content-Type', 'application/json; charset=utf-8')\n        self.send_header('Content-Length', str(len(body)))\n        self.end_headers()\n        self.wfile.write(body)\n\n    def log_message(self, *a):\n        pass\n\n\ndef make_server(port=0):\n    return http.server.ThreadingHTTPServer(('127.0.0.1', port), Handler)\n",
+  "test": "import threading, urllib.request, json\nsrv = make_server()\nthreading.Thread(target=srv.serve_forever, daemon=True).start()\nr = json.loads(urllib.request.urlopen('http://127.0.0.1:%d/x' % srv.server_address[1]).read())\nsrv.shutdown()\nassert r == {'ok': True, 'path': '/x'}\n",
+  "tags": "сеть",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "net.udp",
+  "title": "Передать сообщение по UDP",
+  "ask": [
+   "udp сообщение",
+   "отправь пакет udp"
+  ],
+  "code": "import socket\n\n\ndef udp_send(host, port, data):\n    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)\n    try:\n        s.sendto(data if isinstance(data, bytes) else str(data).encode('utf-8'), (host, port))\n    finally:\n        s.close()\n",
+  "test": "import socket\nr = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); r.bind(('127.0.0.1', 0)); r.settimeout(2)\nudp_send('127.0.0.1', r.getsockname()[1], 'привет')\nassert r.recvfrom(100)[0].decode() == 'привет'\n",
+  "tags": "сеть",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "thr.worker",
+  "title": "Фоновый поток с остановкой",
+  "ask": [
+   "фоновый поток",
+   "thread",
+   "запусти в фоне"
+  ],
+  "code": "import threading\nimport time\n\n\nclass Worker(threading.Thread):\n    def __init__(self, fn, every=1.0):\n        super().__init__(daemon=True)\n        self.fn, self.every = fn, every\n        self._stop_ev = threading.Event()\n\n    def run(self):\n        while not self._stop_ev.is_set():\n            self.fn()\n            self._stop_ev.wait(self.every)\n\n    def stop(self):\n        self._stop_ev.set()\n",
+  "test": "n = []\nw = Worker(lambda: n.append(1), 0.01); w.start()\nimport time; time.sleep(0.1); w.stop(); w.join(1)\nassert len(n) >= 3\n",
+  "tags": "потоки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "thr.queue",
+  "title": "Очередь задач между потоками",
+  "ask": [
+   "очередь задач",
+   "producer consumer",
+   "обработка задач потоками"
+  ],
+  "code": "import queue\nimport threading\n\n\ndef run_pool(items, fn, workers=3):\n    q = queue.Queue()\n    for it in items:\n        q.put(it)\n    out, lock = [], threading.Lock()\n\n    def work():\n        while True:\n            try:\n                it = q.get_nowait()\n            except queue.Empty:\n                return\n            r = fn(it)\n            with lock:\n                out.append(r)\n\n    ts = [threading.Thread(target=work) for _ in range(workers)]\n    for t in ts:\n        t.start()\n    for t in ts:\n        t.join()\n    return out\n",
+  "test": "assert sorted(run_pool(range(10), lambda x: x * x)) == [x * x for x in range(10)]\n",
+  "tags": "потоки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "db.sqlite",
+  "title": "SQLite: таблица, запись, чтение",
+  "ask": [
+   "база данных sqlite",
+   "сохрани в базу",
+   "sqlite"
+  ],
+  "code": "import sqlite3\n\n\ndef open_db(path=':memory:'):\n    db = sqlite3.connect(path)\n    db.execute('CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, name TEXT, val REAL)')\n    return db\n\n\ndef add_item(db, name, val):\n    db.execute('INSERT INTO items (name, val) VALUES (?, ?)', (name, val))\n    db.commit()\n\n\ndef all_items(db):\n    return db.execute('SELECT name, val FROM items ORDER BY id').fetchall()\n",
+  "test": "db = open_db()\nadd_item(db, 'a', 1.5)\nassert all_items(db) == [('a', 1.5)]\n",
+  "tags": "базы",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "test.unittest",
+  "title": "Модульные тесты (unittest)",
+  "ask": [
+   "напиши тест",
+   "unittest",
+   "проверь функцию тестом"
+  ],
+  "code": "import unittest\n\n\ndef add(a, b):\n    return a + b\n\n\nclass AddTest(unittest.TestCase):\n    def test_add(self):\n        self.assertEqual(add(2, 3), 5)\n\n    def test_types(self):\n        with self.assertRaises(TypeError):\n            add(1, None)\n",
+  "test": "r = unittest.TextTestRunner(stream=open('/dev/null', 'w')).run(unittest.defaultTestLoader.loadTestsFromTestCase(AddTest))\nassert r.wasSuccessful()\n",
+  "tags": "тесты",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "hw.serial_parse",
+  "title": "Разбор строки от датчика (ключ=значение)",
+  "ask": [
+   "разбери строку датчика",
+   "парсинг serial",
+   "строка с показаниями"
+  ],
+  "code": "def parse_reading(line):\n    out = {}\n    for part in line.strip().split(';'):\n        k, sep, v = part.partition('=')\n        if not sep:\n            continue\n        try:\n            out[k.strip()] = float(v)\n        except ValueError:\n            out[k.strip()] = v.strip()\n    return out\n",
+  "test": "assert parse_reading('t=21.5;h=40;id=a1') == {'t': 21.5, 'h': 40.0, 'id': 'a1'}\n",
+  "tags": "железо",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "hw.checksum",
+  "title": "Контрольная сумма кадра (XOR и CRC8)",
+  "ask": [
+   "контрольная сумма",
+   "crc8",
+   "xor проверка кадра"
+  ],
+  "code": "def xor_sum(data):\n    r = 0\n    for b in data:\n        r ^= b\n    return r\n\n\ndef crc8(data, poly=0x07):\n    c = 0\n    for b in data:\n        c ^= b\n        for _ in range(8):\n            c = ((c << 1) ^ poly) & 0xFF if c & 0x80 else (c << 1) & 0xFF\n    return c\n",
+  "test": "assert xor_sum(b'\\x01\\x02\\x03') == 0\nassert crc8(b'123456789') == 0xF4\n",
+  "tags": "железо",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "hw.debounce",
+  "title": "Антидребезг кнопки",
+  "ask": [
+   "антидребезг",
+   "debounce",
+   "дребезг кнопки"
+  ],
+  "code": "class Debounce:\n    def __init__(self, need=3):\n        self.need, self.cnt, self.state = need, 0, 0\n\n    def feed(self, raw):\n        if raw == self.state:\n            self.cnt = 0\n        else:\n            self.cnt += 1\n            if self.cnt >= self.need:\n                self.state, self.cnt = raw, 0\n        return self.state\n",
+  "test": "d = Debounce(3)\nassert [d.feed(x) for x in (1, 0, 1, 1, 1, 1)] == [0, 0, 0, 0, 1, 1]\n",
+  "tags": "железо",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "hw.hysteresis",
+  "title": "Порог с гистерезисом",
+  "ask": [
+   "порог с гистерезисом",
+   "включи при превышении",
+   "термостат"
+  ],
+  "code": "class Hysteresis:\n    def __init__(self, low, high):\n        self.low, self.high, self.on = low, high, False\n\n    def feed(self, x):\n        if x >= self.high:\n            self.on = True\n        elif x <= self.low:\n            self.on = False\n        return self.on\n",
+  "test": "h = Hysteresis(20, 25)\nassert [h.feed(x) for x in (22, 26, 23, 19)] == [False, True, True, False]\n",
+  "tags": "железо",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "hw.pwm",
+  "title": "Яркость/ШИМ из процентов",
+  "ask": [
+   "шим из процентов",
+   "pwm значение",
+   "яркость в 0-255"
+  ],
+  "code": "def percent_to_pwm(p, bits=8):\n    p = max(0.0, min(100.0, float(p)))\n    return int(round(p / 100.0 * ((1 << bits) - 1)))\n",
+  "test": "assert percent_to_pwm(50) == 128 and percent_to_pwm(150) == 255 and percent_to_pwm(-1) == 0\n",
+  "tags": "железо",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "hw.adc",
+  "title": "АЦП: код в напряжение и температуру датчика",
+  "ask": [
+   "перевод кода ацп в вольты",
+   "температура с датчика",
+   "adc в напряжение"
+  ],
+  "code": "def adc_to_volts(code, vref=3.3, bits=12):\n    return code * vref / ((1 << bits) - 1)\n\n\ndef lm35_celsius(volts):\n    return volts * 100.0\n",
+  "test": "assert abs(adc_to_volts(4095) - 3.3) < 1e-9\nassert lm35_celsius(0.25) == 25.0\n",
+  "tags": "железо",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "hw.frame",
+  "title": "Кадр с длиной и проверкой (пакет данных)",
+  "ask": [
+   "упакуй данные в кадр",
+   "протокол обмена",
+   "собери пакет"
+  ],
+  "code": "import struct\n\n\ndef pack_frame(cmd, payload=b''):\n    body = bytes([cmd, len(payload)]) + payload\n    return b'\\xAA' + body + bytes([sum(body) & 0xFF])\n\n\ndef unpack_frame(raw):\n    if len(raw) < 4 or raw[0] != 0xAA:\n        return None\n    n = raw[2]\n    if len(raw) != 4 + n or (sum(raw[1:-1]) & 0xFF) != raw[-1]:\n        return None\n    return raw[1], raw[3:3 + n]\n",
+  "test": "f = pack_frame(5, b'ab')\nassert unpack_frame(f) == (5, b'ab')\nassert unpack_frame(f[:-1] + b'\\x00') is None\n",
+  "tags": "железо",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "hw.blink",
+  "title": "Расписание мигания (такты)",
+  "ask": [
+   "мигание светодиода",
+   "blink",
+   "переключай каждые n секунд"
+  ],
+  "code": "def blink_state(t, period=1.0, duty=0.5):\n    return (t % period) < period * duty\n",
+  "test": "assert blink_state(0.2) and not blink_state(0.7)\n",
+  "tags": "железо",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "ai.sigmoid",
+  "title": "Сигмоида и softmax",
+  "ask": [
+   "сигмоида",
+   "softmax",
+   "функция активации"
+  ],
+  "code": "import math\n\n\ndef sigmoid(x):\n    return 1.0 / (1.0 + math.exp(-max(-60.0, min(60.0, x))))\n\n\ndef softmax(xs):\n    m = max(xs)\n    e = [math.exp(x - m) for x in xs]\n    s = sum(e)\n    return [v / s for v in e]\n",
+  "test": "assert abs(sigmoid(0) - 0.5) < 1e-9\nassert abs(sum(softmax([1, 2, 3])) - 1) < 1e-9\n",
+  "tags": "нейросети",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "ai.cosine",
+  "title": "Косинусное сходство",
+  "ask": [
+   "сходство векторов",
+   "cosine similarity",
+   "насколько похожи тексты"
+  ],
+  "code": "import math\n\n\ndef cosine(a, b):\n    na = math.sqrt(sum(x * x for x in a))\n    nb = math.sqrt(sum(x * x for x in b))\n    if not na or not nb:\n        return 0.0\n    return sum(x * y for x, y in zip(a, b)) / (na * nb)\n",
+  "test": "assert abs(cosine([1, 0], [1, 0]) - 1) < 1e-9\nassert cosine([1, 0], [0, 1]) == 0\n",
+  "tags": "нейросети",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "ai.jaccard",
+  "title": "Сходство текстов по словам",
+  "ask": [
+   "похожи ли два текста",
+   "сравни тексты",
+   "jaccard"
+  ],
+  "code": "import re\n\n\ndef words(s):\n    return set(re.findall(r'\\w+', s.lower()))\n\n\ndef similarity(a, b):\n    wa, wb = words(a), words(b)\n    return len(wa & wb) / len(wa | wb) if wa | wb else 0.0\n",
+  "test": "assert similarity('мозг думает', 'мозг думает') == 1.0\nassert similarity('а б', 'в г') == 0.0\n",
+  "tags": "нейросети",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "ai.perceptron",
+  "title": "Перцептрон: обучение на примерах",
+  "ask": [
+   "напиши нейрон",
+   "перцептрон",
+   "простая нейросеть"
+  ],
+  "code": "class Perceptron:\n    def __init__(self, n, lr=0.1):\n        self.w = [0.0] * n\n        self.b = 0.0\n        self.lr = lr\n\n    def predict(self, x):\n        return 1 if sum(w * v for w, v in zip(self.w, x)) + self.b > 0 else 0\n\n    def fit(self, X, y, epochs=50):\n        for _ in range(epochs):\n            for x, t in zip(X, y):\n                e = t - self.predict(x)\n                if e:\n                    self.w = [w + self.lr * e * v for w, v in zip(self.w, x)]\n                    self.b += self.lr * e\n",
+  "test": "p = Perceptron(2)\np.fit([[0, 0], [0, 1], [1, 0], [1, 1]], [0, 0, 0, 1])\nassert [p.predict(x) for x in ([0, 0], [1, 1])] == [0, 1]\n",
+  "tags": "нейросети",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "ai.knn",
+  "title": "Ближайший сосед (классификация)",
+  "ask": [
+   "классификатор",
+   "knn",
+   "ближайшие соседи"
+  ],
+  "code": "def knn(train, x, k=3):\n    d = sorted(((sum((a - b) ** 2 for a, b in zip(p, x)), lab) for p, lab in train))[:k]\n    votes = {}\n    for _s, lab in d:\n        votes[lab] = votes.get(lab, 0) + 1\n    return max(votes, key=votes.get)\n",
+  "test": "t = [([0, 0], 'a'), ([0, 1], 'a'), ([5, 5], 'b'), ([5, 6], 'b')]\nassert knn(t, [0, 0.5], 3) == 'a'\nassert knn(t, [5, 5.5], 3) == 'b'\n",
+  "tags": "нейросети",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "ai.tfidf",
+  "title": "Поиск по тексту (BM25-подобный)",
+  "ask": [
+   "поиск по документам",
+   "найди похожий документ",
+   "tf-idf"
+  ],
+  "code": "import math\nimport re\nfrom collections import Counter\n\n\ndef search(docs, query, top=3):\n    tok = lambda s: re.findall(r'\\w+', s.lower())\n    toks = [tok(d) for d in docs]\n    n = len(docs)\n    df = Counter(w for t in toks for w in set(t))\n    q = tok(query)\n    sc = []\n    for i, t in enumerate(toks):\n        c = Counter(t)\n        s = sum((c[w] / (c[w] + 1.5)) * math.log(1 + n / df[w]) for w in q if w in c)\n        sc.append((s, i))\n    return [i for s, i in sorted(sc, reverse=True)[:top] if s > 0]\n",
+  "test": "docs = ['мозг думает', 'плата мигает светодиодом', 'облако хранит память']\nassert search(docs, 'светодиодом плата')[0] == 1\n",
+  "tags": "нейросети",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "sys.disk",
+  "title": "Свободное место на диске",
+  "ask": [
+   "свободное место",
+   "сколько места на диске",
+   "shutil disk usage"
+  ],
+  "code": "import shutil\n\n\ndef disk_free(path='/'):\n    u = shutil.disk_usage(path)\n    return {'total_gb': round(u.total / 1e9, 1), 'free_gb': round(u.free / 1e9, 1), 'used_pct': round(100 * u.used / u.total, 1)}\n",
+  "test": "r = disk_free('/')\nassert r['total_gb'] > 0 and 0 <= r['used_pct'] <= 100\n",
+  "tags": "система",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "sys.proc_list",
+  "title": "Процессы через /proc (Linux)",
+  "ask": [
+   "список процессов python",
+   "найди процесс по имени"
+  ],
+  "code": "import os\n\n\ndef find_process(name):\n    out = []\n    for pid in os.listdir('/proc'):\n        if pid.isdigit():\n            try:\n                cmd = open('/proc/%s/cmdline' % pid, 'rb').read().replace(b'\\0', b' ').decode('utf-8', 'replace').strip()\n            except OSError:\n                continue\n            if name in cmd:\n                out.append((int(pid), cmd))\n    return out\n",
+  "test": "import os\nassert any(p == os.getpid() for p, _c in find_process('python'))\n",
+  "tags": "система",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "sys.watch_file",
+  "title": "Следить за изменением файла",
+  "ask": [
+   "следи за файлом",
+   "файл изменился",
+   "watch file"
+  ],
+  "code": "import os\n\n\nclass FileWatcher:\n    def __init__(self, path):\n        self.path, self.m = path, None\n\n    def changed(self):\n        try:\n            m = os.stat(self.path).st_mtime_ns\n        except OSError:\n            return False\n        ch = self.m is not None and m != self.m\n        self.m = m\n        return ch\n",
+  "test": "import tempfile, os, time\np = os.path.join(tempfile.mkdtemp(), 'a'); open(p, 'w').write('1')\nw = FileWatcher(p); assert not w.changed()\ntime.sleep(0.02); open(p, 'w').write('22'); os.utime(p, (1, 2))\nassert w.changed()\n",
+  "tags": "система",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "sys.signal",
+  "title": "Корректное завершение по сигналу",
+  "ask": [
+   "обработай ctrl c",
+   "завершение по сигналу",
+   "graceful shutdown"
+  ],
+  "code": "import signal\nimport threading\n\nstop = threading.Event()\n\n\ndef install_signals():\n    for s in (signal.SIGINT, signal.SIGTERM):\n        signal.signal(s, lambda *_: stop.set())\n",
+  "test": "import os, signal\ninstall_signals()\nos.kill(os.getpid(), signal.SIGTERM)\nassert stop.wait(1)\n",
+  "tags": "система",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "fix.indexerror",
+  "title": "Исправить: IndexError: list index out of range",
+  "ask": [
+   "исправь ошибку IndexError: list index out of range",
+   "IndexError: list index out of range",
+   "почему IndexError: list index out of range"
+  ],
+  "code": "# Ошибка: IndexError: list index out of range\n# Причина: обращение к элементу за пределами списка\n# Было:\n#   x = items[0]\n# Стало:\ndef first(items, default=None):\n    return items[0] if items else default\n",
+  "fixcode": "def first(items, default=None):\n    return items[0] if items else default\n",
+  "test": "assert first([]) is None and first([5]) == 5\n",
+  "tags": "ошибки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "fix.keyerror",
+  "title": "Исправить: KeyError",
+  "ask": [
+   "исправь ошибку KeyError",
+   "KeyError",
+   "почему KeyError"
+  ],
+  "code": "# Ошибка: KeyError\n# Причина: в словаре нет такого ключа\n# Было:\n#   v = d['a']\n# Стало:\ndef get(d, k, default=None):\n    return d.get(k, default)\n",
+  "fixcode": "def get(d, k, default=None):\n    return d.get(k, default)\n",
+  "test": "assert get({}, 'a', 0) == 0\n",
+  "tags": "ошибки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "fix.zerodiv",
+  "title": "Исправить: ZeroDivisionError",
+  "ask": [
+   "исправь ошибку ZeroDivisionError",
+   "ZeroDivisionError",
+   "почему ZeroDivisionError"
+  ],
+  "code": "# Ошибка: ZeroDivisionError\n# Причина: деление на ноль\n# Было:\n#   r = a / b\n# Стало:\ndef safe_div(a, b, default=0.0):\n    return a / b if b else default\n",
+  "fixcode": "def safe_div(a, b, default=0.0):\n    return a / b if b else default\n",
+  "test": "assert safe_div(1, 0) == 0.0 and safe_div(6, 3) == 2\n",
+  "tags": "ошибки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "fix.typeerror_none",
+  "title": "Исправить: TypeError: 'NoneType' object is not subscriptable",
+  "ask": [
+   "исправь ошибку TypeError: 'NoneType' object is not subscriptable",
+   "TypeError: 'NoneType' object is not subscriptable",
+   "почему TypeError: 'NoneType' object is not subscriptable"
+  ],
+  "code": "# Ошибка: TypeError: 'NoneType' object is not subscriptable\n# Причина: функция вернула None, а ждали список или словарь\n# Было:\n#   r = f()['x']\n# Стало:\ndef safe_item(r, k, default=None):\n    return r.get(k, default) if isinstance(r, dict) else default\n",
+  "fixcode": "def safe_item(r, k, default=None):\n    return r.get(k, default) if isinstance(r, dict) else default\n",
+  "test": "assert safe_item(None, 'x', 1) == 1\n",
+  "tags": "ошибки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "fix.unicode",
+  "title": "Исправить: UnicodeDecodeError",
+  "ask": [
+   "исправь ошибку UnicodeDecodeError",
+   "UnicodeDecodeError",
+   "почему UnicodeDecodeError"
+  ],
+  "code": "# Ошибка: UnicodeDecodeError\n# Причина: файл открыт не в той кодировке\n# Было:\n#   open(p).read()\n# Стало:\ndef read_any(p):\n    b = open(p, 'rb').read()\n    for enc in ('utf-8', 'cp1251'):\n        try:\n            return b.decode(enc)\n        except UnicodeDecodeError:\n            pass\n    return b.decode('utf-8', 'replace')\n",
+  "fixcode": "def read_any(p):\n    b = open(p, 'rb').read()\n    for enc in ('utf-8', 'cp1251'):\n        try:\n            return b.decode(enc)\n        except UnicodeDecodeError:\n            pass\n    return b.decode('utf-8', 'replace')\n",
+  "test": "import tempfile, os\np = os.path.join(tempfile.mkdtemp(), 'a'); open(p, 'wb').write('привет'.encode('cp1251'))\nassert read_any(p) == 'привет'\n",
+  "tags": "ошибки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "fix.filenotfound",
+  "title": "Исправить: FileNotFoundError",
+  "ask": [
+   "исправь ошибку FileNotFoundError",
+   "FileNotFoundError",
+   "почему FileNotFoundError"
+  ],
+  "code": "# Ошибка: FileNotFoundError\n# Причина: файла или папки нет\n# Было:\n#   open('data/a.txt')\n# Стало:\nimport os\n\n\ndef open_write(p):\n    os.makedirs(os.path.dirname(os.path.abspath(p)), exist_ok=True)\n    return open(p, 'w', encoding='utf-8')\n",
+  "fixcode": "import os\n\n\ndef open_write(p):\n    os.makedirs(os.path.dirname(os.path.abspath(p)), exist_ok=True)\n    return open(p, 'w', encoding='utf-8')\n",
+  "test": "import tempfile, os\np = os.path.join(tempfile.mkdtemp(), 'n', 'a'); open_write(p).close(); assert os.path.exists(p)\n",
+  "tags": "ошибки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "fix.recursion",
+  "title": "Исправить: RecursionError: maximum recursion depth exceeded",
+  "ask": [
+   "исправь ошибку RecursionError: maximum recursion depth exceeded",
+   "RecursionError: maximum recursion depth exceeded",
+   "почему RecursionError: maximum recursion depth exceeded"
+  ],
+  "code": "# Ошибка: RecursionError: maximum recursion depth exceeded\n# Причина: рекурсия без остановки или слишком глубокая\n# Было:\n#   def f(n):\n#       return f(n - 1)\n# Стало:\ndef total(n):\n    s = 0\n    while n > 0:\n        s += n\n        n -= 1\n    return s\n",
+  "fixcode": "def total(n):\n    s = 0\n    while n > 0:\n        s += n\n        n -= 1\n    return s\n",
+  "test": "assert total(100000) == 5000050000\n",
+  "tags": "ошибки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "fix.mutable_default",
+  "title": "Исправить: список по умолчанию «запоминает» значения",
+  "ask": [
+   "исправь ошибку список по умолчанию «запоминает» значения",
+   "список по умолчанию «запоминает» значения",
+   "почему список по умолчанию «запоминает» значения"
+  ],
+  "code": "# Ошибка: список по умолчанию «запоминает» значения\n# Причина: изменяемое значение по умолчанию создаётся один раз\n# Было:\n#   def add(x, a=[]):\n#       a.append(x)\n#       return a\n# Стало:\ndef add(x, a=None):\n    a = [] if a is None else a\n    a.append(x)\n    return a\n",
+  "fixcode": "def add(x, a=None):\n    a = [] if a is None else a\n    a.append(x)\n    return a\n",
+  "test": "assert add(1) == [1] and add(2) == [2]\n",
+  "tags": "ошибки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "fix.timeout",
+  "title": "Исправить: TimeoutError / зависание сети",
+  "ask": [
+   "исправь ошибку TimeoutError / зависание сети",
+   "TimeoutError / зависание сети",
+   "почему TimeoutError / зависание сети"
+  ],
+  "code": "# Ошибка: TimeoutError / зависание сети\n# Причина: запрос без таймаута ждёт вечно\n# Было:\n#   urllib.request.urlopen(url)\n# Стало:\nimport urllib.request\n\n\ndef fetch(url):\n    return urllib.request.urlopen(url, timeout=10).read()\n",
+  "fixcode": "import urllib.request\n\n\ndef fetch(url):\n    return urllib.request.urlopen(url, timeout=10).read()\n",
+  "test": "assert callable(fetch)\n",
+  "tags": "ошибки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "fix.json",
+  "title": "Исправить: json.decoder.JSONDecodeError",
+  "ask": [
+   "исправь ошибку json.decoder.JSONDecodeError",
+   "json.decoder.JSONDecodeError",
+   "почему json.decoder.JSONDecodeError"
+  ],
+  "code": "# Ошибка: json.decoder.JSONDecodeError\n# Причина: в файле не JSON или он обрезан\n# Было:\n#   json.load(open(p))\n# Стало:\nimport json\n\n\ndef safe_json(s, default=None):\n    try:\n        return json.loads(s)\n    except (ValueError, TypeError):\n        return default\n",
+  "fixcode": "import json\n\n\ndef safe_json(s, default=None):\n    try:\n        return json.loads(s)\n    except (ValueError, TypeError):\n        return default\n",
+  "test": "assert safe_json('{x', 5) == 5 and safe_json('[1]') == [1]\n",
+  "tags": "ошибки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ },
+ {
+  "id": "fix.permission",
+  "title": "Исправить: PermissionError",
+  "ask": [
+   "исправь ошибку PermissionError",
+   "PermissionError",
+   "почему PermissionError"
+  ],
+  "code": "# Ошибка: PermissionError\n# Причина: нет прав на файл или порт\n# Было:\n#   open('/etc/x', 'w')\n# Стало:\nimport os, tempfile\n\n\ndef writable_dir():\n    for d in (os.getcwd(), os.path.expanduser('~'), tempfile.gettempdir()):\n        if os.access(d, os.W_OK):\n            return d\n",
+  "fixcode": "import os, tempfile\n\n\ndef writable_dir():\n    for d in (os.getcwd(), os.path.expanduser('~'), tempfile.gettempdir()):\n        if os.access(d, os.W_OK):\n            return d\n",
+  "test": "assert writable_dir()\n",
+  "tags": "ошибки",
+  "tested": true,
+  "tested_on": "python 3.13, linux, при сборке"
+ }
+]

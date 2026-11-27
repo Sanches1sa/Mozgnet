@@ -148,8 +148,7 @@ class DoomBrain:
         if temper > 0.3:
             parts.append("генератор бодрый %d Гц" % int(hz))
         if invite:
-            parts.append("%s позвал%s" % (mood.get("invite_by") or "владелец",
-                                          "а" if "LLM" in str(mood.get("invite_by") or "") else ""))
+            parts.append("владелец позвал")
         if talk:
             parts.append("со мной разговаривают")
         if self.fatigue > 0.2:

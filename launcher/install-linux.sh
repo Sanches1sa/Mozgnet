@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================================
-#  install-linux.sh — ЛАУНЧЕР «МОЗГ-12» v3.159 ДЛЯ LINUX (РЕД ОС, Ubuntu)
+#  install-linux.sh — ЛАУНЧЕР «STAR GATE» v3.159 ДЛЯ LINUX (РЕД ОС, Ubuntu)
 #
 #  Запуск из распакованной папки (БЕЗ sudo — пароль спросит сам, когда нужно):
 #      bash install-linux.sh
@@ -17,7 +17,7 @@
 #      пароль панели и мозг-токен; архивы *-update.zip рядом ставит поверх кода;
 #    · открывает порт облака 8077 в файрволе (firewalld в РЕД ОС, ufw в Ubuntu),
 #      чтобы плата достучалась до облака;
-#    · ярлыки «Мозг-12 запуск» в меню и на рабочем столе, команда neuro12-start;
+#    · ярлыки «Star Gate запуск» в меню и на рабочем столе, команда neuro12-start;
 #    · по желанию — автозапуск облака при входе (сервис systemd пользователя).
 #
 #  Опции: --yes (без вопросов) · --no-deps · --no-cloud · --cloud ПУТЬ
@@ -285,7 +285,7 @@ if [ "$CLOUD_ON" -eq 1 ]; then
         mkdir -p "$(dirname "$UNIT")"
         cat > "$UNIT" <<EOF
 [Unit]
-Description=neuro12-cloud — облако «Мозг-12» (лаунчер)
+Description=neuro12-cloud — облако «Star Gate» (лаунчер)
 After=network-online.target
 
 [Service]
@@ -308,7 +308,7 @@ EOF
         cat > "$HOME/.config/autostart/neuro12-cloud.desktop" <<EOF
 [Desktop Entry]
 Type=Application
-Name=Мозг-12: облако
+Name=Star Gate: облако
 Exec=sh -c 'cd "$CLOUD" && NEURO_DATA="$CLOUD/data" NEURO_PORT=$PORT exec $PYB server/app.py >>"$CLOUD/data/launcher_cloud.log" 2>&1'
 Icon=neuro12
 NoDisplay=true
@@ -351,9 +351,9 @@ cat > "$DESK_FILE" <<EOF
 [Desktop Entry]
 Type=Application
 Version=1.0
-Name=Мозг-12 запуск
-GenericName=Лаунчер «Мозг-12»
-Comment=Облако и плата «Мозг-12»: запуск, сканер сети, вращение MAC
+Name=Star Gate запуск
+GenericName=Лаунчер «Star Gate»
+Comment=Облако и плата «Star Gate»: запуск, сканер сети, вращение MAC
 Exec="$EXE" %U
 Icon=neuro12
 Terminal=false
@@ -370,7 +370,7 @@ EOF
 chmod 755 "$DESK_FILE"
 need update-desktop-database && update-desktop-database "$DATA/applications" >/dev/null 2>&1
 need gtk-update-icon-cache && gtk-update-icon-cache -q -t "$DATA/icons/hicolor" >/dev/null 2>&1
-ok "меню приложений: «Мозг-12 запуск»"
+ok "меню приложений: «Star Gate запуск»"
 DESK="$(xdg-user-dir DESKTOP 2>/dev/null)"
 [ -n "$DESK" ] && [ "$DESK" != "$HOME" ] || { [ -d "$HOME/Рабочий стол" ] && DESK="$HOME/Рабочий стол" || DESK="$HOME/Desktop"; }
 if [ -d "$DESK" ]; then
@@ -380,8 +380,8 @@ if [ -d "$DESK" ]; then
 fi
 
 # ------------------------------------------------------------ готово
-printf '\n%b  Готово. Лаунчер «Мозг-12» установлен.%b\n' "$G" "$N"
-printf '  Запуск: ярлык «Мозг-12 запуск» или команда  neuro12-start\n'
+printf '\n%b  Готово. Лаунчер «Star Gate» установлен.%b\n' "$G" "$N"
+printf '  Запуск: ярлык «Star Gate запуск» или команда  neuro12-start\n'
 printf '  Без окна (сервер, ssh):  neuro12-start --no-window\n'
 printf '  Удаление: bash %s/uninstall-linux.sh\n' "$LDIR"
 case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) printf '  (команда neuro12-start появится в PATH после нового входа в систему)\n' ;; esac

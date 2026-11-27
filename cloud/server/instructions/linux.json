@@ -1,0 +1,2079 @@
+[
+ {
+  "id": "lx.overview",
+  "title": "Общий обзор Linux-сервера",
+  "ask": [
+   "проверь сервер",
+   "проверь web1",
+   "проверь хост",
+   "проверь машину",
+   "покажи состояние web1",
+   "как дела на сервере",
+   "обзор сервера",
+   "состояние сервера",
+   "осмотри машину"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "check"
+   },
+   {
+    "tool": "run",
+    "command": "uptime; nproc; free -h; df -h / | tail -1"
+   },
+   {
+    "tool": "run",
+    "command": "systemctl --failed --no-pager 2>/dev/null | head -15 || echo 'systemd нет (контейнер?)'"
+   }
+  ],
+  "verify": [
+   "понятно, жив ли сервер, нагрузка, память, диск, упавшие службы"
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.os",
+  "title": "Версия ОС и ядра",
+  "ask": [
+   "версия системы",
+   "какая ос",
+   "версия ядра",
+   "какой дистрибутив"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "cat /etc/os-release | head -6; uname -a"
+   },
+   {
+    "tool": "run",
+    "command": "hostnamectl 2>/dev/null | head -10"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.uptime",
+  "title": "Время работы и нагрузка",
+  "ask": [
+   "аптайм",
+   "сколько работает сервер",
+   "нагрузка сервера",
+   "load average"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "uptime -p; uptime; nproc"
+   }
+  ],
+  "verify": [
+   "нагрузка выше числа ядер = перегрузка"
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.mem",
+  "title": "Память",
+  "ask": [
+   "сколько памяти",
+   "память занята",
+   "не хватает оперативки",
+   "swap"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "free -h"
+   },
+   {
+    "tool": "run",
+    "command": "ps aux --sort=-%mem | head -10"
+   },
+   {
+    "tool": "run",
+    "command": "dmesg 2>/dev/null | grep -i 'out of memory' | tail -5"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.cpu",
+  "title": "Процессор и нагрузка по процессам",
+  "ask": [
+   "что грузит процессор",
+   "процессор загружен",
+   "сервер тормозит",
+   "лагает",
+   "какой процессор"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "lscpu | head -15"
+   },
+   {
+    "tool": "run",
+    "command": "ps aux --sort=-%cpu | head -12"
+   },
+   {
+    "tool": "run",
+    "command": "top -bn1 | head -15"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.disk",
+  "title": "Место на дисках",
+  "ask": [
+   "сколько места",
+   "диск заполнен",
+   "место на диске",
+   "закончилось место"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "df -h -x tmpfs -x devtmpfs"
+   },
+   {
+    "tool": "run",
+    "command": "df -i / | tail -2"
+   },
+   {
+    "tool": "run",
+    "command": "du -xh --max-depth=1 / 2>/dev/null | sort -h | tail -12"
+   }
+  ],
+  "notes": "inode закончились — много мелких файлов (df -i).",
+  "verified": false
+ },
+ {
+  "id": "lx.bigfiles",
+  "title": "Самые большие файлы",
+  "ask": [
+   "найди большие файлы",
+   "что занимает место",
+   "самые тяжёлые файлы"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "find ~ -xdev -type f -size +100M -printf '%s %p\\n' 2>/dev/null | sort -n | tail -10"
+   },
+   {
+    "tool": "run",
+    "command": "du -xh --max-depth=2 /var 2>/dev/null | sort -h | tail -12"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.dirsize",
+  "title": "Размер папки",
+  "ask": [
+   "сколько весит папка",
+   "размер каталога",
+   "размер директории"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "du -sh {dir} 2>&1"
+   },
+   {
+    "tool": "run",
+    "command": "du -xh --max-depth=1 {dir} 2>/dev/null | sort -h | tail -12"
+   }
+  ],
+  "slots": {
+   "dir": "(?:папк\\w*|каталог\\w*|директори\\w*|dir)\\s+((?:/|~/)[\\w./-]+)"
+  },
+  "verified": false
+ },
+ {
+  "id": "lx.mounts",
+  "title": "Диски и монтирование",
+  "ask": [
+   "какие диски подключены",
+   "смонтированные разделы",
+   "fstab",
+   "lsblk"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "lsblk -f"
+   },
+   {
+    "tool": "run",
+    "command": "findmnt --real 2>/dev/null | head -20"
+   },
+   {
+    "tool": "run",
+    "command": "cat /etc/fstab"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.smart",
+  "title": "Здоровье диска",
+  "ask": [
+   "здоровье диска",
+   "smart диска",
+   "диск умирает"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "sudo -n smartctl -H /dev/sda 2>&1 | head -12"
+   },
+   {
+    "tool": "run",
+    "command": "lsblk -d -o NAME,SIZE,MODEL,ROTA"
+   }
+  ],
+  "notes": "нужен пакет smartmontools",
+  "verified": false
+ },
+ {
+  "id": "lx.temp",
+  "title": "Температура и датчики",
+  "ask": [
+   "температура сервера",
+   "перегрев",
+   "датчики температуры"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "sensors 2>/dev/null | head -20 || echo 'lm-sensors не установлен'"
+   },
+   {
+    "tool": "run",
+    "command": "cat /sys/class/thermal/thermal_zone*/temp 2>/dev/null"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.hw",
+  "title": "Железо",
+  "ask": [
+   "какое железо",
+   "характеристики сервера",
+   "pci устройства"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "lscpu | head -12"
+   },
+   {
+    "tool": "run",
+    "command": "lspci 2>/dev/null | head -15"
+   },
+   {
+    "tool": "run",
+    "command": "lsusb 2>/dev/null"
+   },
+   {
+    "tool": "run",
+    "command": "lsblk -d -o NAME,SIZE,MODEL"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.proc.find",
+  "title": "Найти процесс",
+  "ask": [
+   "найди процесс",
+   "запущен ли процесс",
+   "pgrep"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "pgrep -a -f {proc} 2>&1 | head -10 || echo 'не найден'"
+   },
+   {
+    "tool": "run",
+    "command": "ps aux | grep -i {proc} | grep -v grep | head -5"
+   }
+  ],
+  "slots": {
+   "proc": "(?:процесс\\w*|process)\\s+([\\w.-]+)"
+  },
+  "verified": false
+ },
+ {
+  "id": "lx.proc.kill",
+  "title": "Завершить процесс по PID",
+  "ask": [
+   "убей процесс",
+   "заверши процесс",
+   "kill процесс"
+  ],
+  "target": "linux",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "ps -p {pid} -o pid,etime,cmd 2>&1",
+    "note": "сначала убедись, что это тот процесс",
+    "stop_on_fail": true
+   },
+   {
+    "tool": "run",
+    "command": "kill {pid} 2>&1"
+   },
+   {
+    "tool": "wait",
+    "seconds": 3
+   },
+   {
+    "tool": "run",
+    "command": "ps -p {pid} 2>&1 || echo 'завершён'"
+   }
+  ],
+  "slots": {
+   "pid": "(?:pid|процесс\\w*)\\s+(\\d{1,7})"
+  },
+  "rollback": "процесс не вернуть; если служба — systemctl start",
+  "notes": "kill шлёт SIGTERM. kill -9 — только если не завершился, и после отдельного вопроса владельцу.",
+  "verified": false
+ },
+ {
+  "id": "lx.zombie",
+  "title": "Зависшие и зомби-процессы",
+  "ask": [
+   "зомби процессы",
+   "зависшие процессы",
+   "процессы в состоянии D"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "ps -eo pid,ppid,stat,etime,cmd | awk '$3 ~ /^[ZD]/' | head -20 || true"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.openfiles",
+  "title": "Открытые файлы и лимиты",
+  "ask": [
+   "too many open files",
+   "лимит файлов",
+   "открытые файлы",
+   "ulimit"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "ulimit -n; cat /proc/sys/fs/file-nr"
+   },
+   {
+    "tool": "run",
+    "command": "lsof 2>/dev/null | wc -l"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.net",
+  "title": "Сетевые интерфейсы и маршруты",
+  "ask": [
+   "сетевые интерфейсы",
+   "какой ip",
+   "маршрут по умолчанию",
+   "сетевая карта"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "ip -br a 2>/dev/null || hostname -I"
+   },
+   {
+    "tool": "run",
+    "command": "ip route | head"
+   },
+   {
+    "tool": "run",
+    "command": "cat /etc/resolv.conf"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.ports",
+  "title": "Открытые порты и кто их слушает",
+  "ask": [
+   "какие порты открыты",
+   "что слушает порт",
+   "открытые порты",
+   "кто слушает"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "ss -tlnp 2>/dev/null | head -30"
+   },
+   {
+    "tool": "run",
+    "command": "ss -s"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.port.who",
+  "title": "Кто занял порт",
+  "ask": [
+   "кто занял порт",
+   "что слушает порт",
+   "порт занят"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "ss -tlnp 2>/dev/null | grep ':{port} ' || echo 'порт не слушается'"
+   },
+   {
+    "tool": "run",
+    "command": "sudo -n lsof -i :{port} 2>&1 | head -5"
+   }
+  ],
+  "slots": {
+   "port": "(?:порт\\w*|port)\\s+(\\d{1,5})"
+  },
+  "verified": false
+ },
+ {
+  "id": "lx.ping",
+  "title": "Доступность сети",
+  "ask": [
+   "нет интернета",
+   "интернет пропал",
+   "проверь сеть",
+   "ping",
+   "сеть не работает"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "ping -c 3 -W 2 1.1.1.1 2>&1 | tail -4"
+   },
+   {
+    "tool": "run",
+    "command": "ping -c 3 -W 2 ya.ru 2>&1 | tail -4"
+   },
+   {
+    "tool": "run",
+    "command": "ip route | head -3"
+   }
+  ],
+  "verify": [
+   "по IP есть, по имени нет — проблема DNS"
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.ping.host",
+  "title": "Пинг указанного хоста",
+  "ask": [
+   "пингани хост",
+   "ping хоста",
+   "доступен ли хост",
+   "проверь доступность адреса"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "ping -c 4 -W 2 {host} 2>&1 | tail -5"
+   },
+   {
+    "tool": "run",
+    "command": "tracepath -n -m 8 {host} 2>&1 | head -12"
+   }
+  ],
+  "slots": {
+   "host": "(?:на|до|к|host|хост\\w*)\\s+([\\w.-]+\\.[\\w.-]+|\\d+\\.\\d+\\.\\d+\\.\\d+)"
+  },
+  "verified": false
+ },
+ {
+  "id": "lx.dns",
+  "title": "DNS",
+  "ask": [
+   "dns не работает",
+   "не открывается по имени",
+   "проверь dns",
+   "резолв"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "getent hosts ya.ru"
+   },
+   {
+    "tool": "run",
+    "command": "cat /etc/resolv.conf"
+   },
+   {
+    "tool": "run",
+    "command": "resolvectl status 2>/dev/null | head -15"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.http",
+  "title": "HTTP-проверка сайта",
+  "ask": [
+   "проверь сайт",
+   "сайт отвечает",
+   "http код",
+   "сайт не открывается"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "curl -sSI -m 10 http://localhost/ 2>&1 | head -12"
+   }
+  ],
+  "notes": "Для внешнего сайта подставь адрес в задаче: curl -sSI -m 10 https://адрес/",
+  "verified": false
+ },
+ {
+  "id": "lx.firewall",
+  "title": "Файрвол",
+  "ask": [
+   "статус файрвола",
+   "правила файрвола",
+   "ufw status",
+   "iptables"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "sudo -n ufw status verbose 2>&1 | head -25"
+   },
+   {
+    "tool": "run",
+    "command": "sudo -n nft list ruleset 2>&1 | head -30"
+   },
+   {
+    "tool": "run",
+    "command": "sudo -n iptables -S 2>&1 | head -25"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.fw.allow",
+  "title": "Открыть порт в ufw",
+  "ask": [
+   "открой порт",
+   "разреши порт",
+   "ufw allow"
+  ],
+  "target": "linux",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "sudo -n ufw status 2>&1 | head -5"
+   },
+   {
+    "tool": "run",
+    "command": "sudo -n ufw allow {port}/tcp 2>&1"
+   },
+   {
+    "tool": "run",
+    "command": "sudo -n ufw status numbered 2>&1 | head -15"
+   }
+  ],
+  "slots": {
+   "port": "(?:порт\\w*|port)\\s+(\\d{1,5})"
+  },
+  "rollback": "sudo ufw delete allow {port}/tcp",
+  "verified": false
+ },
+ {
+  "id": "lx.svc.list",
+  "title": "Службы systemd",
+  "ask": [
+   "список служб",
+   "какие службы запущены",
+   "службы systemd",
+   "упавшие службы"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "systemctl list-units --type=service --state=running --no-pager | head -30"
+   },
+   {
+    "tool": "run",
+    "command": "systemctl --failed --no-pager"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.svc.status",
+  "title": "Статус службы",
+  "ask": [
+   "статус службы",
+   "работает ли служба",
+   "что со службой",
+   "служба упала"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "systemctl status {service} --no-pager 2>&1 | head -20"
+   },
+   {
+    "tool": "run",
+    "command": "journalctl -u {service} -n 30 --no-pager 2>&1 | tail -30"
+   }
+  ],
+  "slots": {
+   "service": "(?:служб\\w*|сервис\\w*|service|юнит\\w*)\\s+([\\w.@-]+)"
+  },
+  "verified": false
+ },
+ {
+  "id": "lx.svc.restart",
+  "title": "Перезапустить службу",
+  "ask": [
+   "перезапусти службу",
+   "рестарт службы",
+   "restart service",
+   "перезапусти сервис"
+  ],
+  "target": "linux",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "systemctl status {service} --no-pager 2>&1 | head -6",
+    "note": "что было до"
+   },
+   {
+    "tool": "run",
+    "command": "sudo -n systemctl restart {service} 2>&1",
+    "stop_on_fail": true
+   },
+   {
+    "tool": "wait",
+    "seconds": 5
+   },
+   {
+    "tool": "run",
+    "command": "systemctl is-active {service} 2>&1",
+    "expect": "^active"
+   },
+   {
+    "tool": "run",
+    "command": "journalctl -u {service} -n 15 --no-pager 2>&1 | tail -15"
+   }
+  ],
+  "slots": {
+   "service": "(?:служб\\w*|сервис\\w*|service|юнит\\w*)\\s+([\\w.@-]+)"
+  },
+  "verify": [
+   "служба active"
+  ],
+  "rollback": "смотри журнал службы; конфиг проверь командой самой службы (например nginx -t)",
+  "verified": false
+ },
+ {
+  "id": "lx.svc.start",
+  "title": "Запустить службу",
+  "ask": [
+   "запусти службу",
+   "стартуй службу",
+   "start service"
+  ],
+  "target": "linux",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "sudo -n systemctl start {service} 2>&1",
+    "stop_on_fail": true
+   },
+   {
+    "tool": "run",
+    "command": "systemctl is-active {service} 2>&1",
+    "expect": "^active"
+   }
+  ],
+  "slots": {
+   "service": "(?:служб\\w*|сервис\\w*|service|юнит\\w*)\\s+([\\w.@-]+)"
+  },
+  "verified": false
+ },
+ {
+  "id": "lx.svc.stop",
+  "title": "Остановить службу",
+  "ask": [
+   "останови службу",
+   "выключи службу",
+   "stop service"
+  ],
+  "target": "linux",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "sudo -n systemctl stop {service} 2>&1"
+   },
+   {
+    "tool": "run",
+    "command": "systemctl is-active {service} 2>&1"
+   }
+  ],
+  "slots": {
+   "service": "(?:служб\\w*|сервис\\w*|service|юнит\\w*)\\s+([\\w.@-]+)"
+  },
+  "rollback": "sudo systemctl start {service}",
+  "verified": false
+ },
+ {
+  "id": "lx.svc.enable",
+  "title": "Включить автозапуск службы",
+  "ask": [
+   "включи автозапуск службы",
+   "enable service",
+   "службу в автозагрузку"
+  ],
+  "target": "linux",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "sudo -n systemctl enable {service} 2>&1"
+   },
+   {
+    "tool": "run",
+    "command": "systemctl is-enabled {service} 2>&1"
+   }
+  ],
+  "slots": {
+   "service": "(?:служб\\w*|сервис\\w*|service|юнит\\w*)\\s+([\\w.@-]+)"
+  },
+  "verified": false
+ },
+ {
+  "id": "lx.svc.disable",
+  "title": "Выключить автозапуск службы",
+  "ask": [
+   "выключи автозапуск службы",
+   "disable service",
+   "убери службу из автозагрузки"
+  ],
+  "target": "linux",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "sudo -n systemctl disable {service} 2>&1"
+   },
+   {
+    "tool": "run",
+    "command": "systemctl is-enabled {service} 2>&1"
+   }
+  ],
+  "slots": {
+   "service": "(?:служб\\w*|сервис\\w*|service|юнит\\w*)\\s+([\\w.@-]+)"
+  },
+  "rollback": "sudo systemctl enable {service}",
+  "verified": false
+ },
+ {
+  "id": "lx.timers",
+  "title": "Таймеры и cron",
+  "ask": [
+   "что запускается по расписанию",
+   "таймеры systemd",
+   "cron задачи",
+   "расписание"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "systemctl list-timers --all --no-pager | head -20"
+   },
+   {
+    "tool": "run",
+    "command": "crontab -l 2>&1"
+   },
+   {
+    "tool": "run",
+    "command": "ls -la /etc/cron.d /etc/cron.daily 2>/dev/null | head -25"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.boot",
+  "title": "Автозапуск и скорость загрузки",
+  "ask": [
+   "что в автозапуске",
+   "почему долго грузится",
+   "systemd-analyze"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "systemctl list-unit-files --state=enabled --no-pager | head -30"
+   },
+   {
+    "tool": "run",
+    "command": "systemd-analyze 2>/dev/null; systemd-analyze blame 2>/dev/null | head -10"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.journal",
+  "title": "Ошибки в журнале",
+  "ask": [
+   "ошибки в журнале",
+   "что случилось",
+   "журнал системы",
+   "логи системы",
+   "сбой"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "journalctl -p err -n 40 --no-pager 2>/dev/null || tail -n 60 /var/log/syslog"
+   },
+   {
+    "tool": "run",
+    "command": "journalctl -b -p warning -n 30 --no-pager 2>/dev/null | tail -30"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.journal.size",
+  "title": "Размер журнала и очистка",
+  "ask": [
+   "журнал занимает место",
+   "очисти журнал",
+   "journalctl vacuum"
+  ],
+  "target": "linux",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "journalctl --disk-usage 2>&1"
+   },
+   {
+    "tool": "run",
+    "command": "sudo -n journalctl --vacuum-size=200M 2>&1 | tail -3"
+   },
+   {
+    "tool": "run",
+    "command": "journalctl --disk-usage 2>&1"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.auth",
+  "title": "Входы в систему и подбор паролей",
+  "ask": [
+   "кто заходил",
+   "кто входил по ssh",
+   "попытки подбора пароля",
+   "last",
+   "неудачные входы"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "last -n 15 2>/dev/null"
+   },
+   {
+    "tool": "run",
+    "command": "lastb -n 10 2>/dev/null | head -12"
+   },
+   {
+    "tool": "run",
+    "command": "journalctl -u ssh -u sshd -n 40 --no-pager 2>/dev/null | tail -30"
+   },
+   {
+    "tool": "run",
+    "command": "who"
+   }
+  ],
+  "verify": [
+   "много Failed password — подбор: ключи вместо паролей, fail2ban"
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.users",
+  "title": "Пользователи и права",
+  "ask": [
+   "какие пользователи",
+   "кто в sudo",
+   "список пользователей",
+   "учётные записи"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "id; whoami"
+   },
+   {
+    "tool": "run",
+    "command": "cut -d: -f1,3,6 /etc/passwd | awk -F: '$2>=1000'"
+   },
+   {
+    "tool": "run",
+    "command": "getent group sudo wheel 2>/dev/null"
+   },
+   {
+    "tool": "run",
+    "command": "awk -F: '$3==0{print $1}' /etc/passwd"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.user.add",
+  "title": "Создать пользователя",
+  "ask": [
+   "создай пользователя",
+   "добавь пользователя",
+   "новый юзер"
+  ],
+  "target": "linux",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "id {user} 2>&1 | head -1 || true"
+   },
+   {
+    "tool": "run",
+    "command": "sudo -n adduser --disabled-password --gecos '' {user} 2>&1 | tail -3"
+   }
+  ],
+  "slots": {
+   "user": "(?:пользовател\\w*|user|юзер\\w*)\\s+([a-z_][\\w-]{0,30})"
+  },
+  "rollback": "sudo deluser --remove-home {user}",
+  "notes": "Без пароля: вход по SSH-ключу. Пароль и права sudo выдавай отдельно.",
+  "verified": false
+ },
+ {
+  "id": "lx.sshkeys",
+  "title": "SSH: ключи и настройки",
+  "ask": [
+   "настройки ssh",
+   "authorized_keys",
+   "вход по ключу",
+   "sshd_config"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "ls -la ~/.ssh 2>&1"
+   },
+   {
+    "tool": "run",
+    "command": "grep -E '^(PermitRootLogin|PasswordAuthentication|PubkeyAuthentication|Port)' /etc/ssh/sshd_config 2>&1"
+   },
+   {
+    "tool": "run",
+    "command": "sudo -n sshd -T 2>/dev/null | grep -E 'permitrootlogin|passwordauth|port' | head"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.ssh.harden",
+  "title": "Запретить вход по паролю в SSH",
+  "ask": [
+   "отключи вход по паролю",
+   "запрети пароль ssh",
+   "усили ssh"
+  ],
+  "target": "linux",
+  "risk": "danger",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "test -s ~/.ssh/authorized_keys && echo 'ключ есть' || echo 'НЕТ КЛЮЧЕЙ'",
+    "note": "без ключа не отключаем",
+    "expect": "ключ есть",
+    "stop_on_fail": true
+   },
+   {
+    "tool": "run",
+    "command": "sudo -n cp /etc/ssh/sshd_config /etc/ssh/sshd_config.bak 2>&1"
+   },
+   {
+    "tool": "run",
+    "command": "sudo -n sed -i 's/^#\\?PasswordAuthentication.*/PasswordAuthentication no/' /etc/ssh/sshd_config 2>&1"
+   },
+   {
+    "tool": "run",
+    "command": "sudo -n sshd -t 2>&1 && echo 'конфиг ок'",
+    "expect": "конфиг ок",
+    "stop_on_fail": true
+   },
+   {
+    "tool": "run",
+    "command": "sudo -n systemctl reload ssh 2>&1 || sudo -n systemctl reload sshd 2>&1"
+   }
+  ],
+  "rollback": "sudo cp /etc/ssh/sshd_config.bak /etc/ssh/sshd_config && sudo systemctl reload ssh",
+  "notes": "Не закрывай текущую сессию, пока не проверишь вход по ключу из второй.",
+  "verified": false
+ },
+ {
+  "id": "lx.cert",
+  "title": "Сертификаты и срок действия",
+  "ask": [
+   "срок сертификата",
+   "ssl сертификат",
+   "когда истекает сертификат",
+   "https сертификат"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "ls -la /etc/letsencrypt/live 2>&1 | head"
+   },
+   {
+    "tool": "run",
+    "command": "echo | openssl s_client -connect localhost:443 2>/dev/null | openssl x509 -noout -dates -subject 2>&1 | head -4"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.time",
+  "title": "Время и NTP",
+  "ask": [
+   "время на сервере",
+   "ntp",
+   "часовой пояс",
+   "время сбилось"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "timedatectl 2>&1 | head -10"
+   },
+   {
+    "tool": "run",
+    "command": "date; date -u"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.tz",
+  "title": "Сменить часовой пояс",
+  "ask": [
+   "установи часовой пояс",
+   "смени часовой пояс на москву"
+  ],
+  "target": "linux",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "sudo -n timedatectl set-timezone Europe/Moscow 2>&1"
+   },
+   {
+    "tool": "run",
+    "command": "timedatectl | head -4"
+   }
+  ],
+  "rollback": "timedatectl set-timezone <прежний>",
+  "verified": false
+ },
+ {
+  "id": "lx.pkg.list",
+  "title": "Установленные пакеты",
+  "ask": [
+   "какие пакеты установлены",
+   "список пакетов",
+   "версия пакета"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "dpkg -l 2>/dev/null | tail -20 || rpm -qa | tail -20"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.pkg.updates",
+  "title": "Доступные обновления",
+  "ask": [
+   "какие есть обновления",
+   "нужны ли обновления",
+   "что можно обновить"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "apt list --upgradable 2>/dev/null | head -30 || dnf check-update 2>/dev/null | head -30"
+   },
+   {
+    "tool": "run",
+    "command": "test -f /var/run/reboot-required && echo 'нужна перезагрузка' || echo 'перезагрузка не нужна'"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.pkg.update",
+  "title": "Обновить список пакетов",
+  "ask": [
+   "обнови список пакетов",
+   "apt update"
+  ],
+  "target": "linux",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "sudo -n apt-get update 2>&1 | tail -5 || sudo -n dnf makecache 2>&1 | tail -5"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.pkg.upgrade",
+  "title": "Обновить систему",
+  "ask": [
+   "обнови систему",
+   "установи обновления",
+   "apt upgrade"
+  ],
+  "target": "linux",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "sudo -n apt-get update 2>&1 | tail -3"
+   },
+   {
+    "tool": "run",
+    "command": "sudo -n apt-get -y upgrade 2>&1 | tail -15"
+   },
+   {
+    "tool": "run",
+    "command": "test -f /var/run/reboot-required && echo 'нужна перезагрузка'"
+   }
+  ],
+  "rollback": "apt: sudo apt-get install пакет=старая_версия",
+  "notes": "Перезагрузку делай отдельной инструкцией.",
+  "verified": false
+ },
+ {
+  "id": "lx.pkg.install",
+  "title": "Установить пакет",
+  "ask": [
+   "установи пакет",
+   "поставь программу",
+   "install package"
+  ],
+  "target": "linux",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "command -v {package} || echo 'не установлен'"
+   },
+   {
+    "tool": "run",
+    "command": "if command -v apt-get >/dev/null; then sudo -n apt-get install -y {package}; elif command -v dnf >/dev/null; then sudo -n dnf install -y {package}; else sudo -n yum install -y {package}; fi 2>&1 | tail -8"
+   },
+   {
+    "tool": "run",
+    "command": "command -v {package} || dpkg -s {package} 2>&1 | head -3"
+   }
+  ],
+  "slots": {
+   "package": "(?:пакет\\w*|package|установи|поставь|install|удали|remove)\\s+([\\w.+-]+)"
+  },
+  "rollback": "sudo apt-get remove {package}",
+  "verified": false
+ },
+ {
+  "id": "lx.pkg.remove",
+  "title": "Удалить пакет",
+  "ask": [
+   "удали пакет",
+   "удали программу",
+   "remove package"
+  ],
+  "target": "linux",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "dpkg -s {package} 2>&1 | head -3"
+   },
+   {
+    "tool": "run",
+    "command": "sudo -n apt-get remove -y {package} 2>&1 | tail -8"
+   }
+  ],
+  "slots": {
+   "package": "(?:пакет\\w*|package|установи|поставь|install|удали|remove)\\s+([\\w.+-]+)"
+  },
+  "rollback": "sudo apt-get install {package}",
+  "verified": false
+ },
+ {
+  "id": "lx.pip",
+  "title": "Python и pip на сервере",
+  "ask": [
+   "версия python",
+   "какие python пакеты",
+   "pip list",
+   "виртуальное окружение"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "python3 --version; pip3 --version"
+   },
+   {
+    "tool": "run",
+    "command": "pip3 list 2>/dev/null | head -25"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.venv",
+  "title": "Создать виртуальное окружение Python",
+  "ask": [
+   "создай venv",
+   "создай виртуальное окружение"
+  ],
+  "target": "linux",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "python3 -m venv ~/neuro12-agent/venv 2>&1 && ~/neuro12-agent/venv/bin/python --version"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.git",
+  "title": "Состояние git-репозитория",
+  "ask": [
+   "состояние git",
+   "git status",
+   "что изменилось в репозитории"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "git status -sb 2>&1 | head -15"
+   },
+   {
+    "tool": "run",
+    "command": "git log --oneline -n 10 2>&1"
+   },
+   {
+    "tool": "run",
+    "command": "git remote -v 2>&1"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.git.pull",
+  "title": "Обновить репозиторий (git pull)",
+  "ask": [
+   "обнови репозиторий",
+   "git pull",
+   "стяни изменения"
+  ],
+  "target": "linux",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "git status -sb 2>&1 | head -5"
+   },
+   {
+    "tool": "run",
+    "command": "git pull --ff-only 2>&1 | tail -8"
+   }
+  ],
+  "rollback": "git reset --hard ORIG_HEAD (только если нет своих правок)",
+  "verified": false
+ },
+ {
+  "id": "lx.docker",
+  "title": "Docker: контейнеры и ресурсы",
+  "ask": [
+   "какие контейнеры",
+   "docker ps",
+   "состояние docker",
+   "что запущено в docker"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "docker ps -a --format '{{.Names}}\\t{{.Status}}\\t{{.Image}}'"
+   },
+   {
+    "tool": "run",
+    "command": "docker stats --no-stream 2>/dev/null | head -15"
+   },
+   {
+    "tool": "run",
+    "command": "docker system df 2>/dev/null"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.docker.logs",
+  "title": "Логи контейнера",
+  "ask": [
+   "логи контейнера",
+   "что пишет контейнер",
+   "docker logs"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "docker logs --tail 80 {container} 2>&1 | tail -80"
+   }
+  ],
+  "slots": {
+   "container": "(?:контейнер\\w*|container)\\s+([\\w.-]+)"
+  },
+  "verified": false
+ },
+ {
+  "id": "lx.docker.restart",
+  "title": "Перезапустить контейнер",
+  "ask": [
+   "перезапусти контейнер",
+   "рестарт контейнера",
+   "docker restart"
+  ],
+  "target": "linux",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "docker ps -a --filter name={container} --format '{{.Names}} {{.Status}}'"
+   },
+   {
+    "tool": "run",
+    "command": "docker restart {container} 2>&1",
+    "stop_on_fail": true
+   },
+   {
+    "tool": "wait",
+    "seconds": 5
+   },
+   {
+    "tool": "run",
+    "command": "docker ps --filter name={container} --format '{{.Names}} {{.Status}}'",
+    "expect": "Up"
+   },
+   {
+    "tool": "run",
+    "command": "docker logs --tail 15 {container} 2>&1 | tail -15"
+   }
+  ],
+  "slots": {
+   "container": "(?:контейнер\\w*|container)\\s+([\\w.-]+)"
+  },
+  "verified": false
+ },
+ {
+  "id": "lx.docker.stop",
+  "title": "Остановить контейнер",
+  "ask": [
+   "останови контейнер",
+   "docker stop"
+  ],
+  "target": "linux",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "docker stop {container} 2>&1"
+   },
+   {
+    "tool": "run",
+    "command": "docker ps -a --filter name={container} --format '{{.Names}} {{.Status}}'"
+   }
+  ],
+  "slots": {
+   "container": "(?:контейнер\\w*|container)\\s+([\\w.-]+)"
+  },
+  "rollback": "docker start {container}",
+  "verified": false
+ },
+ {
+  "id": "lx.docker.prune",
+  "title": "Почистить Docker (неиспользуемое)",
+  "ask": [
+   "очисти docker",
+   "docker prune",
+   "освободи место от docker"
+  ],
+  "target": "linux",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "docker system df 2>&1"
+   },
+   {
+    "tool": "run",
+    "command": "docker image prune -f 2>&1 | tail -3"
+   },
+   {
+    "tool": "run",
+    "command": "docker system df 2>&1"
+   }
+  ],
+  "notes": "Удаляет только неиспользуемые образы без тегов. `system prune -a` — отдельное решение владельца.",
+  "verified": false
+ },
+ {
+  "id": "lx.compose",
+  "title": "Docker Compose: состояние",
+  "ask": [
+   "состояние compose",
+   "docker compose ps"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "docker compose ps 2>&1 | head -20"
+   },
+   {
+    "tool": "run",
+    "command": "docker compose logs --tail 30 2>&1 | tail -30"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.compose.up",
+  "title": "Docker Compose: обновить и поднять",
+  "ask": [
+   "обнови compose",
+   "docker compose up",
+   "перезапусти compose"
+  ],
+  "target": "linux",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "docker compose pull 2>&1 | tail -5"
+   },
+   {
+    "tool": "run",
+    "command": "docker compose up -d 2>&1 | tail -8"
+   },
+   {
+    "tool": "run",
+    "command": "docker compose ps 2>&1 | head -15"
+   }
+  ],
+  "rollback": "docker compose down; вернуть прежние теги образов",
+  "verified": false
+ },
+ {
+  "id": "lx.nginx",
+  "title": "Веб-сервер nginx/apache",
+  "ask": [
+   "проверь nginx",
+   "nginx не работает",
+   "веб-сервер",
+   "apache"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "systemctl status nginx --no-pager 2>&1 | head -12"
+   },
+   {
+    "tool": "run",
+    "command": "sudo -n nginx -t 2>&1"
+   },
+   {
+    "tool": "run",
+    "command": "tail -n 30 /var/log/nginx/error.log 2>&1"
+   },
+   {
+    "tool": "run",
+    "command": "apachectl -S 2>&1 | head"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.nginx.reload",
+  "title": "Перезагрузить конфиг nginx",
+  "ask": [
+   "перезагрузи nginx",
+   "reload nginx",
+   "применить конфиг nginx"
+  ],
+  "target": "linux",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "sudo -n nginx -t 2>&1",
+    "note": "конфиг должен пройти проверку",
+    "expect": "successful",
+    "stop_on_fail": true
+   },
+   {
+    "tool": "run",
+    "command": "sudo -n systemctl reload nginx 2>&1"
+   },
+   {
+    "tool": "run",
+    "command": "systemctl is-active nginx 2>&1",
+    "expect": "^active"
+   }
+  ],
+  "rollback": "вернуть прежний конфиг и снова reload",
+  "verified": false
+ },
+ {
+  "id": "lx.db",
+  "title": "Базы данных: службы и порты",
+  "ask": [
+   "проверь базу данных",
+   "postgres",
+   "mysql",
+   "redis",
+   "mongo"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "systemctl status postgresql mysql mariadb redis-server mongod --no-pager 2>&1 | grep -E 'Active|●' | head -10"
+   },
+   {
+    "tool": "run",
+    "command": "ss -tlnp 2>/dev/null | grep -E '5432|3306|6379|27017'"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.backup.tar",
+  "title": "Резервная копия папки",
+  "ask": [
+   "сделай бэкап папки",
+   "заархивируй папку",
+   "резервная копия каталога"
+  ],
+  "target": "linux",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "du -sh {dir} 2>&1"
+   },
+   {
+    "tool": "run",
+    "command": "mkdir -p ~/backups && tar czf ~/backups/backup_$(date +%F_%H%M).tgz {dir} 2>&1 | tail -3"
+   },
+   {
+    "tool": "run",
+    "command": "ls -lah ~/backups | tail -5"
+   }
+  ],
+  "slots": {
+   "dir": "(?:папк\\w*|каталог\\w*|директори\\w*|dir)\\s+((?:/|~/)[\\w./-]+)"
+  },
+  "rollback": "tar xzf ~/backups/<файл>.tgz -C /",
+  "verified": false
+ },
+ {
+  "id": "lx.cron.show",
+  "title": "Задания cron",
+  "ask": [
+   "покажи cron",
+   "задачи cron",
+   "crontab"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "crontab -l 2>&1"
+   },
+   {
+    "tool": "run",
+    "command": "ls -la /etc/cron.d 2>/dev/null"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.env",
+  "title": "Окружение и PATH",
+  "ask": [
+   "переменные окружения",
+   "path",
+   "printenv"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "printenv | sort | head -30"
+   },
+   {
+    "tool": "run",
+    "command": "echo $PATH | tr ':' '\\n'"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.find",
+  "title": "Найти файл по имени",
+  "ask": [
+   "найди файл",
+   "где лежит файл",
+   "поиск файла"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "find ~ -xdev -type f -mtime -2 2>/dev/null | head -20"
+   },
+   {
+    "tool": "run",
+    "command": "ls -lat ~ | head -15"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.perm",
+  "title": "Права на файлы",
+  "ask": [
+   "права доступа",
+   "кто владелец файла",
+   "chmod"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "ls -la ~ | head -25"
+   },
+   {
+    "tool": "run",
+    "command": "stat -c '%A %U:%G %n' ~/.ssh/* 2>/dev/null"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.swap",
+  "title": "Подкачка",
+  "ask": [
+   "файл подкачки",
+   "swap",
+   "добавь swap"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "swapon --show; free -h | grep -i swap; cat /proc/sys/vm/swappiness"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.usb",
+  "title": "USB и камеры",
+  "ask": [
+   "usb устройства",
+   "камера не видна",
+   "lsusb",
+   "/dev/video"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "lsusb 2>&1"
+   },
+   {
+    "tool": "run",
+    "command": "ls -l /dev/video* 2>&1"
+   },
+   {
+    "tool": "run",
+    "command": "dmesg 2>/dev/null | grep -iE 'uvc|usb' | tail -12"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.audio",
+  "title": "Звук",
+  "ask": [
+   "звук не работает",
+   "микрофон",
+   "колонки",
+   "alsa"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "arecord -l 2>&1 | head -12"
+   },
+   {
+    "tool": "run",
+    "command": "aplay -l 2>&1 | head -12"
+   },
+   {
+    "tool": "run",
+    "command": "amixer 2>&1 | head -12"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.serial",
+  "title": "Последовательные порты",
+  "ask": [
+   "serial порты",
+   "ttyUSB",
+   "ttyACM",
+   "arduino подключена"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "ls -l /dev/tty* 2>/dev/null | grep -E 'ACM|USB|AMA|S0' | head"
+   },
+   {
+    "tool": "run",
+    "command": "dmesg 2>/dev/null | grep -iE 'tty|cdc_acm|ftdi' | tail -10"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.wifi",
+  "title": "Wi-Fi",
+  "ask": [
+   "wifi",
+   "беспроводная сеть",
+   "nmcli"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "nmcli dev status 2>&1 | head"
+   },
+   {
+    "tool": "run",
+    "command": "nmcli -f SSID,SIGNAL,SECURITY dev wifi 2>&1 | head -12"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.hostname",
+  "title": "Имя хоста",
+  "ask": [
+   "как называется сервер",
+   "hostname"
+  ],
+  "target": "linux",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "hostnamectl 2>&1 | head -8"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.hostname.set",
+  "title": "Сменить имя хоста",
+  "ask": [
+   "смени имя хоста",
+   "переименуй сервер"
+  ],
+  "target": "linux",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "hostnamectl 2>&1 | head -4"
+   },
+   {
+    "tool": "note",
+    "text": "Укажи новое имя в задаче: «смени имя хоста на web2». Выполнится: sudo hostnamectl set-hostname web2"
+   }
+  ],
+  "verify": [
+   "имя изменено"
+  ],
+  "verified": false
+ },
+ {
+  "id": "lx.reboot",
+  "title": "Перезагрузить сервер",
+  "ask": [
+   "перезагрузи сервер",
+   "reboot сервера",
+   "рестарт сервера",
+   "перезагрузи машину"
+  ],
+  "target": "linux",
+  "risk": "danger",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "uptime; who",
+    "note": "кто в системе сейчас"
+   },
+   {
+    "tool": "run",
+    "command": "test -f /var/run/reboot-required && echo 'нужна' || echo 'не требуется'"
+   },
+   {
+    "tool": "run",
+    "command": "sudo -n systemctl reboot 2>&1",
+    "note": "связь оборвётся"
+   },
+   {
+    "tool": "wait",
+    "seconds": 60
+   },
+   {
+    "tool": "check"
+   },
+   {
+    "tool": "wait",
+    "seconds": 30
+   },
+   {
+    "tool": "check"
+   },
+   {
+    "tool": "run",
+    "command": "uptime -p; systemctl --failed --no-pager | head -8"
+   }
+  ],
+  "verify": [
+   "сервер вернулся, нет упавших служб"
+  ],
+  "rollback": "если не поднялся — консоль/IPMI/питание",
+  "verified": false
+ },
+ {
+  "id": "lx.shutdown",
+  "title": "Выключить сервер",
+  "ask": [
+   "выключи сервер",
+   "shutdown",
+   "poweroff"
+  ],
+  "target": "linux",
+  "risk": "danger",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "uptime; who"
+   },
+   {
+    "tool": "run",
+    "command": "sudo -n systemctl poweroff 2>&1"
+   }
+  ],
+  "rollback": "включить по сети (Wake-on-LAN, если настроен) или кнопкой питания",
+  "notes": "Дистанционно обратно включить можно только через WoL/IPMI.",
+  "verified": false
+ },
+ {
+  "id": "lx.wake",
+  "title": "Включить выключенный сервер по сети",
+  "ask": [
+   "включи сервер",
+   "разбуди сервер",
+   "wake on lan",
+   "включи компьютер по сети"
+  ],
+  "target": "linux",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "wake"
+   },
+   {
+    "tool": "check"
+   }
+  ],
+  "verify": [
+   "порт SSH открыт"
+  ],
+  "notes": "Нужен MAC сервера в окне «Серверы» и включённый WoL в BIOS.",
+  "verified": false
+ },
+ {
+  "id": "lx.script",
+  "title": "Написать и запустить скрипт",
+  "ask": [
+   "напиши скрипт",
+   "создай скрипт",
+   "сделай программу",
+   "напиши код на сервере"
+  ],
+  "target": "linux",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "code"
+   }
+  ],
+  "verify": [
+   "код написан своей LLM, проверен синтаксисом и запущен"
+  ],
+  "notes": "Скрипт кладётся в ~/neuro12-agent/, перед запуском проверяется синтаксис.",
+  "verified": false
+ }
+]

@@ -74,7 +74,7 @@ git commit -q -m "mozgnet: $(Get-Date -Format 'yyyy-MM-dd HH:mm')" 2>$null
 gh repo view "$me/$Name" 2>$null | Out-Null
 if ($LASTEXITCODE -ne 0) {
     $vis = if ($Public) { "--public" } else { "--private" }
-    gh repo create "$me/$Name" $vis --source . --remote origin --push --description "mozgnet — облако Мозг-12 в телефоне"
+    gh repo create "$me/$Name" $vis --source . --remote origin --push --description "mozgnet — облако Star Gate в телефоне"
     if ($LASTEXITCODE -ne 0) { Die "не создал репозиторий" }
     Ok "создан $(if ($Public) {'открытый'} else {'закрытый'}) репозиторий"
 } else {

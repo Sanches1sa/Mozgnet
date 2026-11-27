@@ -39,8 +39,11 @@ import random
 import re
 import threading
 import time
+import llm_activity
 
 try:
+    if os.environ.get("NEURO_SAFE") == "1":          # v3.228: безопасный режим — без numpy-LLM
+        raise ImportError("безопасный режим")
     import numpy as np
     HAVE_NP = True
 except Exception:                       # без numpy — прежняя мини-версия
@@ -82,6 +85,10 @@ if not HAVE_NP:
         return llmcfg.dict_quality(text)
 
     def sample(topic="", **over):
+        import neuron_context
+        return neuron_context.generate(topic,lambda prompt:_sample_once(prompt,**over))
+
+    def _sample_once(topic="", **over):
         t, info = _fant_py(topic)
         t = (t or "").strip()
         if t:
@@ -772,41 +779,49 @@ else:
                 n_layers = max(1, min(n_layers, int(fp["layers"])))
                 n_heads = max(1, min(H, int(fp["heads"])))
             caches = []
-            for l in range(n_layers):
-                a, lnc1 = _ln_f(h, p["ln1g%d" % l], p["ln1b%d" % l])
-                q = (a @ p["Wq%d" % l] + p["bq%d" % l]).reshape(B, T, H, Dh) \
-                    .transpose(0, 2, 1, 3)
-                k = (a @ p["Wk%d" % l] + p["bk%d" % l]).reshape(B, T, H, Dh) \
-                    .transpose(0, 2, 1, 3)
-                v = (a @ p["Wv%d" % l] + p["bv%d" % l]).reshape(B, T, H, Dh) \
-                    .transpose(0, 2, 1, 3)
-                s = q @ k.transpose(0, 1, 3, 2) / math.sqrt(Dh)
-                s = np.where(mask[None, None], -1e9, s)
-                att = _softmax(s)
-                ov = att @ v
-                if n_heads < H:         # v3.148: работают не все головы
-                    ov[:, n_heads:] = 0.0
-                    ov = ov * (H / float(n_heads))
-                o = ov.transpose(0, 2, 1, 3).reshape(B, T, D)
-                proj = o @ p["Wo%d" % l] + p["bo%d" % l]
-                if gm[2 * l] != 1.0:
-                    proj = proj * gm[2 * l]
-                h2 = h + proj
-                a2, lnc2 = _ln_f(h2, p["ln2g%d" % l], p["ln2b%d" % l])
-                z = a2 @ p["W1_%d" % l] + p["b1_%d" % l]
-                g, gt = _gelu_t(z)
-                ff = g @ p["W2_%d" % l] + p["b2_%d" % l]
-                if gm[2 * l + 1] != 1.0:
-                    ff = ff * gm[2 * l + 1]
-                h = h2 + ff
-                if cache:
-                    caches.append((a, lnc1, q, k, v, att, o, h2, a2, lnc2,
-                                   z, g, gt))
+            loop = getattr(_FP, "loop", None) if not cache and not getattr(_FP, "stable_code", False) else None
+            passes = max(1, min(4, int(loop.get("passes", 1)))) if loop and loop.get("enabled") else 1
+            mix = float(loop.get("mix", .25)) if loop else 1.
+            for loop_index in range(passes):
+                previous_h = h
+                for l in range(n_layers):
+                    a, lnc1 = _ln_f(h, p["ln1g%d" % l], p["ln1b%d" % l])
+                    q = (a @ p["Wq%d" % l] + p["bq%d" % l]).reshape(B, T, H, Dh) \
+                        .transpose(0, 2, 1, 3)
+                    k = (a @ p["Wk%d" % l] + p["bk%d" % l]).reshape(B, T, H, Dh) \
+                        .transpose(0, 2, 1, 3)
+                    v = (a @ p["Wv%d" % l] + p["bv%d" % l]).reshape(B, T, H, Dh) \
+                        .transpose(0, 2, 1, 3)
+                    s = q @ k.transpose(0, 1, 3, 2) / math.sqrt(Dh)
+                    s = np.where(mask[None, None], -1e9, s)
+                    att = _softmax(s)
+                    ov = att @ v
+                    if n_heads < H:         # v3.148: работают не все головы
+                        ov[:, n_heads:] = 0.0
+                        ov = ov * (H / float(n_heads))
+                    o = ov.transpose(0, 2, 1, 3).reshape(B, T, D)
+                    proj = o @ p["Wo%d" % l] + p["bo%d" % l]
+                    if gm[2 * l] != 1.0:
+                        proj = proj * gm[2 * l]
+                    h2 = h + proj
+                    a2, lnc2 = _ln_f(h2, p["ln2g%d" % l], p["ln2b%d" % l])
+                    z = a2 @ p["W1_%d" % l] + p["b1_%d" % l]
+                    g, gt = _gelu_t(z)
+                    ff = g @ p["W2_%d" % l] + p["b2_%d" % l]
+                    if gm[2 * l + 1] != 1.0:
+                        ff = ff * gm[2 * l + 1]
+                    h = h2 + ff
+                    if cache:
+                        caches.append((a, lnc1, q, k, v, att, o, h2, a2, lnc2,
+                                       z, g, gt))
+                if loop_index:
+                    h = previous_h + mix * (h - previous_h)
             hf, lncf = _ln_f(h, p["lnf_g"], p["lnf_b"])
             logits = hf @ p["E"].T
             return logits, (caches, hf, lncf, X, gm) if cache else None
 
         # ------------------------------ обратный ход ----------------------
+        @llm_activity.tracked("Обучение", zone="Обучение")
         def train_step(self, X, Y, lr):
             def handoff():
                 if self._stop and getattr(self, "_code_course", False):
@@ -1012,6 +1027,7 @@ else:
                                           for i in range(1, len(ids))])))
             return out
 
+        @llm_activity.tracked("Генерация")
         def generate_grounded(self, question, facts, max_new=70, copy=2.5,
                               temperature=0.6, rep=1.4, min_frac=0.0):
             """v3.34: генерация ПО ФАКТАМ (база знаний/интернет). Берутся 1–2
@@ -1244,6 +1260,7 @@ else:
             return float(-lp[np.arange(nt), y].mean())
 
         # ---------------- v3.117: РЕЧЬ СЛОВАМИ (словарный автомат) ----------
+        @llm_activity.tracked("Генерация")
         def generate_words(self, prompt, max_new=40, temperature=0.9,
                            top_k=40, top_p=0.92, seed=None, bias=None,
                            max_sent=2, ngram=None, first_word=""):
@@ -1432,6 +1449,7 @@ else:
             txt = re.sub(r"([(\u00ab])\s+", r"\1", txt)
             return txt
 
+        @llm_activity.tracked("Генерация")
         def generate(self, prompt, max_new=40, temperature=0.9, top_k=40,
                      top_p=0.92, rep=1.3, seed=None, lex=None, bias=None,
                      first_word=""):
@@ -1523,6 +1541,7 @@ else:
                     out.pop()
             return self.tok.decode(out)
 
+        @llm_activity.tracked("Генерация", zone="Кирпичики")
         def generate_code(self, prompt, max_new=220, temperature=0.7,
                           top_k=20, seed=None, deadline=None):
             """v3.41: продолжить код. Только токены кода; отступы и регистр
@@ -1633,9 +1652,15 @@ else:
         """Статья -> текст обучения: обычная — «заголовок. текст», исходник
         с GitHub — набор функций со сплошным кодом (см. codecorpus)."""
         import codecorpus
+        import llm_zones
         if codecorpus.is_code_title(title):
+            llm_zones.observe(str(title)+" "+str(text)[:6500], "Кирпичики")
             return codecorpus.article_text(title, text)
-        return str(title or "") + ". " + clean_text_corpus(str(text)[:6500])[:6000]
+        content = str(title or "") + ". " + clean_text_corpus(str(text)[:6500])[:6000]
+        if not store_get("llm_zones_on"):
+            return content
+        zone = llm_zones.observe(content)
+        return "Зона " + zone + ". " + content
 
     _CORPUS_KEYS = []          # v3.75: ключи статей, вошедших в корпус обучения
     _CORPUS_SKIP = {"q": 0, "dup": 0, "short": 0}   # v3.144: что не вошло и почему
@@ -1885,6 +1910,11 @@ else:
                            "step_opt_s": round(self.fixed, 2),
                            "step_note": self.note})
 
+    def _phase(m, text):
+        """v3.236: этап подготовки обучения (до первого шага) — для панели."""
+        m.meta["phase"] = text
+        m.meta["phase_ts"] = time.time() if text else 0
+
     def _train_all():
         m = model()
         c = m.c
@@ -1903,7 +1933,9 @@ else:
                     "всё равно» или уменьши размер" % (est["need_mb"],
                                                        est["ram_mb"]))
                 return
+            _phase(m, "собираю корпус из базы знаний")      # v3.236: «шаг 0 из 0» — показываем, чем занято
             texts, n_art = _collect_corpus(c["llm_corpus_tokens"])
+            _phase(m, "строю словарь по %d текстам" % len(texts))
             # v3.38: обученную/частично обученную модель НЕ сбрасываем: словарь
             # дополняется (id прежних токенов те же), обучение продолжается
             resume = bool(m.ready and m.steps > 0)
@@ -1914,6 +1946,7 @@ else:
             else:
                 tok = Tokenizer()
                 tok.build(texts, c["llm_vocab"])
+            _phase(m, "перевожу тексты в токены")
             ids = []
             art_bounds = []          # v3.101: (начало, конец, ключ) статей в корпусе
             for i_, t in enumerate(texts):
@@ -1925,8 +1958,12 @@ else:
                     break
             ids = ids[:c["llm_corpus_tokens"]]
             if len(ids) < c["llm_ctx"] + 2:
+                m.meta["error"] = ("в базе знаний мало текста для обучения: %d токенов, а нужно больше контекста (%d). "
+                                   "Добавьте статьи или уменьшите контекст" % (len(ids), c["llm_ctx"]))
+                _phase(m, "")
                 m.training = False
                 return
+            _phase(m, "готовлю план обучения (%d токенов)" % len(ids))
             fresh = not resume
             if fresh:
                 m.tok = tok
@@ -2019,6 +2056,7 @@ else:
             if pace.off():
                 pace.B, pace.T = B, T
             pos = 0
+            _phase(m, "первый шаг обучения (%d окон по %d токенов; у большой модели первый шаг самый долгий)" % (len(order), T))
             # v3.101: ПОТОЛОК ШАГОВ ПЛАНА (llm_plan_steps, по умолчанию 3000 ≈
             # 8 ч при 10 с на шаг; 0 — без потолка). Окна идут эпоха за эпохой
             # (сначала весь корпус по разу), план кончается на потолке; статьи,
@@ -2158,6 +2196,7 @@ else:
                         total_seq = max(pos + 1, fit)
                         m.meta["seq_total"] = total_seq
                 m.meta["total_steps"] = _total_steps()
+                m.meta["phase"] = ""
                 m.meta["eta_s"] = int((m.meta["total_steps"] - m.steps) *
                                       max(dt, 1e-3) /
                                       max(0.05, min(1.0, budget)))
@@ -2602,11 +2641,21 @@ else:
                        base + ".json.tmp", store.p("llmtrained.json"),
                        store.p("llmread.json")):
                 if os.path.isfile(fn):
-                    try:
-                        os.remove(fn)
-                        removed.append(os.path.basename(fn))
-                    except Exception:
-                        pass
+                    for _try in range(20):      # v3.235: Windows держит файл, пока его дочитывают — повторяем
+                        try:
+                            os.remove(fn)
+                            removed.append(os.path.basename(fn))
+                            break
+                        except PermissionError:
+                            time.sleep(0.25)
+                        except Exception:
+                            break
+                    else:
+                        try:                    # не удалился — уводим в сторону, чтобы не загрузились старые веса
+                            os.replace(fn, fn + ".old-%d" % int(time.time()))
+                            removed.append(os.path.basename(fn) + " (переименован)")
+                        except Exception:
+                            store.log("ОБУЧЕНИЕ LLM", "не удалось убрать %s — файл занят" % os.path.basename(fn))
         except Exception:
             pass
         _adam_wipe()
@@ -2682,6 +2731,8 @@ else:
                 "corpus_skip": m.meta.get("corpus_skip") or {},     # v3.144
                 "kb_articles": m.meta.get("kb_articles", 0),
                 "error": m.meta.get("error", ""),
+                "phase": m.meta.get("phase", "") if m.training else "",          # v3.236
+                "phase_s": int(time.time() - m.meta["phase_ts"]) if m.training and m.meta.get("phase_ts") else 0,
                 "inc": {"active": bool(m.meta.get("inc_active")),
                         "done": m.meta.get("inc_done", 0),
                         "total": m.meta.get("inc_total", 0),
@@ -2861,13 +2912,23 @@ else:
         return fp
 
     def sample(topic="", **over):
+        import neuron_context
+        return neuron_context.generate(topic,lambda prompt:_sample_once(prompt,**over),validator=lambda text:not has_garbage(text))
+
+    def _sample_once(topic="", **over):
         """Один образец текста модели (без побочных эффектов): (текст, info)
         либо ("", {"llm": "cold"}), если модель ещё не училась."""
         m = model()
         if not m.ready or m.tok.size < 10 or not m.steps:
             ensure_training()
             return "", {"llm": "cold"}
+        import llm_zones
+        topic, selected_zone = llm_zones.condition(topic)
         c = dict(cfg())
+        zone_state = llm_zones.combined()
+        zone_activation = zone_state['values'].get(selected_zone)
+        if zone_activation is not None:
+            c['llm_temp'] = max(.15, min(2, c['llm_temp'] * (.9 + .2 * zone_activation)))
         for k, v in over.items():
             c["llm_" + k] = v
         try:                              # v3.132: общее дыхание с платами
@@ -2875,11 +2936,18 @@ else:
             c["llm_temp"] = _brt.mod("Своя LLM", float(c["llm_temp"]), 0.15)
         except Exception:
             pass
-        _FP.p = float_params(m, c, topic)   # v3.149: плавающие параметры (повышаются от частоты/воли/дыхания)
+        import loop_transformer
+        previous_loop = getattr(_FP, "loop", None)
+        _FP.loop = loop_transformer.config()
         try:
-            return _sample_body(m, c, topic, over)
+            _FP.p = float_params(m, c, topic)   # параметры только этого ответа
+            result, info = _sample_body(m, c, topic, over)
+            info = dict(info or {}, llm_zone=selected_zone, zone_activation=zone_activation,
+                        loop_transformer=dict(_FP.loop))
+            return result, info
         finally:
             _FP.p = None
+            _FP.loop = previous_loop
 
     def _sample_body(m, c, topic, over):
         v2 = getattr(m.tok, "ver", 1) >= 2
@@ -3003,6 +3071,12 @@ else:
         will = brainwill.code(tries, max_new, temperature)
         tries, max_new, temperature = will['tries'], will['max_new'], will['temperature']
         m.meta['code_will'] = will
+        try:                       # v3.210: гибкость зонной LLM (сопряжение)
+            import llm_zones
+            _flex = float(llm_zones.flexibility()['flex']) if llm_zones.enabled() else 0.0
+        except Exception:
+            _flex = 0.0
+        will['flex'] = _flex
         en = codecorpus.ru_en(task)
         prompts = ["# task: %s\n" % (en or task)]
         if en and en != str(task).lower():
@@ -3016,8 +3090,8 @@ else:
                 _FP.stable_code = True
                 raw = m.generate_code(
                     p, max_new=max_new,
-                    temperature=temperature * (0.85 + 0.1 * (i % 4)),
-                    top_k=15 + 5 * (i % 3), seed=1000 + i)
+                    temperature=temperature * (0.85 + (0.1 + 0.08 * _flex) * (i % 4)),
+                    top_k=15 + 5 * (i % 3) + round(12 * _flex), seed=1000 + i)
             except Exception:
                 continue
             finally:

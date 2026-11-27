@@ -966,7 +966,7 @@ EXAMPLES = [
     {"id": "ex_kb", "name": "Пример: радио базы знаний",
      "hint": "Статья из KB + заметка в память",
      "bricks": [
-         {"type": "know.kb", "params": {"query": "мозг-12"}, "var": ""},
+         {"type": "know.kb", "params": {"query": "Star Gate"}, "var": ""},
          {"type": "out.result", "params": {"text": ""}, "var": ""},
      ]},
 ]

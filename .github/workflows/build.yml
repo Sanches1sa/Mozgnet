@@ -1,4 +1,4 @@
-# mozgnet — один репозиторий «Мозг-12»: приложение (app/), облако (cloud/),
+# mozgnet — один репозиторий «Star Gate»: приложение (app/), облако (cloud/),
 # плата neuro_12 (board/), лаунчер (launcher/). Каждый push в main собирает
 # ВСЁ и выкладывает в Releases:
 #   mozgnet-….apk                         — приложение для телефона
@@ -50,7 +50,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version: "1.22" }
+        with: { go-version: "1.24" }
       - name: Лаунчер Windows и Linux
         run: |
           cd launcher/app
@@ -91,7 +91,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
-        with: { go-version: "1.22" }
+        with: { go-version: "1.24" }
       - uses: actions/download-artifact@v4
         with: { name: apk, path: pkg/apk }
       - name: Общий архив neuro12-all
@@ -145,7 +145,7 @@ jobs:
           if (-not $ok) { throw "облако не ответило на /api/health" }
           Write-Host "облако на своём Python отвечает: $($h | ConvertTo-Json -Compress)"
           @"
-          Мозг-12 $CV — общий архив. Python ставить НЕ нужно.
+          Star Gate $CV — общий архив. Python ставить НЕ нужно.
 
           neuro12-cloud\  облако со своим Python 3.12 (numpy, Pillow, Vosk и русская модель речи) и лаунчер
           neuro12-app\    приложение платы Arduino UNO Q (neuro_12)
@@ -153,7 +153,7 @@ jobs:
           install.exe      установщик облака для Windows
 
           ПЕРВАЯ УСТАНОВКА: распакуй архив и запусти install.exe — облако встанет в
-          %LOCALAPPDATA%\neuro12-cloud, появится ярлык «Мозг-12» и автозапуск.
+          %LOCALAPPDATA%\neuro12-cloud, появится ярлык «Star Gate» и автозапуск.
 
           ОБНОВЛЕНИЕ: лаунчер → ⚙ → «Установка из ZIP-архива» → выбери этот архив (распаковывать
           не нужно). Облако обновится (data не тронута), приложение платы встанет в лаунчер
@@ -206,7 +206,7 @@ jobs:
           make_latest: true
           files: out/*
           body: |
-            Всё «Мозг-12» одной сборкой:
+            Всё «Star Gate» одной сборкой:
             * **mozgnet-….apk** — телефон: облако внутри, скан сети, подключение плат, вращение MAC плат.
             * **neuro12-cloud-v…-update.zip** — облако ${{ env.CV }}: панель → Обновление (или распаковать поверх папки облака, data/ не трогать).
             * **neuro_12-v….zip** — плата ${{ env.BV }}: импорт в Arduino App Lab → Run.

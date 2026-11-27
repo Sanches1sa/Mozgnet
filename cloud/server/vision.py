@@ -106,11 +106,12 @@ def _mend(data):
 
 
 def _accept(img_b64, cam, broken):
-    """Общий приём кадра: (данные для показа, битый?, ошибка)."""
+    """Общий приём кадра: (данные для показа, битый?, ошибка, причина).
+    v3.189: причина словами возвращается вместе с кадром — попадает в ленту."""
     data = _decode_b64(img_b64)
     if len(data) < 16:
         _bad(cam, "пустой кадр (%d байт)" % len(data))
-        return None, True, "пустой кадр"
+        return None, True, "пустой кадр", "пустой кадр"
     try:
         broken = int(broken or 0)
     except (TypeError, ValueError):
@@ -121,57 +122,99 @@ def _accept(img_b64, cam, broken):
         _bad(cam, "битый кадр принят как есть: " + why)
         view = _mend(data)
         if view is None:
-            return None, True, "кадр без начала JPEG, а Pillow нет — показать нечем"
-        return view, True, ""
-    return data, False, ""
+            return None, True, "кадр без начала JPEG, а Pillow нет — показать нечем", why
+        return view, True, "", why
+    return data, False, "", ""
 
 
 def frame(img_b64, cam="cam", conf=0.35, board="", broken=0):
     """Кадр на распознавание. Возврат: {ok, detections:[{name,conf}]}.
     v3.186: оборванные и битые кадры НЕ отбрасываются — их видит и YOLO,
-    и страница камеры (с меткой «битый»)."""
-    data, brk, err = _accept(img_b64, cam, broken)
+    и страница камеры (с меткой «битый»); v3.189: попадают в ленту."""
+    data, brk, err, why = _accept(img_b64, cam, broken)
     if data is None:
-        return {"ok": False, "error": err, "broken": True}
+        return {"ok": False, "error": err, "broken": True, "why": why}
     det = _yolo(data, conf)
     names = [n for n, _c in det]
     _save_frame(cam, data, names, src="yolo" if det else "frame",
-                board=board, broken=brk)
-    return {"ok": True, "broken": brk,
+                board=board, broken=brk, why=why)
+    return {"ok": True, "broken": brk, "why": why,
             "detections": [{"name": n, "conf": round(c, 3)} for n, c in det]}
 
 
 def raw(img_b64, cam="cam", board="", broken=0):
     """Сырой кадр в стрим (без YOLO). v3.186: битые — тоже."""
-    data, brk, err = _accept(img_b64, cam, broken)
+    data, brk, err, why = _accept(img_b64, cam, broken)
     if data is None:
-        return {"ok": False, "error": err, "broken": True}
-    _save_frame(cam, data, [], src="raw", board=board, broken=brk)
-    return {"ok": True, "broken": brk}
+        return {"ok": False, "error": err, "broken": True, "why": why}
+    _save_frame(cam, data, [], src="raw", board=board, broken=brk, why=why)
+    return {"ok": True, "broken": brk, "why": why}
 
 
-def _save_frame(cam, data, names, src="raw", board="", broken=False):
+def _save_frame(cam, data, names, src="raw", board="", broken=False, why=""):
     with _LOCK:
         d, safe = _cam_dir(cam)
         with open(os.path.join(d, "last.jpg"), "wb") as f:
             f.write(data)
         item = {"cam": safe, "names": [str(n)[:24] for n in names],
                 "src": src, "board": str(board)[:40], "ts": time.time(),
-                "broken": bool(broken)}
+                "broken": bool(broken), "why": str(why or "")[:160]}
+        # v3.189: каждый кадр (целый и битый) — файлом в кольцо камеры, чтобы
+        # лента «Зрения» показывала и битые кадры, не только последний.
+        try:
+            fname = "f_%d.jpg" % int(time.time() * 1000)
+            with open(os.path.join(d, fname), "wb") as f:
+                f.write(data)
+            item["file"] = fname
+        except Exception:
+            pass
         buf = store.load_json(os.path.join("vision", "buffer.json"), []) or []
         buf.append(item)
         store.save_json(os.path.join("vision", "buffer.json"), buf[-_BUF_MAX:])
         hist = store.load_json(os.path.join("vision", safe, "hist.json"),
                                []) or []
         hist.append(item)
-        store.save_json(os.path.join("vision", safe, "hist.json"),
-                        hist[-_HIST_MAX:])
+        hist = hist[-_HIST_MAX:]
+        store.save_json(os.path.join("vision", safe, "hist.json"), hist)
+        # убрать файлы кадров, выпавшие из кольца истории
+        try:
+            keep = {h.get("file") for h in hist if h.get("file")}
+            for fn in os.listdir(d):
+                if fn.startswith("f_") and fn.endswith(".jpg") and fn not in keep:
+                    os.remove(os.path.join(d, fn))
+        except Exception:
+            pass
 
 
 def last_jpeg(cam="cam"):
     d, _s = _cam_dir(cam)
     try:
         with open(os.path.join(d, "last.jpg"), "rb") as f:
+            return f.read()
+    except Exception:
+        return b""
+
+
+def hist(cam, limit=12):
+    """v3.189: лента последних кадров камеры (целые и битые, новые сверху)."""
+    d, safe = _cam_dir(cam)
+    h = store.load_json(os.path.join("vision", safe, "hist.json"), []) or []
+    try:
+        limit = int(limit)
+    except (TypeError, ValueError):
+        limit = 12
+    return [{k: it.get(k) for k in ("cam", "names", "src", "board", "ts",
+                                    "broken", "why", "file")}
+            for it in h[-max(1, min(24, limit)):][::-1]]
+
+
+def frame_jpeg(cam="cam", name=""):
+    """Кадр из ленты по имени файла f_<ts>.jpg (защита от пути)."""
+    d, _s = _cam_dir(cam)
+    if not re.fullmatch(r"f_\d{5,20}\.jpg", str(name or "")):
+        return b""
+    try:
+        with open(os.path.join(d, str(name)), "rb") as f:
             return f.read()
     except Exception:
         return b""

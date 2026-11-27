@@ -1,4 +1,4 @@
-/* neuro_12 / app.js — логика веб-интерфейса «Мозг-12» (App Lab, порт 7000)
+/* neuro_12 / app.js — логика веб-интерфейса «Star Gate» (App Lab, порт 7000)
  * v2.19: БУКВЫ И СЛОВА ГЕНЕРАТОРА СКРЫТЫ — лента букв и чипы «буква/слово»
  *   убраны (человек не видит «мысли» буквогенератора); буквы фраз уходят
  *   на пин D6 (RPC d6seq); видны только готовые фразы. Тихие навыки:
@@ -308,6 +308,7 @@ function cfgDictate() { return !!(lastState.cfg && lastState.cfg.dictate_on); }
 function renderZones(st) {
   const el = $("zstrip");
   if (!el) return;
+  renderNeuronActivity(st);
   const cfg = st.cfg || {};
   const bm = st.brainmail || {};
   const chips = [];
@@ -410,15 +411,8 @@ async function pollState() {
   renderMemInfo(st.mem);
   renderTeacher(st);
   const ttsB = st.tts || {};
-  const ttsTitle = ttsB.err
-    ? ("Облако TTS: " + ttsB.err + " (мелодия D8 работает всегда)")
-    : (ttsB.via === "sketch"
-        ? "Речь идёт В СКЕТЧ (say_wave) — «нейроголос» играет динамик D8"
-        : (ttsB.via === "board"
-            ? "Речь через облако — играет динамик платы (aplay)"
-            : (ttsB.via === "browser"
-                ? "Речь через облако — играет этот браузер"
-                : "Речь через облако (POST /api/tts -> WAV -> скетч D8 / aplay / браузер); мелодия слов на D8 работает независимо")));
+  const phases = {queued:"В очереди", synthesizing:"Синтез русской речи", playing:"Воспроизведение", speaking:"Озвучка", browser_pending:"Ожидает воспроизведения в браузере", done:"Озвучено на плате", cancelled:"Остановлено", error:"Ошибка озвучки"};
+  const ttsTitle = ttsB.err || ((phases[ttsB.phase] || "Русская речь: eSpeak NG на плате или в облаке") + "; выход: " + (ttsB.output === "pwm9" ? "PWM D9; провалов: " + (ttsB.underruns || 0) : (ttsB.via || "ещё не выбран")) + ". PWM D9 требует фильтра и усилителя; альтернативный выход — ALSA/USB. D8 передаёт тоны.");
   setChip("c-tts", "TTS " + (cfg.tts_on ? "вкл" : "выкл"),
     !cfg.tts_on ? "" : (ttsB.err ? "warn" : (ttsB.via || cloud.ok) ? "good" : "warn"),
     ttsTitle);
@@ -785,6 +779,7 @@ async function loadSettings() {
     $("s-dkey").placeholder = s.direct_key || "оставь пустым — не менять";
     $("s-dmodel").value = s.direct_model || "";
     $("s-tvoice").value = s.tts_voice || "";
+    $("s-toutput").value = s.tts_output || "pwm9";
     $("s-tts").checked = !!s.tts_on;
     $("s-teach").checked = !!s.teach_on;
     $("s-dictate").checked = !!s.dictate_on;
@@ -821,6 +816,7 @@ async function saveSettings() {
     direct_key: $("s-dkey").value.trim(),
     direct_model: $("s-dmodel").value.trim(),
     tts_voice: $("s-tvoice").value.trim(),
+    tts_output: $("s-toutput").value,
     tts_on: $("s-tts").checked,
     teach_on: $("s-teach").checked,
     dictate_on: $("s-dictate").checked,
@@ -1034,26 +1030,12 @@ async function dictLookup() {
 }
 
 /* ---------- речь ---------- */
-function playB64(b64, mime) {
-  try {
-    const bin = atob(b64);
-    const arr = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
-    const url = URL.createObjectURL(new Blob([arr], { type: mime || "audio/wav" }));
-    const a = new Audio(url);
-    a.onended = () => URL.revokeObjectURL(url);
-    a.play().catch(() => { /* автоплей заблокирован до первого клика */ });
-  } catch (e) { /* аудио не критично */ }
-}
-
-async function pollTts() {
-  try {
-    const d = await apiGet("/api/tts_audio?after=" + lastTtsId);
-    const id = d.id || 0;
-    if (d.b64 && id && lastTtsId > 0) playB64(d.b64, d.mime);
-    lastTtsId = Math.max(lastTtsId, id);
-  } catch (e) { /* тише — статус покажет чип TTS */ }
-}
+function playB64(b64,mime){return new Promise((resolve,reject)=>{
+ try{const bin=atob(b64),arr=Uint8Array.from(bin,c=>c.charCodeAt(0)),url=URL.createObjectURL(new Blob([arr],{type:mime||'audio/wav'})),a=new Audio(url);
+ const clean=()=>URL.revokeObjectURL(url);a.onended=()=>{clean();resolve()};a.onerror=()=>{clean();reject(Error('Ошибка звукового устройства браузера'))};a.play().catch(e=>{clean();reject(e)})}catch(e){reject(e)}
+})}
+let ttsBrowserBusy=false;
+async function pollTts(){if(ttsBrowserBusy)return;ttsBrowserBusy=true;try{const d=await apiGet('/api/tts_audio?after='+lastTtsId);if(d.b64&&d.id>lastTtsId){await playB64(d.b64,d.mime);lastTtsId=d.id}}catch(e){/* Retry after user enables audio; never discard unplayed parts. */}finally{ttsBrowserBusy=false}}
 
 async function speak() {
   const text = $("s-speak").value.trim();
@@ -1061,12 +1043,11 @@ async function speak() {
   try {
     const r = await apiPost("/api/speak", { text: text });
     if (!r.ok && r.error) {
-      addMsg({ role: "system", text: "Речь через облако не удалась: " + r.error, ts: Date.now() / 1000 });
+      addMsg({ role: "system", text: "Озвучка не удалась: " + r.error, ts: Date.now() / 1000 });
     } else {
       $("s-speak").value = "";
-      addMsg({ role: "system", text: "🔊 Озвучил через облако: " +
-        (r.played === "sketch" ? "скетч (динамик D8)"
-          : r.played === "board" ? "динамик платы" : "этот браузер"), ts: Date.now() / 1000 });
+      addMsg({ role: "system", text: "🔊 Принято в очередь озвучки: " +
+        (r.queued ? "русская речь, части воспроизводятся последовательно" : "проверьте статус звука"), ts: Date.now() / 1000 });
     }
   } catch (e) {
     addMsg({ role: "system", text: "Речь недоступна: " + fmtErr(e), ts: Date.now() / 1000 });
@@ -1186,3 +1167,17 @@ setInterval(pollTensor, 2000);          /* v2.39: компьютер даёт р
   on("vrTrain", () => act({ act: "train", rec: +document.getElementById("vrRec").value, sig: document.getElementById("vrSig").value.trim() }));
   setInterval(() => { if (document.getElementById("vrBox") && document.getElementById("vrBox").offsetParent) poll(); }, 1500);
 })();
+
+/* Full hardware telemetry: a pulse is tied to a new spike packet, never a timer. */
+const neuronPulseSeen=new Map();
+function renderNeuronActivity(st){
+ let panel=document.getElementById('neuron-activity');
+ if(!panel){panel=document.createElement('details');panel.id='neuron-activity';panel.open=true;panel.innerHTML='<summary>Нейроны → локальная сеть → фраза</summary><div class="neuron-live-grid"></div><p class="reflection-live"></p><details><summary>Контекст и проверки — не готовый ответ</summary><pre class="reflection-trace"></pre></details>';document.getElementById('zstrip')?.after(panel)}
+ const frame=st.neuron_activity||{};const grid=panel.querySelector('.neuron-live-grid');
+ for(const row of frame.nodes||[]){let node=grid.querySelector('[data-node="'+row.id+'"]');if(!node){node=document.createElement('div');node.dataset.node=row.id;node.className='neuron-live';node.innerHTML='<strong></strong><small></small>';grid.append(node)}
+ node.querySelector('strong').textContent='N'+row.id;node.querySelector('small').textContent=row.online?(row.word||'тишина'):'нет сигнала';node.classList.toggle('offline',!row.online);
+ const pulse=row.pulse||0,old=neuronPulseSeen.get(row.id);if(old!==undefined&&pulse>old&&row.online){node.classList.remove('spiking');void node.offsetWidth;node.classList.add('spiking')};neuronPulseSeen.set(row.id,pulse);
+ node.title='Спайки в последнем окне: '+(row.spikes||0)
+ }
+ const r=st.reflection||{};panel.querySelector('.reflection-trace').textContent=(r.attempts||[]).map(a=>'Проход '+a.round+' · пакет '+a.seq+' · аппаратных '+a.physical_online+' · зонных '+a.software_neurons+'\nКонтекст: '+(a.context||[]).join(', ')+'\nПодходящих вариантов: '+(a.valid||0)+' · '+(a.reason||(a.rejected||[]).join('; '))).join('\n\n')||'Проверок пока нет';panel.querySelector('.reflection-live').textContent='Проход '+(r.round||0)+' / '+(r.limit||6)+' · '+(r.phase||'idle')+' · '+(r.reason||'Ожидаем контекст всех нейронов');
+}

@@ -35,6 +35,8 @@
  *    частоту на A0: камера/микрофон/чат ускоряют пластику весов (до 2000 Гц,
  *    в покое 120 Гц). "GEN;<частота>" по I2C — резервный канал.
  *  - при превышении порога "стреляет" спайком и выдаёт слово из словаря;
+ *  - v2.96: слово выбирается по сохранённым весам и входам, не по Hz;
+ *    частотный дрейф весов отключён; один переход порога = один спайк;
  *  - отдаёт хабу пакет val_c:  N<id>;<спайки>;<слово>
  *  - встроенный LED (D13) вспыхивает на каждый спайк; при старте мигает
  *    СВОЙ НОМЕР (v2.6) — карту нейронов видно без монитора;
@@ -100,9 +102,13 @@ extern "C" __attribute__((weak)) size_t strlcat(char *dst, const char *src, size
 
 /* LED активности */
 #define LED_PIN 13
+uint32_t ledUntil=0;
+void ledPulse(){digitalWrite(LED_PIN,HIGH);ledUntil=millis()+60;}
+void ledTick(){ if ((int32_t)(ledUntil-millis())<=0) digitalWrite(LED_PIN,LOW); }
 
 /* ----------------------------- СОСТОЯНИЕ --------------------------------- */
 uint8_t  myID = ID_ORPHAN;      // v2.6: действующий номер платы (EEPROM/SETID)
+uint8_t  lastInputs[12] = {0};
 int8_t   weights[12];           // веса перцептрона (связи с 12 входами, вкл. себя)
 float    activation = 0.0;      // текущая активация
 uint32_t spikesWin = 0;         // спайки за окно (сбрасывается после чтения хабом)
@@ -230,18 +236,20 @@ uint16_t hashStr(const char *s) {
   return h;
 }
 
-void fire() {
-  uint8_t n = 1 + (lfsr % 4);               // сколько спайков за раз
-  uint16_t eh = effHz();
-  if (eh >= 900) n += 1 + (uint8_t)((lfsr >> 9) % 3);
-  spikesWin += n;
-  activation = 0.30;                        // рефрактерный период
-  digitalWrite(LED_PIN, HIGH);              // вспышка — спайк виден
-  delayMicroseconds(600);
-  digitalWrite(LED_PIN, LOW);
+uint8_t neuralWord() {
+  int16_t scores[6] = {0};
+  for(uint8_t i=0;i<12;i++) scores[i%6]+=(int16_t)weights[i]*lastInputs[i];
+  uint8_t best=(myID<=11?myID:0)%6;
+  for(uint8_t i=0;i<6;i++) if(scores[i]>scores[best]) best=i;
+  return best;
+}
 
-  uint8_t idx = (uint8_t)(((unsigned long)(activation * 13.0f) + (unsigned long)(lfsr >> 4) + (unsigned long)hashStr(stim)) % 6UL);
-  if (eh >= 1500) idx = (uint8_t)((idx + 1) % 6);
+void fire() {
+  spikesWin += 1;                         // one threshold crossing, one actual spike
+  activation = 0.30;                        // рефрактерный период
+  ledPulse();                              // 60 ms, no blocking delay
+
+  uint8_t idx = neuralWord();              // learned weights/input, no Hz-to-word code
   strcpy_P(lastWord, (char *)pgm_read_word(&VOCAB[idx]));
 }
 
@@ -252,13 +260,14 @@ void neuronStep() {
   lfsr = (lfsr << 1) | (((lfsr >> 7) ^ (lfsr >> 5) ^ (lfsr >> 3) ^ 1) & 1);
   if (!lfsr) lfsr = 0xACE1 + myID;          // v2.6: seed от рантайм-номера
 
-  float lr = (float)effHz() / 2000.0;
+  // Learning follows real input co-activation, not oscillator frequency.
 
   bool stimFresh = stim[0] && (millis() - stimT < 3000);
   int16_t sum = 0;
   for (uint8_t i = 0; i < 12; i++) {
     int8_t x = (int8_t)((lfsr >> i) & 1);
     if (stimFresh) x = (int8_t)min(3, (int)x + 1 + (int)((hashStr(stim) >> i) & 1));
+    lastInputs[i]=(uint8_t)x;
     sum += weights[i] * x;
   }
 
@@ -270,30 +279,17 @@ void neuronStep() {
   float thr = 0.95 + (myID % 3) * 0.05;     // v2.6: порог от рантайм-номера
   if (activation > thr) {
     fire();
-    for (uint8_t i = 0; i < 12; i++) {
-      if (i == myID % 12) continue;         // самосвязь не трогаем
-      int8_t x = (int8_t)((lfsr >> i) & 1);
-      int8_t dw = (int8_t)((x ? 1 : -1) * (0.5 + lr * 2.5) * ((lfsr >> ((i + 3) & 7)) & 1));
-      int16_t w = (int16_t)weights[i] + dw;
-      weights[i] = (int8_t)constrain(w, -60, 90);
-      wDirty = true;
+    if(stimFresh) for (uint8_t i=0;i<12;i++) {
+      if(i==myID%12)continue;
+      int16_t value=(int16_t)weights[i]+(lastInputs[i]>0?1:-1);
+      int8_t next=(int8_t)constrain(value,-60,90);
+      if(next!=weights[i]){weights[i]=next;wDirty=true;}
     }
     if (++firesCnt >= 32) { saveWeights(); firesCnt = 0; }
   }
 
-  uint16_t eh = effHz();
-  if (eh >= FREQ_MIN_HZ) {
-    uint8_t wRot = (uint8_t)(stepCnt % 12);
-    if (wRot != myID % 12) {                // самосвязь не трогаем
-      int8_t dir = ((lfsr >> (wRot & 7)) & 1) ? 1 : -1;
-      int16_t dw = (int16_t)(dir * (1 + (int)(eh / 1000)));
-      int16_t w = (int16_t)weights[wRot] + dw;
-      weights[wRot] = (int8_t)constrain(w, -60, 90);
-      wDirty = true;
-    }
-    stepCnt++;
-    if (wDirty && ++fqSaves >= 150) { saveWeights(); fqSaves = 0; }  // ~30 с
-  }
+  // Frequency-driven random drift of language weights is intentionally disabled.
+
 }
 
 /* ----------------------------- ПАКЕТ val_c ------------------------------- */
@@ -483,6 +479,7 @@ void setup() {
 void loop() {
   applyPendingClr();   // v2.7: стереть номер (CLR_ID), не в прерывании
   applyPendingID();    // v2.6: применить номер, принятый через SETID (не в IRQ)
+  ledTick();
   freqSense();         // частотная шина: считаем фронты на A0 (D4 хаба)
   neuronStep();
 #if LINK_SW_WIRE

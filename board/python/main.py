@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # ===========================================================================
-# neuro_12 / python/main.py — МОЗГ «ИСКУССТВЕННЫЙ МОЗГ-12» для Arduino App Lab
+# neuro_12 / python/main.py — МОЗГ «ИСКУССТВЕННЫЙ STAR GATE» для Arduino App Lab
 # (Linux-сторона UNO Q, QRB2210; приложение импортируется из zip)
 # ---------------------------------------------------------------------------
 # Архитектура (v2.4, «буквенный генератор» + App Lab):
@@ -92,7 +92,7 @@
 #       «Учитель», а не в чат. Ответы LLM отключены (v2.14): если нейросети
 #       непонятно — она ТИХО пишет функцию-навык сама (v2.13).
 #
-#   ОБЛАКО КАК МОЗГ (v2.8) — все фичи платформы мозг-12 теперь доступны:
+#   ОБЛАКО КАК МОЗГ (v2.8) — все фичи платформы Star Gate теперь доступны:
 #     - поиск: POST {cloud}/api/web/fetch {"q"} — Википедия (SSRF-защита);
 #     - код:   POST {cloud}/api/sandbox/run {"code"} — песочница облака
 #       (ПРОВЕРКА своего кода; сам код мозг пишет только сам, v2.24);
@@ -109,13 +109,11 @@
 #   Письма чата облака отвечаются знаниями (память/KB/советы), а не
 #   шаблонами зон.
 #
-#   TTS (v2.14): слова из итогового буфера SAY озвучивает динамик D8
-#   (мелодия нот — всегда). Речь — ЧЕРЕЗ ОБЛАКО: POST {cloud_url}/api/tts
-#   {"text": ...} -> WAV (Silero/Piper/espeak, а без движка — встроенный
-#   «нейроголос» облака: WAV есть всегда). Дальше WAV идёт В СКЕТЧ
-#   (say_wave: огибающая «частота:длительность» — играет D8), а если мост
-#   молчит — динамик платы (aplay/paplay/ffplay), иначе — браузер
-#   (/api/tts_audio). Кирпич arduino:tts НЕ нужен: стартует на любой плате.
+#   TTS v2.97: настоящий русский WAV (локальный eSpeak NG или /api/tts/ru).
+#   По умолчанию PCM 8 кГц -> Bridge -> D9/PB8/TIM4_CH3, через фильтр
+#   и усилитель. TIM16 зарезервирован для такта 8 кГц. D8 — прежние тоны.
+#   Альтернатива в настройках: аудиоустройство Linux/USB и браузер.
+#   Экспериментальная реализация PWM требует проверки на физической UNO Q.
 #
 #   ПАМЯТЬ (v2.7) — ТРИ слоя: 1) файл neuro12_memory.json на плате (реплики
 #   диалога для LLM, история чата, счётчики обучения) — переживает
@@ -230,7 +228,6 @@ import os
 import random
 import re
 import socket
-import sys
 import threading
 import time
 import traceback
@@ -278,7 +275,8 @@ except Exception:
 # App Lab отсутствует (из-за него приложение не запускалось), arduino:tts
 # тоже не подключён. LLM и TTS работают ЧЕРЕЗ ОБЛАКО — см. секции [4] и [6].
 
-APP_VERSION = "2.99.2"
+APP_VERSION = "2.114.0"
+import neural_bridge
 
 # ---------------------------------------------------------------------------
 #   v2.33 (2026): МОСТ-КАНАЛ БЕЗ ТАЙМАУТОВ — фикс «word_push не работает,
@@ -365,14 +363,6 @@ def _base_dirs():
 _CFG_NAME = "neuro12_config.json"
 _MEM_NAME = "neuro12_memory.json"
 
-# v2.96: ПОСТОЯННЫЕ PYTHON-ПАКЕТЫ ПЛАТЫ. Контейнер App Lab пересоздаётся при
-# каждом обновлении — pip install внутрь него пропадает (так терялся Vosk).
-# Пакеты ставятся в <папка приложения>/pylib (она смонтирована с платы) и
-# подхватываются отсюда при каждом старте.
-PYLIB_DIR = os.path.join(_base_dirs()[0], "pylib")
-if os.path.isdir(PYLIB_DIR) and PYLIB_DIR not in sys.path:
-    sys.path.insert(0, PYLIB_DIR)
-
 DEFAULT_CFG = {
     "cloud_url": "",            # ВНЕШНИЙ сервер: мозг-почта, память, буфер,
                                 # навыки, Википедия, LLM-учитель, TTS (v2.24:
@@ -382,6 +372,7 @@ DEFAULT_CFG = {
     "direct_key": "",           # Bearer-ключ прямого ядра (если нужен)
     "direct_model": "",         # имя модели прямого ядра
     "tts_on": True,             # озвучивать фразы (TTS через облако)
+    "tts_output": "pwm9",       # русская PCM-речь на D9 через усилитель
     "tts_voice": "",            # голос облака (пусто = по умолчанию)
     "teach_on": True,           # LLM-учитель: оценивать фразы (teach_score)
     "whisper_hint": True,       # добавлять статистику мозга в шёпот
@@ -390,6 +381,8 @@ DEFAULT_CFG = {
     "curious_on": True,         # ЛЮБОПЫТСТВО: мозг сам ищет новое в облаке
     "brain_on": True,           # v2.10: ЕДИНЫЙ МОЗГ — мозг-почта через облако
     "long_answers": True,       # v2.10: мозг пишет КАК МОЖНО ДЛИННЕЕ (без LLM)
+    "full_thoughts": True,      # v2.98: мысль — ПОЛНОЦЕННЫЙ ТЕКСТ со всех
+                                # нейрон-плат (или zone LLM), а не 3-4 слова
     "advice_on": True,          # v2.14: LLM-наставник даёт СОВЕТЫ нейросети
                                 # (как отвечать); ответ строит сама сеть
     "gen_on": True,             # v2.16: мозг сам говорит фразами из словаря
@@ -399,7 +392,9 @@ DEFAULT_CFG = {
     "mic_on": True,             # v2.70: уши мозга — USB-микрофон платы -> речь в облако
     "mic_dev": "default",       # v2.70: устройство ALSA для arecord (default, plughw:1,0 …)
     "mic_board_asr": True,      # v2.93: Vosk НА ПЛАТЕ — речь в текст прямо на плате
+    "selfcode_on": True,         # v2.109: плата собирает код по урокам (/код)
     "code_from_cloud": True,    # v2.93: облако может проверять/запускать код на плате (раздел «Код»)
+    "hw_on": True,              # v2.111: Star Gate управляет свободными выводами (D5, D7, A5)
     "admin_from_cloud": True,   # v2.93: окно «Серверы» облака может выполнять команды в контейнере платы
     "vr_on": True,              # v2.94: голосовой модуль ELECHOUSE VR3 на D12/D13
     "vr_load": "0,1,2,3,4,5,6", # v2.94: какие записи (0..79) грузить в распознаватель (до 7)
@@ -477,42 +472,11 @@ def save_cfg(cfg):
     return ""
 
 
-_HOSTNAME_CACHE = [""]
-
-
 def _hostname():
-    """Имя платы для облачной памяти (каждая плата хранит свой бандл).
-    Внутри Docker gethostname() = id контейнера, он меняется при каждом
-    пересоздании контейнера -> в облаке плодились «новые платы». Поэтому
-    имя один раз запоминается в файле neuro12_boardid.txt (каталог приложения
-    переживает пересоздание контейнера) или берётся из env NEURO_BOARD_ID."""
-    if _HOSTNAME_CACHE[0]:
-        return _HOSTNAME_CACHE[0]
+    """Имя платы для облачной памяти (каждая плата хранит свой бандл)."""
     try:
         import socket
-        name = (os.environ.get("NEURO_BOARD_ID") or "").strip()
-        if not name:
-            for d in _base_dirs():
-                try:
-                    with open(os.path.join(d, "neuro12_boardid.txt"), encoding="utf-8") as f:
-                        name = f.read().strip()
-                except Exception:
-                    name = ""
-                if name:
-                    break
-        if not name:
-            name = ((socket.gethostname() or "").strip() or "unoq")
-            for d in _base_dirs():
-                if d == "/tmp" or not os.access(d, os.W_OK):
-                    continue
-                try:
-                    with open(os.path.join(d, "neuro12_boardid.txt"), "w", encoding="utf-8") as f:
-                        f.write(name[:40])
-                    break
-                except Exception:
-                    continue
-        _HOSTNAME_CACHE[0] = name[:40] or "unoq"
-        return _HOSTNAME_CACHE[0]
+        return ((socket.gethostname() or "").strip() or "unoq")[:40]
     except Exception:
         return "unoq"
 
@@ -772,7 +736,7 @@ def add_message(role, text, zone="", user=""):
 
 def brain_remember(role, text):
     with SH.lock:
-        SH.memory.append({"role": role, "text": str(text)[:400],
+        SH.memory.append({"role": role, "text": str(text)[:THOUGHT_CHARS],
                           "hz": int(SH.gen_hz or 0),   # v2.44
                           "shz": _signed_hz()})        # v2.55
         if len(SH.memory) > 60:
@@ -780,7 +744,9 @@ def brain_remember(role, text):
         SH.mem_dirty = True                 # файл запишет mem_sync_tick
     # v2.25: диалог — материал для нейросети (обучение фоном, через очередь)
     try:
-        mn_feed(str(text)[:2000], "", "диалог")
+        
+        if not str(text).startswith(("💬 «", "🗣 «")):
+            mn_feed(str(text)[:THOUGHT_CHARS], "", "диалог")
     except Exception:
         pass
 
@@ -1107,8 +1073,7 @@ def buf_worker():
                               f, ensure_ascii=False)
             except Exception:
                 pass
-            # v2.96.5: в мост — не длиннее RPC-буфера MCU (кириллица = 2 Б/символ)
-            _bridge_call("cloud_buf_set", summary[:85], timeout=4)
+            _bridge_call("cloud_buf_set", summary, timeout=4)
             log("БУФЕР", "из облака:", summary[:80])
         except Exception:
             pass
@@ -1249,12 +1214,9 @@ def _cam_uart_diag():
                 why = ("скетч ЗАВИС: loop() стоит на этапе «%s» (проходов %s) — перезапусти "
                        "приложение; если повторится — пришли этот текст" % (dg.get("loop_name"), dg.get("count")))
             else:
-                sv = str(_SKETCH.get("sver") or "")
-                why = ("мост со скетчем жив, но скетч не присылает счётчики камеры (on_cam_info) "
-                       "и не ответил на cam_frame_info за 8 с%s — скетч %s: нужен скетч 2.96+ "
-                       "(кадры уходят в Linux сами, без RPC): лаунчер ⏻ → залить приложение на плату" % (
-                           ("; loop сейчас на этапе «%s»" % dg.get("loop_name")) if dg else "",
-                           sv or "версии не прислал"))
+                why = ("мост со скетчем жив, но cam_frame_info не ответил за 8 с%s — обнови "
+                       "плату до 2.94.1 (кадры камеры отдаются из потока моста)" % (
+                           ("; loop сейчас на этапе «%s»" % dg.get("loop_name")) if dg else ""))
     elif not d.get("bytes") and "bytes" in d:
         why = ("по проводу не пришло НИ ОДНОГО байта: проверь TX ESP32-CAM (GPIO1/U0TXD "
                "или пин из esp32cam_uart) → D0/RX платы, общий GND и питание камеры 5 В")
@@ -1364,11 +1326,7 @@ def camai_worker():
             _CAMAI["ok"] = False
             _CAMAI["err"] = "выключена (нужно cam_url = uart и галочка «камера выбирает слова»)"
             continue
-        if _cam_push_on():                      # v2.96: зрение приходит само (on_cam_vis)
-            age_ms = int((time.time() - _CAM_PUSH["vis_ts"]) * 1000) if _CAM_PUSH["vis_ts"] else 0
-            r = ("age_ms=%d|%s" % (age_ms, _CAM_PUSH["vis"])) if _CAM_PUSH["vis"] else ""
-        else:
-            r = _bridge_call("cam_vis", timeout=3)
+        r = _bridge_call("cam_vis", timeout=3)
         _CAMAI["polls"] += 1
         if not r:
             _CAMAI["ok"] = False
@@ -1447,7 +1405,7 @@ def _camai_say(phrase):
     """Итоговая фраза мозга — камере: она привяжет слова к своей сцене."""
     if not _camai_fresh() or not phrase:
         return
-    _bridge_call("cam_say", str(phrase).replace("\n", " ")[:85], wait=False)   # v2.96.5: ≤ буфера MCU
+    _bridge_call("cam_say", str(phrase).replace("\n", " ")[:300], wait=False)
     _CAMAI["said"] += 1
 
 
@@ -1660,7 +1618,7 @@ def _gen_task_async(text, src="мозг"):
             if not url:
                 return
             _http_json_err(url + "/api/gen/task",
-                           {"board": _hostname(), "text": str(text)[:400],
+                           {"board": _hostname(), "text": str(text)[:THOUGHT_CHARS],
                             "src": str(src)[:24]},
                            token=token, timeout=12)
         except Exception:
@@ -1693,7 +1651,7 @@ def _plat_last_user_topic():
                     return str(m["text"])[:60]
     except Exception:
         pass
-    return "нейросеть мозг-12"
+    return "нейросеть Star Gate"
 
 
 def _platform_read_job(st):
@@ -1780,7 +1738,7 @@ def _platform_write_job(st):
     if not bot_lines:
         return
     title = "Заметки мозга-12 (%s): опыт наблюдений" % _hostname()
-    intro = ("Заметки написаны нейросетью платы «%s» (мозг-12 v%s): "
+    intro = ("Заметки написаны нейросетью платы «%s» (Star Gate v%s): "
              "слов в словаре %d, статей прочитано %d, выходов в интернет %d, "
              "собственных записей %d."
              % (_hostname(), APP_VERSION, n_words, st.get("reads", 0),
@@ -1792,7 +1750,7 @@ def _platform_write_job(st):
     text = (intro + "\n\n" + body + "\n\n" + concl)[:18000]
     r, _e = _http_json_err(url + "/api/kb/import",
                            {"title": title, "text": text,
-                            "source": "мозг-12 " + _hostname()},
+                            "source": "Star Gate " + _hostname()},
                            token=token, timeout=25)
     if r and (r.get("ok") or r.get("id")):
         st["written"] = int(st.get("written") or 0) + 1
@@ -2006,13 +1964,66 @@ def mem_sync_tick():
 
 
 # ===========================================================================
-# [2d] ОБЛАЧНЫЕ ФУНКЦИИ (v2.8): мозг умеет всё, что умеет платформа мозг-12:
+# [2d] ОБЛАЧНЫЕ ФУНКЦИИ (v2.8): мозг умеет всё, что умеет платформа Star Gate:
 #      поиск (Википедия, SSRF-защита), песочница для кода, генерация функций
 #      LLM с проверкой, реестр функций облака + их запуск. Всё по токену.
 # ===========================================================================
+# v2.100: HTTPS К ОБЛАКУ. cloud_url может быть https://host:8443. Публичный
+# сертификат (Let's Encrypt) проверяется системными CA; самоподписанный —
+# закрепляется при первом подключении (TOFU: сертификат сохраняется в
+# neuro12_pin_<host>_<port>.pem и дальше проверяется по нему; подмена
+# сертификата -> соединение отклоняется). HTTP по-прежнему работает.
+_PIN_DONE = {}
+
+
+def _pin_https_setup(url=None):
+    url = (url or CFG.get("cloud_url") or "").strip()
+    if not url.lower().startswith("https://"):
+        return False
+    try:
+        import ssl
+        import urllib.parse
+        import urllib.request
+        u = urllib.parse.urlparse(url)
+        host, port = u.hostname, u.port or 443
+        key = "%s:%s" % (host, port)
+        if _PIN_DONE.get(key):
+            return True
+        base = _base_dirs()[0]
+        pem = os.path.join(base, "neuro12_pin_%s_%s.pem" %
+                           (re.sub(r"[^0-9A-Za-z.-]", "_", host), port))
+        ctx = ssl.create_default_context()
+        try:                                  # публичный сертификат?
+            import socket
+            with socket.create_connection((host, port), timeout=6) as sk:
+                with ctx.wrap_socket(sk, server_hostname=host):
+                    pass
+            _PIN_DONE[key] = True
+            return True
+        except ssl.SSLCertVerificationError:
+            pass
+        if not os.path.exists(pem):           # TOFU: первое знакомство
+            crt = ssl.get_server_certificate((host, port))
+            os.makedirs(base, exist_ok=True)
+            with open(pem, "w") as f:
+                f.write(crt)
+            log("HTTPS: сертификат облака %s закреплён" % key)
+        pctx = ssl.create_default_context(cafile=pem)
+        pctx.check_hostname = False           # закреплён сам сертификат
+        urllib.request.install_opener(urllib.request.build_opener(
+            urllib.request.HTTPSHandler(context=pctx)))
+        _PIN_DONE[key] = True
+        return True
+    except Exception as e:
+        log("HTTPS: закрепить не удалось:", str(e)[:100])
+        return False
+
+
 def _cloud_base():
     url = (CFG.get("cloud_url") or "").strip().rstrip("/")
     token = (CFG.get("token") or "").strip()
+    if url[:8].lower() == "https://" and not _PIN_DONE:
+        _pin_https_setup(url)
     return (url if url and token else ""), token
 
 
@@ -2038,6 +2049,8 @@ def _cloud_base():
 # Всё фоновое и best-effort: связь плоха — фразы всё равно живут в чате
 # платы и в памяти, а очередь дождётся следующей отправки.
 THOUGHT_FLUSH = 45.0            # сек между сборками мыслей в текст
+LOOP_TURNS = 37                 # v2.101: оборотов по словам перед мыслью
+THOUGHT_CHARS = 6000            # потолок одной мысли (было 3800)
 THOUGHT_MAX_Q = 24              # потолок очереди (старые вытесняются)
 _THOUGHT_Q = []                 # фразы, ждущие отправки
 _THOUGHT_LOCK = threading.Lock()
@@ -2070,20 +2083,12 @@ def cloud_register():
     if not url:
         return
     ip = _local_ip()
-    # 172.16–31.x = внутренняя сеть Docker: снаружи недоступна. Не шлём её —
-    # облако подставит реальный адрес платы из источника запроса.
-    try:
-        _o = [int(x) for x in ip.split(".")]
-        if _o[0] == 172 and 16 <= _o[1] <= 31:
-            ip = ""
-    except Exception:
-        pass
     reg_url = ("http://%s:%d" % (ip, WEB_UI_PORT)) if ip else ""
     r, err = _http_json_err(
         url + "/api/brains/register",
         {"id": _hostname(), "name": "Плата UNO Q (%s)" % _hostname(),
          "kind": "board", "url": reg_url,
-         "note": "мозг-12 · авто-регистрация платы"},
+         "note": "Star Gate · авто-регистрация платы"},
         token=token, timeout=8)
     ok = bool(r and r.get("ok"))
     _REG_STATE.update({"ts": time.time(), "ok": ok, "url": reg_url,
@@ -2115,8 +2120,29 @@ _JUNK_RE = re.compile(r"(?<![а-яёa-z0-9])(?:" + "|".join(sorted(
     r"|[а-яё]{1,2}\d+)(?![а-яёa-z0-9])\.?", re.I)
 
 
+_CODE_FENCE = re.compile(r"(```[^\n]*\n.*?```)", re.S)
+
+
 def scrub_thought(text):
-    """Мысль без пометок языка и обрывков; шум целиком -> ''."""
+    """Мысль без пометок языка и обрывков; шум целиком -> ''.
+    v2.103: КОД в ```…``` (латиница, отступы, переносы) не трогается —
+    чистится только проза вокруг."""
+    src = str(text or "")
+    if "```" in src:
+        parts = _CODE_FENCE.split(src)
+        out = []
+        for part in parts:
+            if part.startswith("```"):
+                out.append(part)
+            else:
+                out.append(_scrub_prose(part) if part.strip() else "")
+        res = "\n\n".join(x for x in out if x).strip()
+        return res if any(x.startswith("```") for x in out) else _scrub_prose(src)
+    return _scrub_prose(src)
+
+
+def _scrub_prose(text):
+    """Проза: без пометок языка и обрывков; шум целиком -> ''."""
     t = re.sub(r"\(\s*(?:англ|лат|греч|нем|фр|франц)\.[^()]{0,160}\)", " ",
                str(text or ""), flags=re.I)
     t = re.sub(r"\bдо\s+н\.\s*э\.", "до нашей эры", t, flags=re.I)
@@ -2140,21 +2166,20 @@ def _thought_push(phrase):
     if not ph:
         return
     with _THOUGHT_LOCK:
-        _LAST_THOUGHT.update(t=ph[:220], ts=time.time())     # v2.90
-        _THOUGHT_Q.append(ph[:220])
+        _LAST_THOUGHT.update(t=ph[:THOUGHT_CHARS], ts=time.time())     # v2.90
+        _THOUGHT_Q.append(ph[:THOUGHT_CHARS])
         if len(_THOUGHT_Q) > THOUGHT_MAX_Q:
             del _THOUGHT_Q[:-THOUGHT_MAX_Q]
         try:          # v2.60: связь мозгов — мысль вместе с частотой генератора
-            _LINK_Q.append({"t": ph[:220], "shz": _signed_hz()})
+            # v2.98: облаку уходит ПОЛНОЦЕННЫЙ текст (до 1200 знаков), а не
+            # обрезок в 220 — мысль может собираться дольше, зато облако
+            # берёт её целиком (хвост в чат идёт отдельным сборщиком)
+            _LINK_Q.append({"t": ph[:1200], "shz": _signed_hz()})
             if len(_LINK_Q) > 12:
                 del _LINK_Q[:-12]
         except Exception:
             pass
-    # v2.25: мысль мозга — тоже материал для нейросети (самообучение)
-    try:
-        mn_feed(ph, "", "мысль")
-    except Exception:
-        pass
+    # Собственная неподтверждённая мысль не является обучающей меткой.
 
 
 # ===========================================================================
@@ -2248,7 +2273,8 @@ def api_alive():
             # ожил (а не только порт 7000): ответил ли скетч хоть раз и шаг его запуска
             "sketch_seen": bool(SH.bridge_seen),
             "sketch_alive": bool(SH.bridge_seen) and ba < 15.0,
-            "sketch_boot": int(_SKETCH.get("boot") or 0)}
+            "sketch_boot": int(_SKETCH.get("boot") or 0),
+            "board_id": _hostname()}          # v2.113: лаунчер узнаёт id этой платы в облаке
 
 
 
@@ -2396,6 +2422,7 @@ def _link_extras(payload):
     _put("net", lambda: SH.net if len(SH.net or "") == 12 else "")
     _put("will", brain_will)
     _put("lead", brain_lead)            # v2.90: ведущая зона + мысль мозга
+    _put("kw", brain_kw_payload)        # v2.98: ключевые слова с волей мозга
     _put("noise", lambda: {"cap": _PART["cap"], "d6": _PART["d6"],     # v2.92
                            "scale": _PART["scale"], "cfg": _PART["cfg"],
                            "age": int(time.time() - _PART["ts"]) if _PART["ts"] else None})
@@ -2428,62 +2455,8 @@ def _link_extras(payload):
         "rpc": sorted(([k, v["ok"], v["err"], v["last"]] for k, v in list(_RPC_STATS.items())
                        if v["err"]), key=lambda x: -x[2])[:8],
         "log": [t for _ts, t in list(_SKETCH["log"])[-4:]]})
-    _put("codejobs", lambda: dict(_CODEJOBS, code=bool(CFG.get("code_from_cloud", True)),
+    _put("codejobs", lambda: dict(_CODEJOBS, hw=bool(CFG.get("hw_on", True)), code=bool(CFG.get("code_from_cloud", True)),
                                   admin=bool(CFG.get("admin_from_cloud", True))))
-
-
-# v2.96: ОБЩИЙ ЧАТ плата ↔ облако ↔ боты ↔ своя LLM. По каналу связи
-# (/api/link) плата отдаёт свои новые реплики (вопросы человека в чате платы
-# и ответы мозга) и получает чужие: реплики людей со страниц игр, мысли
-# своей LLM, события игр («LLM перешла в Gubble 2», «мозг позвал LLM»).
-# Чужие пишутся в чат платы зоной «Общий чат» и обратно не отсылаются.
-_GCHAT = {"seq": 0, "pushed": 0, "got": 0, "sent": 0, "ts": 0.0}
-GCHAT_ZONE = "Общий чат"
-
-
-def _gchat_out(payload):
-    try:
-        payload["chat_seq"] = _GCHAT["seq"]
-        out = []
-        with SH.lock:
-            for m in SH.messages[-40:]:
-                if int(m.get("seq") or 0) <= _GCHAT["pushed"]:
-                    continue
-                if m.get("zone") == GCHAT_ZONE or m.get("role") not in ("user", "bot"):
-                    continue
-                t = str(m.get("text") or "").strip()
-                if not t or len(t) < 2:
-                    continue
-                out.append({"role": m["role"], "text": t[:400], "zone": m.get("zone") or "",
-                            "user": m.get("user") or "", "ts": m.get("ts")})
-            if SH.messages:
-                _GCHAT["pushed"] = max(_GCHAT["pushed"], int(SH.messages[-1].get("seq") or 0))
-        if out:
-            payload["chat_out"] = out[-10:]
-            _GCHAT["sent"] += len(out[-10:])
-    except Exception:
-        pass
-
-
-def _gchat_in(ch):
-    try:
-        msgs = ch.get("msgs") or []
-        for m in msgs:
-            if not isinstance(m, dict) or not m.get("text"):
-                continue
-            who, kind = str(m.get("who") or "облако")[:40], str(m.get("kind") or "")
-            icon = {"llm": "🤖", "thought": "💭", "event": "☁", "invite": "🎮"}.get(kind, "💬")
-            g = str(m.get("game") or "")
-            add_message("system", "%s %s%s: %s" % (icon, who, (" · " + g) if g and g != "плата" else "",
-                                                  str(m["text"])[:400]), GCHAT_ZONE)
-            _GCHAT["got"] += 1
-        try:
-            _GCHAT["seq"] = max(_GCHAT["seq"], int(ch.get("seq") or 0))
-        except (TypeError, ValueError):
-            pass
-        _GCHAT["ts"] = time.time()
-    except Exception:
-        pass
 
 
 def link_once():
@@ -2501,6 +2474,7 @@ def link_once():
                "shz": _signed_hz(), "ema": round(ema, 1), "phrases": batch,
                "up": int(time.time() - _START_TS), "rss_mb": _rss_mb(),
                "ver": APP_VERSION, "asks_ok": True,
+               "neuron_context": neural_bridge.BUS.snapshot(),
                "grav": {"strain": _GRAV.get("strain"), "g": _GRAV.get("g"),
                         "pulled": _GRAV.get("pulled"),
                         "masses": _GRAV.get("masses")[:3]},
@@ -2510,7 +2484,6 @@ def link_once():
                           "age": int(max(0.0, time.time() - SH.bridge_ts)),
                           "seen": bool(SH.bridge_seen)}}
     _link_extras(payload)              # v2.77: доп. поля — каждое отдельно
-    _gchat_out(payload)                # v2.96: общий чат — свои реплики
     crash = ""
     if not _CRASH_SENT[0]:
         crash = _crash_take()
@@ -2580,15 +2553,6 @@ def link_once():
         _part_apply(r.get("particles"))
     if isinstance(r.get("game"), dict):  # v2.69: в облаке есть игра «РОК-12»
         _GAME["cloud"] = dict(r["game"], ts=time.time())
-    if isinstance(r.get("chat"), dict):  # v2.96: общий чат облака -> чат платы
-        _gchat_in(r["chat"])
-    if r.get("vosk_install"):            # v2.96: кнопка «поставить Vosk» в облаке
-        try:
-            api_vosk_install({})
-        except Exception:
-            pass
-    if isinstance(r.get("play"), dict):  # v2.96.1: звук из карточки микрофона -> динамик
-        threading.Thread(target=_play_from_cloud, args=(dict(r["play"]),), daemon=True).start()
     sy = r.get("sync")                  # v2.67: общий ритм платформы
     if isinstance(sy, dict) and isinstance(sy.get("breath"), dict):
         breath_sync(sy["breath"])       # v2.74: общее дыхание
@@ -2647,13 +2611,13 @@ def _thought_deliver(batch):
     for ph in batch[:6]:
         r, err = _http_json_err(
             url + "/api/think",
-            {"board": board, "text": "🧠 «%s»" % ph[:220], "kind": "say"},
+            {"board": board, "text": "🧠 «%s»" % ph[:THOUGHT_CHARS], "kind": "say"},
             token=token, timeout=8)
         res["think"] = res["think"] or bool(r and r.get("ok"))
     # 2) ЧАТ ОБЛАКА «Мысли плат» — собранный текст ОДНИМ сообщением (v2.4.7)
     text = "Мысли платы %s (собрано за %d мин):\n%s" % (
         board, max(1, int(THOUGHT_FLUSH / 60.0) + 1),
-        "\n".join("• %s" % p for p in batch))[:3500]
+        "\n".join("• %s" % p for p in batch))[:24000]
     r, err = _http_json_err(
         url + "/api/chat/thought", {"board": board, "text": text},
         token=token, timeout=8)
@@ -2662,7 +2626,7 @@ def _thought_deliver(batch):
     r, err = _http_json_err(
         url + "/api/import",
         {"board": board,
-         "messages": [{"role": "bot", "text": "🧠 «%s»" % batch[-1][:220],
+         "messages": [{"role": "bot", "text": "🧠 «%s»" % batch[-1][:THOUGHT_CHARS],
                        "zone": "Мысль", "ts": int(time.time() * 1000)}]},
         token=token, timeout=8)
     res["import"] = bool(r and r.get("ok"))
@@ -2718,9 +2682,10 @@ def cloud_search(q, timeout=25):
     return None, r.get("error") or "поиск не удался"
 
 
-def cloud_run_code(code, text="", timeout=30):
-    """Выполнить код в песочнице ОБЛАКА: POST /api/sandbox/run.
-    Код — модуль с def run(text, ctx=None) -> str."""
+def _tn_sandbox_run(code, text="", timeout=45):
+    """ВНУТРЕННЕЕ ядро (v2.97.3): обучение тензорного ядра мозга в песочнице
+    облака. Единственный легальный «питон» — драйвер _TN_KERNEL: код строит
+    сама плата для своего обучения; чужой и самописный код сюда не попадает."""
     url, token = _cloud_base()
     if not url:
         return None, "облако не задано (панель «Настройки»)"
@@ -2733,21 +2698,10 @@ def cloud_run_code(code, text="", timeout=30):
     return r, ("" if r.get("ok") else (r.get("error") or "код не выполнился"))
 
 
-def cloud_codegen(task, timeout=20):
-    """v2.37: попросить ОБЛАКО собрать код по просьбе (режим «Код» облака,
-    без LLM): Python/JS/Arduino/HTML/Bash/SQL. POST /api/board/codegen.
-    Возврат (ответ-dict|None, ошибка)."""
-    url, token = _cloud_base()
-    if not url:
-        return None, "облако не задано (панель «Настройки»)"
-    r, err = _http_json_err(url + "/api/board/codegen",
-                            {"text": str(task)[:1000], "board": _hostname()},
-                            token=token, timeout=timeout)
-    if r is None:
-        return None, err
-    if not r.get("ok"):
-        return None, (r.get("error") or "заготовки нет")
-    return r, ""
+def cloud_run_code(code, text="", timeout=30):
+    """v2.97.3: «ПИТОНЫ» УБРАНЫ — исполнение самописного/облачного кода
+    отключено. Внутренний драйвер тензорного ядра живёт в _tn_sandbox_run."""
+    return None, "исполнение кода убрано с платы (v2.97.3, «питоны» сняты)"
 
 
 def cloud_skills(timeout=15):
@@ -2763,19 +2717,9 @@ def cloud_skills(timeout=15):
 
 
 def cloud_skill_run(sid, text, timeout=30):
-    """Запустить функцию ОБЛАКА (песочница сервера):
-    POST /api/skills/<sid>/run {"text"}."""
-    url, token = _cloud_base()
-    if not url:
-        return None, "облако не задано (панель «Настройки»)"
-    import urllib.parse
-    qsid = urllib.parse.quote(str(sid), safe="")
-    r, err = _http_json_err(url + "/api/skills/" + qsid + "/run",
-                            {"text": str(text)[:2000], "board": _hostname()},
-                            token=token, timeout=timeout)
-    if r is None:
-        return None, err
-    return r, ("" if r.get("ok") else (r.get("error") or "функция не сработала"))
+    """Запустить функцию ОБЛАКА (песочница сервера).
+    v2.97.3: навыки-код УБРАНЫ — исполнение питон-навыков отключено."""
+    return None, "навыки-код убраны (v2.97.3, «питоны» сняты)"
 
 
 # ===========================================================================
@@ -2821,7 +2765,8 @@ def load_dicts_async():
             return
         try:
             t0 = time.time()
-            with open(os.path.join(d, "ru_top.json"), "r", encoding="utf-8") as f:
+            lexicon_name="lexicon_ru.json" if os.path.exists(os.path.join(d,"lexicon_ru.json")) else "ru_top.json"
+            with open(os.path.join(d, lexicon_name), "r", encoding="utf-8") as f:
                 j = json.load(f)
             words = [str(w) for w in (j.get("words") or []) if w]
             pos = {}
@@ -2836,7 +2781,7 @@ def load_dicts_async():
                 # v2.38: рейтинг частот — только СЛОВА (знаки живут в
                 # dict_set и выбираются отдельной веткой сэмплера, в
                 # ранжирование слов они не вмешиваются)
-                SH.dict_top = [w for w in words if w not in _PUNCT_SET]
+                SH.dict_top = sorted({w for w in words if w not in _PUNCT_SET})
                 SH.dict_pos = {k: [str(w) for w in (pos.get(k) or [])[:2000]]
                                for k in ("nouns", "verbs", "adjs")}
                 SH.dict_set.update(SH.dict_extra)     # выученные из облака
@@ -3286,63 +3231,18 @@ def _dict_cloud_sync():
 
 
 def _dict_sample_word():
-    """Слово для платы (v2.27): перекос к частым по рангу (i = r^2 * n —
-    слово из первых 100 примерно в 10% случаев вместо 1%), 15% — выученные
-    из облака. v2.34 (память на каждое слово): в 20% случаев «вспоминаем»
-    старое слово из журнала (повторение — мать учения) и НЕ повторяем
-    ни одно из последних пяти отосланных (на это тоже память).
-    v2.38: в 10% случаев выбираем ЗНАК ПРЕПИНАНИЯ (",", ".", "!", "?") —
-    он тоже ЗАПИСЬ СЛОВАРЯ (ru_top.json + dict_set). Знак идёт в ту же
-    очередь слов платы (word_push) и проводится скетчем механикой знаков;
-    буквенная сеть не задействована и не менялась.
-    v2.83: приоритет словам из последней связной мысли мозга (не случайный
-    шум рядом со смыслом) — нейроны получают меньше бессвязных слов.
-    Возвращает ЗАГЛАВНОЕ слово 2-10 букв, ЗНАК или ""."""
-    with SH.lock:
-        top = list(SH.dict_top)
-        extra = sorted(SH.dict_extra) if SH.dict_extra else []
-        ready = SH.dict_ready
-        recent = [_norm_word(it["w"])
-                  for it in list(_word_mem["words"])[-5:]]
-        old = [w for w in _word_mem["unique"].keys()
-               if 2 <= len(w) <= 10]
-        last_ph = (_GEN_STATE.get("last") or "") if _GEN_STATE else ""
-    # v2.83: слова из последней фразы мозга — связный контекст для нейронов
-    thought_ws = [_norm_word(w) for w in re.findall(r"[а-яё]{3,}", last_ph.lower())
-                  if 2 <= len(w) <= 10 and w not in recent]
-    want_mark = ready and random.random() < 0.08    # чуть реже знаки
-    w = ""
-    for _ in range(8):
-        if want_mark:
-            cand = random.choice(PUNCT_MARKS)
-            if cand in recent:
-                continue
-            w = cand
-            break
-        if thought_ws and random.random() < 0.35:
-            cand = random.choice(thought_ws)   # из связной мысли
-        elif old and random.random() < 0.12:
-            cand = random.choice(old)
-        elif extra and random.random() < 0.08:
-            cand = random.choice(extra)
-        elif top:
-            # v2.86: слово из ru_top.json (30 000). Перекос к частым
-            # (i = r^1.6 * n) — частые чаще, но весь словарь доступен
-            i = int((random.random() ** 1.6) * len(top))
-            if i >= len(top):
-                i = len(top) - 1
-            cand = top[i] if i >= 0 else ""
-        else:
-            cand = ""
-        cand = _norm_word(cand).replace("ё", "е")
-        if not (2 <= len(cand) <= 10) or not (set(cand) <= _RU_ALPHABET):
-            continue
-        w = cand
-        if w not in recent:
-            break
-    if want_mark:                            # v2.38: знак как есть
-        return w if w in _PUNCT_SET else ""
-    return w.upper() if w else ""
+    """A lexical item from current peripheral/neural context, never a rank sample."""
+    frame=neural_bridge.BUS.snapshot()
+    if not frame['fresh']:return ''
+    physical=[row['context_word'] for row in frame['nodes'] if row['online'] and row.get('context_spikes',0)>0 and row.get('context_word')]
+    if not physical:return ''
+    with SH.lock:recent={_norm_word(it['w']) for it in list(_word_mem['words'])[-5:]}
+    scores={}
+    for word in physical:scores[word]=scores.get(word,0)+1
+    for word,value in nn_listen_words(top=NN_MAX):scores[word]=scores.get(word,0)+value
+    candidates=[(word,value) for word,value in scores.items() if 2<=len(word)<=10 and set(word)<=_RU_ALPHABET and dict_has(word) and word not in recent]
+    if not candidates:return ''
+    return _gen_weighted(candidates,None,nn_hot_stems(),{}).upper()
 
 
 def word_pump_tick():
@@ -3476,8 +3376,8 @@ ZONES = [
 #   * хранится в neuro12_reads.json рядом с памятью (до READ_KEEP статей).
 # ===========================================================================
 READ_PERIOD = 240.0           # сек между фоновыми чтениями «не знаю»
-READ_KEEP = 60                # статей в памяти чтения
-READ_CHARS = 6000             # знаков статьи для сети знаний
+READ_KEEP = 120               # статей в памяти чтения
+READ_CHARS = 12000            # знаков статьи для сети знаний
 _READ = {"items": [], "miss": [], "loaded": False, "last": 0.0, "n": 0,
          "err": "", "last_title": "", "busy": False}
 _READ_LOCK = threading.RLock()
@@ -3628,6 +3528,28 @@ def brain_read(text, why="не знала"):
     return title, body
 
 
+def _read_curriculum_topic():
+    """Учебный план: тема из CFG['read_topics'] (список) и из недавних
+    вопросов людей, которую ещё не читала. -> тема | ''."""
+    try:
+        have = {str(x.get("q") or "") for x in _READ["items"]}
+        cand = [str(t) for t in (CFG.get("read_topics") or []) if str(t).strip()]
+        with SH.lock:
+            mem = list(SH.memory[-40:])
+        for m in reversed(mem):
+            if str(m.get("role")) == "user":
+                tp = read_topic_of(m.get("text") or "")
+                if tp:
+                    cand.append(tp)
+        for tp in cand:
+            tp = read_topic_of(tp) or tp
+            if tp and tp not in have:
+                return tp
+    except Exception:
+        pass
+    return ""
+
+
 def read_tick():
     """Фон: тема из очереди «не знаю» -> чтение (на вдохе, раз в READ_PERIOD)."""
     now = time.time()
@@ -3636,6 +3558,8 @@ def read_tick():
     _read_load()
     with _READ_LOCK:
         topic = _READ["miss"][0] if _READ["miss"] else ""
+    if not topic:
+        topic = _read_curriculum_topic()      # v2.103: очередь пуста — учусь тому, о чём спрашивают
     if not topic:
         return
     try:
@@ -3827,7 +3751,7 @@ def zone_reply(user_text, zone=None):
 #      как один распределённый мозг. LLM нигде не используется, кроме
 #      обучения — письма других устройств отвечаем САМИ (зоны + память +
 #      базы знаний + поиск), с инструкцией писать КАК МОЖНО ДЛИННЕЕ.
-#      Протокол платформы мозг-12 (v2.4):
+#      Протокол платформы Star Gate (v2.4):
 #        GET  /api/brain/inbox?board=<id>   — забрать свои письма;
 #        POST /api/brain/answer {id,text,zone} — ответить отправителю;
 #        POST /api/brain/msg {to,text,from}   — написать другому мозгу;
@@ -5057,7 +4981,7 @@ def math_reply(question):
         try:
             val = _mm_eval(m.group(0))
             _sketch_react("math")
-            return "%s = %s (посчитала сама, по шагам мозг-12)" % (
+            return "%s = %s (посчитала сама, по шагам Star Gate)" % (
                 m.group(0).replace("**", "^"), _mm_num(val))
         except Exception as e:
             return "Арифметика не посчиталась: %s" % e
@@ -5761,7 +5685,7 @@ TN_TASKS = {                  # задача -> эпох (бюджет раст�
 TN_ALPH = "".join(chr(c) for c in range(33, 127) if chr(c) not in "\"'\\;")
 
 _TN_KERNEL = r'''# -*- coding: utf-8 -*-
-# Тензорное ядро «Мозг-12» (v2.39): MLP вход -> ReLU -> зоны, SGD.
+# Тензорное ядро «Star Gate» (v2.39): MLP вход -> ReLU -> зоны, SGD.
 # Один и тот же код считает в песочнице СЕРВЕРА и на плате.
 import math
 
@@ -6011,15 +5935,15 @@ def tn_features(text):
 def tn_hw_levels(msg=None):
     """Входы от 12 аппаратных нейронов: спайки из хвоста MSG скетча
     («N5:1042:слово|...») -> уровни 0..9 (лог-шкала). Прошивки не нужны."""
-    lv = [0] * TN_HW
-    for mo in _RE_NEURON.finditer(SH.msg if msg is None else (msg or "")):
-        try:
-            i, sp = int(mo.group(1)), int(mo.group(2))
-        except Exception:
-            continue
-        if 0 <= i < TN_HW and sp > 0:
-            lv[i] = max(lv[i], min(9, int(math.log(1 + sp, 2))))
-    return lv
+    if msg is not None:
+        lv=[0]*TN_HW
+        for mo in _RE_NEURON.finditer(msg):
+            i,sp=int(mo.group(1)),int(mo.group(2))
+            if 0<=i<TN_HW:lv[i]=min(9,int(math.log(1+max(0,sp),2)))
+        return lv
+    frame=neural_bridge.BUS.snapshot()
+    return [min(9,int(math.log(1+r.get('context_spikes',r['spikes']),2))) if r['online'] else 0 for r in frame['nodes']]
+
 
 
 def _tn_token(feats, hw, z):
@@ -6094,35 +6018,7 @@ def _tn_brain_mod():
     """v2.84: модуляторы тензора мысли от частоты, воли и дыхания мозга.
     Размер H задаётся ОЗУ; поведение (шаг учёбы, пороги, сила голоса) —
     от состояния платы. Не путать с сетью «дыхания» (period/depth)."""
-    # lr_mul, conf_mul, voice_mul  — около 1.0
-    lr_m = conf_m = voice_m = 1.0
-    try:
-        # частота генератора: |z| выше → чуть увереннее и быстрее учится
-        z = abs(float(_signed_hz())) / 2000.0
-        z = max(0.0, min(1.0, z))
-        lr_m *= 0.85 + 0.30 * z
-        conf_m *= 0.90 + 0.20 * z
-        voice_m *= 0.90 + 0.25 * z
-    except Exception:
-        pass
-    try:
-        # воля зоны «Сигнал» (алгоритм «Тензорная сеть»)
-        w = float(will_strength("Тензорная сеть"))
-        lr_m *= 0.7 + 0.6 * max(0.0, min(1.5, w))
-        voice_m *= 0.75 + 0.5 * max(0.0, min(1.5, w))
-    except Exception:
-        pass
-    try:
-        # дыхание: на вдохе (s>0) — шире учится и голос сильнее
-        s = float(breath_s())
-        lr_m = breath_mod("Тензорная сеть", lr_m, 0.15)
-        conf_m *= 1.0 + 0.08 * max(-1.0, min(1.0, s))
-        voice_m *= 1.0 + 0.12 * max(-1.0, min(1.0, s))
-    except Exception:
-        pass
-    return (max(0.4, min(1.8, lr_m)),
-            max(0.7, min(1.3, conf_m)),
-            max(0.6, min(1.5, voice_m)))
+    return 1.0,1.0,1.0
 
 
 def tn_predict(text):
@@ -6202,7 +6098,7 @@ def _tn_server(tokens, H, Z, epochs, seed, per_sample):
             head_fmt % (H, TN_IN, Z, TN_D, ep, int(TN_LR * 10000), seed) +
             " ".join(pick) + '"\n')
     t0 = time.time()
-    res, err = cloud_run_code(code, "", timeout=45)
+    res, err = _tn_sandbox_run(code, "", timeout=45)
     ms = int((time.time() - t0) * 1000)
     out = str((res or {}).get("result") or (res or {}).get("output") or "")
     parsed = None if (err or not res) else _tn_parse_result(out, H, Z)
@@ -6657,8 +6553,9 @@ def api_tensor_result(data: dict = None):
 GEN_PERIOD = 150.0            # сек между «мыслями вслух» в тишине
 GEN_MIN_LINKS = 8             # v2.26: было 15 — мысли стартуют раньше
                               # (сеть всё равно строится только из словарных слов)
-GEN_MAX_WORDS = 10            # потолок слов во фразе мозга
-_GEN_STATE = {"big": {}, "uni": {}, "by_stem": {}, "links": 0,
+GEN_MAX_WORDS = 42            # потолок слов во фразе мозга
+TRI_MAX = 250000               # v2.106: потолок ключей триграмм
+_GEN_STATE = {"tri": {}, "snext": {}, "big": {}, "uni": {}, "by_stem": {}, "links": 0,
               "built": 0.0, "busy": False,
               "last": "", "last_ts": 0.0, "phrases": 0, "words": 0,
               "listen": {}, "errs": "", "cloud_says": 0, "says": 0}
@@ -6743,6 +6640,16 @@ def gen_apply_verdicts(vds):
                     k = _norm_word(p_[0]) + " " + _norm_word(p_[1])
                     pr[k] = max(0.02, pr.get(k, 1.0) * 0.3)
             _GEN_PEN["bad"] += 1
+        try:
+            label_text=str(v.get('t') or '')
+            label_zone=(_GEN_STATE.get('lead') or {}).get('zone')
+            if label_text and label_zone:
+                nn_learn(label_text,label_zone,1 if v.get('ok') else -1)
+                if v.get('ok'):
+                    # nn_learn already queues the positive tensor example once.
+                    sdict().learn(label_text,hz=None,accept=dict_has)
+                    _bridge_call("chat_stim",label_text[:90],wait=False)
+        except Exception:pass
         n += 1
     if n:
         _GEN_PEN["dirty"] = True
@@ -6762,6 +6669,7 @@ def gen_status():
             "says": st["says"],               # v2.18: фраз-сообщений мозга
             "cloud_says": st["cloud_says"],   # v2.18: ушли в облако
             "queued": len(_THOUGHT_Q),        # v2.20: ждут сборки в текст
+            "reflection": neural_bridge.status(),
             "link": dict(_LINK),              # v2.60: связь мозгов с облаком
             "grav": dict(_GRAV),              # v2.66: гравитация мыслей
             "game": game_status(),            # v2.69: игра «РОК-12»
@@ -6777,7 +6685,8 @@ def _gen_texts():
     """Все тексты, которые мозг знает: диалоги, файлы, заметки наставника,
     советы (файл advice), найденное в облаке — сырьё для сети знаний."""
     with SH.lock:
-        texts = [str(m.get("text") or "") for m in SH.memory]
+        texts = [str(m.get("text") or "") for m in SH.memory
+                 if not str(m.get("text") or "").startswith(("💬 «","🗣 «"))]
         texts += [str(d.get("text") or "")[:4000] for d in SH.docs
                   if d.get("text")]
         texts.append(str(SH.teacher_note or ""))
@@ -6802,6 +6711,13 @@ def _gen_rebuild():
     """Пересобрать биграммную сеть знаний (фон). Узлы — только словарные
     слова: генерация физически не может собрать выдумку."""
     big, uni = {}, {}
+    tri, snext = {}, {}
+    with SH.lock:punct_texts=[str(d.get('text') or '') for d in SH.docs]
+    try:
+        _read_load()
+        with _READ_LOCK:punct_texts += [str(row.get('x') or '') for row in _READ['items']]
+    except Exception:pass
+    neural_bridge.learn_punctuation(punct_texts)
     for t in _gen_texts():
         # v2.65: связи — только между СОСЕДНИМИ словами настоящего текста.
         # Раньше короткие слова («в», «и», «на») выбрасывались, и пары
@@ -6809,13 +6725,14 @@ def _gen_rebuild():
         # Теперь служебные слова — тоже узлы, а пара через выброшенное
         # слово (не из словаря) не создаётся; знаки препинания рвут цепочку.
         ws = []
-        for tok in re.findall(r"[а-яёa-z]+|[.,!?;:—()]", (t or "").lower()):
+        raw_toks = re.findall(r"[а-яёa-z]+|[.,!?;:—()]", (t or "").lower())[:2400]
+        for tok in raw_toks:
             w = _norm_word(tok)
             if w in _GEN_FUNC or (len(w) >= 3 and dict_has(w)):
                 ws.append(w)
             else:
                 ws.append("")                 # разрыв цепочки
-        ws = ws[:1200]                   # v2.91: статьи длиннее реплик
+        ws = ws[:2400]                   # v2.91/2.103: статьи длиннее реплик
         for i in range(len(ws) - 1):
             a, b = ws[i], ws[i + 1]
             if not a or not b or a == b:
@@ -6823,6 +6740,29 @@ def _gen_rebuild():
             uni[a] = uni.get(a, 0) + 1
             nxt = big.setdefault(a, {})
             nxt[b] = nxt.get(b, 0) + 1
+            if i + 2 < len(ws):          # v2.106: ТРИГРАММЫ «a b -> c»
+                c = ws[i + 2]
+                if c and c != b and (len(tri) < TRI_MAX or (a + " " + b) in tri):
+                    tri.setdefault(a + " " + b, {})
+                    tri[a + " " + b][c] = tri[a + " " + b].get(c, 0) + 1
+        # v2.106: ПЕРЕХОДЫ МЕЖДУ ПРЕДЛОЖЕНИЯМИ: основа последнего слова
+        # предложения -> первое слово следующего (счётчики)
+        last_w, first_w, at_start = "", "", False
+        for tok in raw_toks:
+            if tok in (".", "!", "?"):
+                at_start = bool(last_w)
+                continue
+            w = _norm_word(tok)
+            if not (w in _GEN_FUNC or (len(w) >= 3 and dict_has(w))):
+                continue
+            if at_start and last_w and w not in _GEN_FUNC:
+                d_ = snext.setdefault(last_w[:5], {})
+                d_[w] = d_.get(w, 0) + 1
+                at_start = False
+            elif at_start:
+                at_start = False
+            if w not in _GEN_FUNC:
+                last_w = w
     links = sum(sum(d.values()) for d in big.values())
     by_stem = {}                       # v2.17: основа -> словарные слова
     for w in uni:
@@ -6836,11 +6776,12 @@ def _gen_rebuild():
     st = _GEN_STATE
     st["rev"] = rev
     st["big"], st["uni"], st["links"] = big, uni, links
+    st["tri"], st["snext"] = tri, snext
     st["by_stem"] = by_stem
     st["built"] = time.time()
     st["busy"] = False
-    log("ГЕНЕРАТОР", "сеть знаний: %d слов, %d связей (источников: %d)" %
-        (len(uni), links, len(st["big"])))
+    log("ГЕНЕРАТОР", "сеть знаний: %d слов, %d связей, %d триграмм, %d переходов предложений (источников: %d)" %
+        (len(uni), links, len(tri), len(snext), len(st["big"])))
 
 
 def _gen_rebuild_async():
@@ -6947,11 +6888,11 @@ def _gen_weighted(cands, zone, hot=None, grav=None):
     try:
         if not cs:
             return sdict().pick(cands, hot=hot, zone_vote=zv, grav=grav,
-                                hz=_signed_hz(), breath=breath_s())
+                                hz=None, breath=0.0)
         # голос камеры множит ИТОГОВЫЙ вес слова (после частоты, зон, нейронов,
         # тяги и дыхания); 0.3 — нейтраль: увиденное тянет, противоположное гасит
         k = float(CFG.get("cam_ai_w", 0.35) or 0)
-        sd, hz_, br_ = sdict(), _signed_hz(), breath_s()
+        sd, hz_, br_ = sdict(), None, 0.0
         items, ws = [], []
         for w, c in cands:
             wt = sd.weight(w, c, hot, zv, grav, hz_, br_)
@@ -6984,50 +6925,92 @@ def _gen_pool(top=120):
             if w not in _GEN_FUNC][:top]        # v2.65: без «и», «в»
 
 
-def brain_speak(seed_text="", zone=None, speak=False, remember=False,
-                announce=False):
-    """Сгенерировать фразу СЛОВАМИ ИЗ СЛОВАРЯ по тому, что мозг знает.
-    v2.17: генератор СЛУШААТ НЕЙРОНЫ — стартовое слово и приоритет
-    продолжений берутся у самых активных нейронов сети (их зажигает всё
-    слышанное). seed_text — тема (команда «мысль …»); зону подсказывает
-    сеть. speak — озвучить, remember — запомнить, announce — вывести фразу
-    как СООБЩЕНИЕ МОЗГА (чат платы + облако + дубликат нейронам).
-    Возврат: фраза | ''."""
-    st = _GEN_STATE
-    if st["links"] < GEN_MIN_LINKS or not st["uni"]:
-        return ""
-    # v2.40: ТЕМУ МЫСЛИ ВЕДЁТ ТЕНЗОРНАЯ СЕТЬ (зонная сеть помогает голосом);
-    # тензор не готов — зонная сеть, нет и её голоса — ключевые слова
-    if zone:
-        lead = {"zone": zone, "p": 1.0, "by": "задано", "tn": False}
-    else:
-        lead = tn_lead_zone(seed_text) if seed_text else \
-            {"zone": "", "p": 0.0, "by": "", "tn": False}
-        zone = lead.get("zone") or ""
-    # — СЛУШААМ НЕЙРОНЫ: кто сейчас говорит и какие слова «проговаривает» —
-    nwords = nn_listen_words()
-    hot = nn_hot_stems()
-    st["listen"] = {"ts": time.time(), "hot": nn_listen(top=4),
-                    "words": [w for w, _s in nwords[:6]]}
-    if not zone and nwords:            # тему подсказывают активные нейроны
-        lead = tn_lead_zone(" ".join(w for w, _s in nwords[:8]))
-        zone = lead.get("zone") or ""
-    # генератор собирает варианты, тензор выбирает самый «тематичный»
-    cands = []
-    for _k in range(GEN_CANDIDATES):
-        ph = _gen_compose(seed_text, zone, nwords, hot)
-        if ph and ph not in cands:
-            cands.append(ph)
-    if not cands:
-        return ""
-    phrase, pick = _tn_pick_thought(cands, zone)   # v2.89: камера — в выборе слов
-    st["lead"] = {"zone": zone, "zone_by": lead.get("by"),
-                  "zone_p": lead.get("p"), "pick_by": pick["by"],
-                  "score": pick["score"], "cands": pick["cands"],
-                  "ts": round(time.time(), 1)}
-    gen_register(phrase, speak=speak, remember=remember, announce=announce)
-    _camai_say(phrase)                 # v2.88: камера учит слова мозга
-    return phrase
+def _neuron_context(after=None,timeout=.8):
+    frame=neural_bridge.BUS.snapshot(after,timeout)
+    scores={};hot={};zvotes={}
+    for row in frame['nodes']:
+        if row['online'] and row.get('context_spikes',0)>0 and row.get('context_word') and dict_has(row['context_word']):
+            w=row['context_word'];value=math.log1p(row['context_spikes']);scores[w]=scores.get(w,0)+value;hot[w[:5]]=hot.get(w[:5],0)+value
+    physical_words=bool(scores)
+    software=nn_listen(top=NN_MAX,thr=NN_HOT)
+    for row in software:
+        zvotes[row['zone']]=zvotes.get(row['zone'],0)+row['a']
+        for w in row['words']:
+            if dict_has(w):scores[w]=scores.get(w,0)+row['a'];hot[w[:5]]=hot.get(w[:5],0)+row['a']
+    frame.update(words=sorted(scores.items(),key=lambda kv:-kv[1]),physical_words=physical_words,hot=hot,
+                 physical_online=sum(r['online'] for r in frame['nodes']),software_neurons=len(software),
+                 zone=max(zvotes,key=zvotes.get) if zvotes else '')
+    return frame
+
+
+def _words_fallback_on():
+    """v2.107.0: не прошла проверка фразы -> мозг выдаёт слова (настройка words_fallback, по умолчанию да)."""
+    try:
+        return bool(CFG.get('words_fallback',True))
+    except Exception:
+        return True
+
+
+def brain_speak(seed_text="",zone=None,speak=False,remember=False,announce=False):
+    """At most six fresh neuron frames. User/hub text is not a substitute for neuron context."""
+    st=_GEN_STATE
+    if st['links']<GEN_MIN_LINKS or not st['uni']:return ''
+    def compose(frame):
+        st['listen']={'ts':time.time(),'hot':nn_listen(top=NN_MAX),'words':[w for w,_ in frame['words']]}
+        return _gen_compose('',frame['zone'],frame['words'],frame['hot'])
+    phrase,pick=neural_bridge.reflect(_neuron_context,compose,_tn_pick_thought,dict_has,
+                                    lambda word:set(st['big'].get(word,{})),limit=6,seconds=6,target_chars=2400,max_chars=THOUGHT_CHARS,
+                                    fallback_words=_words_fallback_on(),pool=lambda:_gen_pool(40))
+    st['reflection']=neural_bridge.status()
+    if not phrase:return ''
+    frame=_neuron_context()
+    st['lead']={'zone':frame['zone'],'zone_by':'все нейроны','pick_by':pick.get('by'),'score':pick.get('score'),'cands':pick.get('cands'),'ts':time.time()}
+    # v2.98: ПОЛНЫЙ ТЕКСТ мысли — не короткая фраза. Мозг на связи: текст
+    # собираем СО ВСЕХ НЕЙРОН-ПЛАТ (brain_full_text); нет связи — текст
+    # собирает ЗОНА LLM (_zone_llm_full_text). Слабый/пустой результат —
+    # честно остаётся короткая фраза. Собираться может дольше — так и
+    # задумано: облако берёт полноценный текст.
+    text = phrase
+    try:
+        if CFG.get("full_thoughts", True):
+            full = ""
+            question = _question_text(seed_text)
+            chain = []
+            try:                      # v2.101: 37 оборотов по словам
+                chain = _loop_transfer(phrase, question, zone=frame['zone'])
+            except Exception as e:
+                log("МОЗГ", "loop transfer:", str(e)[:100])
+            if _brain_alive():
+                keys = []             # ключевые слова оборотов (длинные, без повторов)
+                for w in chain:
+                    if len(w) >= 4 and w not in keys and w not in _GEN_FUNC:
+                        keys.append(w)
+                nsent = max(4, min(14, int(CFG.get("thought_sents", 10))))
+                full = brain_full_text(seed_words=phrase, zone=frame['zone'],
+                                       max_sents=nsent, words=keys[:nsent] or None)
+                if full:
+                    _GEN_STATE['full_src'] = "нейроны, %d оборотов" % len(chain)
+            else:
+                full = _zone_llm_full_text(seed_words=phrase, zone=frame['zone'])
+                if full:
+                    _GEN_STATE['full_src'] = "zone LLM"
+            if full and len(full) > len(phrase) + 10:
+                text = full
+            try:                                  # v2.107: мозг обдумывает формулы
+                fm = _formula_ponder(question, chain[:12])
+                if fm:
+                    text = (text + "\n\n" + fm).strip()[:THOUGHT_CHARS]
+                    _GEN_STATE['formula'] = _FORMULA_STATE["last"]
+            except Exception:
+                pass
+            add = _cloud_extend(text, question)   # облако дополняет мысль
+            if add:
+                text = (text + ("\n\n" if "```" in add or "$$" in add else " ") + add).strip()[:THOUGHT_CHARS]
+                _GEN_STATE['cloud_added'] = len(add)
+    except Exception:
+        _GEN_STATE['full_src'] = ""
+    gen_register(text,speak=speak,remember=remember,announce=announce)
+    return text
 
 
 def _gen_compose(seed_text, zone, nwords, hot):
@@ -7058,16 +7041,6 @@ def _gen_compose(seed_text, zone, nwords, hot):
             log("ГЕНЕРАТОР", "слушаю нейроны: %s -> старт «%s»" %
                 (", ".join("#%d %s a=%.2f" % (h["id"], h["zone"], h["a"])
                            for h in st["listen"]["hot"][:3]), cur))
-    if not cur:                                 # нейроны тихи — частотный пул
-        pool = _gen_pool()
-        if pool and grav:                       # v2.66: старт «падает» к массам
-            cur = _gen_weighted([(w, 1) for w in pool] +
-                                [(w, 1) for w in sorted(
-                                    grav, key=lambda k: -grav[k])[:20]
-                                 if w not in _GEN_FUNC and st["big"].get(w)],
-                                zone, None, grav)
-        else:
-            cur = random.choice(pool) if pool else ""
     if not cur:
         return ""
     out = [cur]
@@ -7085,7 +7058,17 @@ def _gen_compose(seed_text, zone, nwords, hot):
         except Exception:
             pass
         nxt = ""
-        if succ:
+        tri_ = None
+        if len(out) >= 2:                       # v2.106: триграмма «пред-пред слово + слово»
+            tri_ = (st.get("tri") or {}).get(out[-2] + " " + cur)
+        if tri_:
+            tc = [(w, c * 4.0 * gen_pen(cur, w)) for w, c in tri_.items()
+                  if gen_pen(cur, w) >= 0.3 and (w not in out or w in _GEN_FUNC)]
+            if tc:
+                nxt = _gen_weighted(tc, zone, hot, grav)
+                if nxt:
+                    _GEN_STATE["tri_used"] = _GEN_STATE.get("tri_used", 0) + 1
+        if succ and not nxt:
             # v2.83: жёстче отсекаем бессвязные пары (нейроны/генератор
             # не должны тащить «ахинею» рядом со связными словами; скетч
             # нейронов не меняем — фильтр только в Python-мозге)
@@ -7097,7 +7080,7 @@ def _gen_compose(seed_text, zone, nwords, hot):
         rep_ = bool(nxt) and nxt in out and nxt not in _GEN_FUNC
         if (not nxt or rep_) and jumps < 1 and len(out) < 3:
             jumps += 1                          # «прыжок» — только в начале
-            pool = [w for w in _gen_pool() if gen_pen(cur, w) >= 0.45]
+            pool = [w for w,_score in nwords if gen_pen(cur,w)>=0.45]
             nxt = random.choice(pool) if pool else ""
         if not nxt or (nxt in out and nxt not in _GEN_FUNC):
             break
@@ -7352,6 +7335,429 @@ def brain_lead():
     ts = float(_LAST_THOUGHT.get("ts") or 0.0)
     return {"zone": zone, "a": round(a, 3), "thought": t[:220],
             "t_age": int(time.time() - ts) if ts else None}
+
+
+# ===========================================================================
+# v2.98: ПОЛНЫЕ МЫСЛИ — воля мозга отбирает КЛЮЧЕВЫЕ СЛОВА из мысли облака
+# и контекста, слова передаются скетчу (word_push -> словарь платы,
+# chat_stim -> STIM нейронам), мозг думает нейронами, и текст собирается
+# СО ВСЕХ ПЛАТ: слово каждой нейрон-платы разворачивается в предложение
+# биграммным словарём. Собирается дольше короткой фразы — зато чат с
+# мыслями и облако получают полноценный текст. Мозг (скетч) не подключен —
+# текст собирает ЗОНА LLM: совет наставника (/api/llm/teach) + память по
+# теме + развёртка ключей по словарю.
+# ===========================================================================
+_KW_CACHE = {"key": None, "res": [], "ts": 0.0}
+_KW_STATS = {"pushed": 0, "last": [], "ts": 0.0}
+_NEURO_WORDS = deque(maxlen=16)     # свежие слова буквогенератора (on_word)
+_NW_LOCK = threading.Lock()
+
+
+def _brain_alive():
+    """v2.98: скетч отвечает по мосту (сводки/события свежие)."""
+    try:
+        return bool(SH.bridge_seen) and (time.time() - SH.bridge_ts) < 10.0
+    except Exception:
+        return False
+
+
+def brain_keywords(text, limit=8):
+    """v2.98: КЛЮЧЕВЫЕ СЛОВА С ВОЛЕЙ МОЗГА. Из текста (мысль облака,
+    реплика, контекст) берём слова 4+ букв не из стоп-листа и взвешиваем:
+    словарность + голос нейронов за зону слова (nn_votes) x ВОЛЯ — активность
+    зоны (brain_will): зона горит — её слова проходят в мозг. Кэш 10 с.
+    Возврат: [(слово, вес 0..1)...] по убыванию веса."""
+    now = time.time()
+    key = (str(text or "")[:400], int(limit))
+    if _KW_CACHE.get("key") == key and now - float(_KW_CACHE.get("ts") or 0) < 10.0:
+        return list(_KW_CACHE.get("res") or [])
+    seen, toks = set(), []
+    for w in re.findall(r"[а-яёa-z]{4,}", str(text or "").lower()):
+        if w in seen or w in _TOPIC_STOP:
+            continue
+        seen.add(w)
+        toks.append(w)
+    if not toks:
+        _KW_CACHE.update(key=key, res=[], ts=now)
+        return []
+    try:
+        will = dict(brain_will() or {})
+    except Exception:
+        will = {}
+    try:
+        votes = dict(nn_votes(nn_stems(text)) or {})
+    except Exception:
+        votes = {}
+    try:
+        lead = max(will.items(), key=lambda kv: kv[1])[0] if will else ""
+    except Exception:
+        lead = ""
+    scored = []
+    for w in toks:
+        sc = 0.15
+        try:
+            if dict_has(w):
+                sc += 0.35
+        except Exception:
+            pass
+        try:
+            zn = zone_of(w) or lead
+            zv = min(0.5, abs(float(votes.get(zn, 0.0))))
+            wv = min(1.0, max(0.0, float(will.get(zn, 0.0))))
+            sc += zv * (0.3 + 0.7 * wv)      # голос нейронов x воля зоны
+            if zn == lead and wv > 0.2:
+                sc += 0.1                     # ведущая зона сейчас — приоритет
+        except Exception:
+            pass
+        scored.append((w, round(min(1.0, sc), 2)))
+    scored.sort(key=lambda kv: (-kv[1], kv[0]))
+    res = scored[:max(1, int(limit))]
+    _KW_CACHE.update(key=key, res=res, ts=now)
+    return list(res)
+
+
+def _kw_to_brain(kws):
+    """v2.98: ключевые слова — В МОЗГ (скетч): каждое слово в очередь платы
+    (RPC word_push — мозг произнесёт и выучит его), вся строка — в
+    текст-канал нейронов (RPC chat_stim -> STIM всем 12 платам). Буферы
+    скетча честные: слово до 10 букв (WORD_MAX), строка до 90 знаков
+    (CHAT_OUT_SIZE). Возврат: сколько слов ушло в очередь платы."""
+    words = []
+    for w, _a in (kws or [])[:6]:
+        w = str(w).strip().lower()
+        if 4 <= len(w) <= 10 and w not in words:
+            words.append(w)
+    if not words:
+        return 0
+    n = 0
+    for w in words:
+        try:
+            _bridge_call("word_push", w.upper(), wait=False)
+            n += 1
+        except Exception:
+            pass
+    try:
+        _bridge_call("chat_stim", " ".join(words[:4])[:90], wait=False)
+    except Exception:
+        pass
+    _KW_STATS.update(pushed=int(_KW_STATS.get("pushed", 0)) + n,
+                     last=words, ts=time.time())
+    return n
+
+
+def brain_board_words():
+    """v2.98: СЛОВА СО ВСЕХ ПЛАТ, кто в сети: последнее слово каждой
+    нейрон-платы (кадр on_neurons -> BUS) по номерам плат + свежие слова
+    буквогенератора скетча (on_word). Дубликаты убираем, порядок плат
+    сохраняем — текст соберётся от всех, а не от одной платы."""
+    out = []
+    try:
+        for row in (neural_bridge.BUS.snapshot().get("nodes") or []):
+            if row.get("online") and row.get("word"):
+                out.append(str(row["word"]).strip())
+    except Exception:
+        pass
+    try:
+        with _NW_LOCK:
+            out.extend(w for w in _NEURO_WORDS if w)
+    except Exception:
+        pass
+    seen, uniq = set(), []
+    for w in out:
+        k = w.lower()
+        if len(k) >= 3 and k not in seen:
+            seen.add(k)
+            uniq.append(w)
+    return uniq[:12]
+
+
+# v2.101: LOOP TRANSFERRING — «обороты по словам». Перед тем как написать
+# мысль, мозг делает LOOP_TURNS (37) оборотов: каждый оборот переносит
+# внимание с текущего слова на следующее (связь словаря + слова нейронов +
+# слова ВОПРОСА), цепочка накапливается, и только потом из неё пишется
+# текст. Слова вопроса получают бонус — мысль вписывается в контекст
+# вопроса. Обороты видны в _LOOP (статус /api/gen).
+_LOOP = {"turn": 0, "turns": 0, "chain": [], "question": "", "ts": 0.0,
+         "jumps": 0, "from_question": 0}
+
+
+def _question_text(seed_text=""):
+    """Контекст вопроса: последний вопрос/реплика пользователя (до 10 мин)
+    плюс seed_text. Только слова — без служебных."""
+    parts = [str(seed_text or "")]
+    try:
+        with SH.lock:
+            mem = list(SH.memory[-30:])
+        now = time.time()
+        for m in reversed(mem):
+            if str(m.get("role")) == "user" and now - float(m.get("ts") or now) < 600:
+                parts.append(str(m.get("text") or ""))
+                break
+    except Exception:
+        pass
+    return " ".join(p for p in parts if p).strip()[:600]
+
+
+def _loop_transfer(seed_words, question="", turns=None, zone=None):
+    """37 оборотов по словам -> цепочка слов (список). Каждый оборот —
+    один шаг: следующее слово = лучший преемник текущего (с бонусом за
+    слова вопроса и нейронов); нет преемника — «перенос» на неиспользованное
+    слово вопроса/нейронов/пула. Всегда делает ровно `turns` оборотов,
+    если есть хотя бы одно слово."""
+    turns = int(turns or CFG.get("loop_turns", LOOP_TURNS) or LOOP_TURNS)
+    turns = max(1, min(120, turns))
+    st = _GEN_STATE
+    qw = [w for w in re.findall(r"[а-яё]{3,}", str(question).lower()) if dict_has(w)]
+    qset = set(qw)
+    sw = [w for w in re.findall(r"[а-яё]{3,}", str(seed_words).lower()) if dict_has(w)]
+    try:
+        nw = [w for w, _s in (_neuron_context().get("words") or [])]
+    except Exception:
+        nw = []
+    nw = [w.lower() for w in nw if re.search(r"[а-яё]", w) and dict_has(w.lower())]
+    nset = set(nw)
+    starts = qw[:3] + sw + nw
+    try:
+        starts += [w for w in _gen_pool(30) if re.search(r"[а-яё]", w)]
+    except Exception:
+        pass
+    chain, jumps, fq = [], 0, 0
+    used = set()
+    cur = next((w for w in starts if w), "")
+    if not cur:
+        return []
+    chain.append(cur); used.add(cur)
+    _LOOP.update(turn=1, turns=turns, chain=list(chain), question=str(question)[:120],
+                 ts=time.time(), jumps=0, from_question=0)
+    for t in range(2, turns + 1):
+        succ = dict(st["big"].get(cur) or {})
+        if len(chain) >= 2:                      # v2.106: триграммы усиливают «правильные» продолжения
+            for w_, c_ in ((st.get("tri") or {}).get(chain[-2] + " " + cur) or {}).items():
+                succ[w_] = succ.get(w_, 0) + 4 * c_
+        try:
+            for w_, c_ in sdict().successors(cur, accept=dict_has):
+                succ.setdefault(w_, c_)
+        except Exception:
+            pass
+        best, bs = "", 0.0
+        for w, c in succ.items():
+            if not re.search(r"[а-яё]", w):
+                continue
+            pen = gen_pen(cur, w)
+            if pen < 0.3:
+                continue
+            sc = float(c) * pen
+            if w in qset:
+                sc *= 3.0
+            elif w in nset:
+                sc *= 1.6
+            if w in used and w not in _GEN_FUNC:
+                sc *= 0.15                       # повтор — почти не берём
+            sc *= 0.8 + 0.4 * random.random()    # живость выбора
+            if sc > bs:
+                best, bs = w, sc
+        if not best:                             # «перенос»: прыжок на свежее слово
+            pool = [w for w in (qw + nw + starts) if w not in used]
+            if not pool:
+                pool = [w for w in starts if w != cur]
+            if not pool:
+                break
+            best = random.choice(pool[:6])
+            jumps += 1
+        if best in qset:
+            fq += 1
+        chain.append(best); used.add(best); cur = best
+        _LOOP.update(turn=t, chain=list(chain)[-80:], jumps=jumps, from_question=fq)
+    return chain
+
+
+_FORMULA_STATE = {"n": 0, "last": "", "ts": 0.0, "count": 0}
+
+
+def _formula_ponder(question="", hints=None):
+    """v2.107: МОЗГ ОБДУМЫВАЕТ ФОРМУЛЫ. Формула берётся из базы платы
+    (dicts/math_formulas.json, _maths_load): по теме вопроса/слов мысли, а
+    если тем нет — каждая CFG['formula_every']-я (по умолчанию 4-я) мысль
+    разбирает одну формулу из базы по кругу. Пишется рассуждение: что
+    считает формула, её запись, ПРОБНАЯ подстановка чисел и результат
+    (считает безопасный вычислитель _mm_eval — не выдумка). -> текст | ''."""
+    if not CFG.get("formula_thoughts", True):
+        return ""
+    try:
+        forms = [f for f in _maths_load() if f.get("expr") and f.get("vars")
+                 and str(f.get("id")) != "average"]
+        if not forms:
+            return ""
+        _FORMULA_STATE["n"] += 1
+        hint = " ".join([str(question or "")] + [str(h) for h in (hints or [])])
+        f, hits = _math_pick(hint)
+        if not f or not hits or str(f.get("id")) == "average":
+            every = max(1, int(CFG.get("formula_every", 4) or 4))
+            if _FORMULA_STATE["n"] % every:
+                return ""
+            f = forms[_FORMULA_STATE["count"] % len(forms)]      # по кругу
+        values = {}
+        for v in f["vars"]:
+            nm = str(v.get("name"))
+            lo = float(v.get("min", 1)) if str(v.get("min", "")).strip() else 1.0
+            hi = float(v.get("max", 9)) if str(v.get("max", "")).strip() else 9.0
+            values[nm] = float(random.randint(int(lo), max(int(lo), int(hi))))
+        val = _mm_eval(f["expr"], values)
+        subs = ", ".join("%s=%s" % (str(v.get("name")), _mm_num(values[str(v.get("name"))]))
+                         for v in f["vars"])
+        _FORMULA_STATE.update(count=_FORMULA_STATE["count"] + 1, ts=time.time(),
+                              last=str(f.get("name") or "")[:60])
+        doc = str(f.get("doc") or "").strip().rstrip(".")
+        return ("Обдумываю формулу «%s»: %s. Записываю её так: %s. "
+                "Проверю на пробных числах: %s — получается %s. "
+                "Значит, величина зависит от этих переменных именно так."
+                % (f.get("name"), doc or "она связывает величины",
+                   f.get("text"), subs, _mm_num(val)))
+    except Exception as e:
+        log("МОЗГ", "формула:", str(e)[:100])
+        return ""
+
+
+def _cloud_extend(text, question=""):
+    """v2.101: облако ДОПОЛНЯЕТ мысль (POST /api/thought/extend). Таймаут
+    короткий; нет облака/ответа — мысль остаётся как есть. -> addition|''."""
+    if not CFG.get("cloud_extend", True):
+        return ""
+    url, token = _cloud_base()
+    if not url:
+        return ""
+    try:
+        r, _e = _http_json_err(url + "/api/thought/extend",
+                               {"board": _hostname(), "text": text[:3000],
+                                "question": question[:400], "max_chars": 1200},
+                               token=token, timeout=10)
+        if r and r.get("ok"):
+            return scrub_thought(r.get("addition") or "")[:2800]
+    except Exception:
+        pass
+    return ""
+
+
+def _pick_next_sentence_seed(prev_sentence, pending):
+    """v2.106: следующее предложение начинается со слова, которое в
+    прочитанных текстах ЧАЩЕ идёт после предложения, оканчивающегося так же
+    (snext); нет статистики — по очереди. Выбранное слово удаляется из pending."""
+    try:
+        ws = [w for w in re.findall(r"[а-яё]+", str(prev_sentence).lower())
+              if w not in _GEN_FUNC and len(w) >= 3]
+        tbl = (_GEN_STATE.get("snext") or {}).get(ws[-1][:5]) if ws else None
+        if tbl:
+            best = max(pending, key=lambda w: tbl.get(_norm_word(w), 0))
+            if tbl.get(_norm_word(best), 0) > 0:
+                pending.remove(best)
+                return best
+    except Exception:
+        pass
+    return pending.pop(0) if pending else ""
+
+
+def brain_full_text(seed_words="", zone=None, max_sents=4, words=None):
+    """v2.98: ПОЛНОЦЕННЫЙ ТЕКСТ мысли. Мозг думает, опираясь на нейроны:
+    слово КАЖДОЙ нейрон-платы разворачивается в предложение той же сборкой,
+    что и короткая фраза (_gen_compose по биграммному словарю), предложения
+    склеиваются в абзац. Собирается дольше короткой мысли — зато чат с
+    мыслями и облако получают полноценный текст. Нет плат/словаря —
+    вернём '' (останется короткая фраза)."""
+    if not CFG.get("full_thoughts", True):
+        return ""
+    try:
+        if _GEN_STATE.get("links", 0) < GEN_MIN_LINKS or not _GEN_STATE.get("uni"):
+            return ""
+    except Exception:
+        return ""
+    words = list(words) if words else brain_board_words()
+    if not words:
+        return ""
+    sents = []
+    pending = list(words)
+    nxt_w = pending.pop(0) if pending else ""
+    while nxt_w and len(sents) < max(1, int(max_sents)):
+        w = nxt_w
+        try:
+            s = _gen_compose(w, zone, [(w, 1)], nn_stems(w))
+        except Exception:
+            s = ""
+        s = scrub_thought(s)
+        if s and s not in sents:
+            sents.append(s)
+        nxt_w = _pick_next_sentence_seed(s, pending) if pending else ""
+    if not sents:
+        return ""
+    return " ".join(sents).strip()[:THOUGHT_CHARS]
+
+
+def _zone_llm_full_text(seed_words="", zone=None):
+    """v2.98: МОЗГ (СКЕТЧ) НЕ ПОДКЛЮЧЕН — полный текст собирает ЗОНА LLM:
+    совет наставника (advice_fetch -> /api/llm/teach, LLM облака или прямое
+    ядро) + воспоминания по теме из памяти платы + развёртка ключей
+    наставника по биграммному словарю. Без выдумок: только LLM, память и
+    словарь. Собирается дольше нейронной (сетевой вызов) — это честно."""
+    text = str(seed_words or "").strip()
+    parts = []
+    adv = None
+    try:
+        adv = advice_fetch(text[:400] or (zone or ""))
+    except Exception:
+        adv = None
+    if adv and adv.get("hint"):
+        parts.append(str(adv["hint"]).strip())
+    keys = []
+    for k in ((adv or {}).get("keys") or [])[:6]:
+        k = str(k).strip()
+        if k:
+            keys.append(k)
+    words = [w for w in re.findall(r"[а-яёa-z0-9]{4,}", text.lower())][:4]
+    for k in keys:
+        for kw in k.split():
+            kw = kw.lower()
+            if len(kw) >= 4 and kw not in words:
+                words.append(kw)
+    words = [w[:6] for w in words if len(w) >= 4][:6]
+    mems = []
+    try:
+        with SH.lock:
+            all_mem = list(SH.memory)
+        for m in all_mem:
+            if str(m.get("role")) not in ("bot", "kb", "user"):
+                continue
+            tl = str(m.get("text") or "").lower()
+            if words and any(w in tl for w in words):
+                frag = str(m.get("text") or "")[:220]
+                if frag not in mems:
+                    mems.append(frag)
+        mems = mems[-3:]
+    except Exception:
+        mems = []
+    if mems:
+        parts.append("Что я помню: " + " ".join(mems))
+    for k in keys[:2]:                     # мост LLM -> нейроны: развёртка ключей
+        try:
+            s = _gen_compose(k, zone, [(k, 1)], nn_stems(k))
+        except Exception:
+            s = ""
+        s = scrub_thought(s)
+        if s and s not in parts:
+            parts.append(s)
+    out = " ".join(p.strip() for p in parts if p.strip())
+    return out[:THOUGHT_CHARS]
+
+
+def brain_kw_payload():
+    """v2.98: ключевые слова последней мысли с волей мозга — поле «kw»
+    канала связи: облако обращает внимание на то, что для мозга сейчас
+    главное, и может брать эти слова в свои ответы."""
+    try:
+        t = str(_LAST_THOUGHT.get("t") or "")
+        kws = brain_keywords(t, limit=6)
+        return {"words": [[w, a] for w, a in kws],
+                "will": brain_will(), "ts": _LAST_THOUGHT.get("ts")}
+    except Exception as e:
+        return {"err": "%s: %s" % (type(e).__name__, str(e)[:80])}
 
 
 def will_strength(name):
@@ -7686,15 +8092,8 @@ def _gen_d6_seq(phrase, sign=0, ask=True):
             break
     if not seq:
         return
-    # v2.96.5: строка «12,33,0,…» должна влезать в RPC-буфер MCU (256 Б,
-    # см. BRIDGE_MAX_ARG): режем по байтам на границе слова (0 = пробел)
-    s = ",".join(map(str, seq))
-    lim = BRIDGE_MAX_ARG - 24
-    if len(s) > lim:
-        cut = s.rfind(",0,", 0, lim)
-        s = s[:cut] if cut > 20 else s[:s.rfind(",", 0, lim)]
     try:
-        _bridge_call("d6seq", s, wait=False)
+        _bridge_call("d6seq", ",".join(map(str, seq)), wait=False)
     except Exception:
         pass
     try:
@@ -7721,7 +8120,7 @@ def gen_register(phrase, speak=False, remember=False, announce=False):
          фразы скетч-сеть собирает с нашей сверкой teach_last."""
     st = _GEN_STATE
     words = [w for w in phrase[:-1].split(" ") if w]
-    st["last"] = phrase[:200]
+    st["last"] = phrase[:THOUGHT_CHARS]
     st["last_ts"] = time.time()
     st["phrases"] += 1
     st["words"] += len(words)
@@ -7735,20 +8134,29 @@ def gen_register(phrase, speak=False, remember=False, announce=False):
     except Exception:
         pass
     if speak and CFG.get("tts_on"):
-        threading.Thread(target=tts_say, args=(phrase,),
+        # v2.98: озвучиваем первые ~240 знаков — полный текст и так уходит
+        # в чат и облаку целиком, а речь не должна занять минуту
+        threading.Thread(target=tts_say, args=(phrase[:240],),
                          daemon=True).start()
     if remember:
-        brain_remember("bot", "💬 «%s»" % phrase[:180])
+        brain_remember("bot", "💬 «%s»" % phrase[:THOUGHT_CHARS])
     if announce:
         st["says"] += 1
-        # 1) ЧАТ ПЛАТЫ — фраза мозга как самостоятельное сообщение
-        add_message("bot", "🧠 «%s»\n(фразу собрал сам словами из словаря — "
-                    "по тому, что знаю)" % phrase[:180],
+        # 1) ЧАТ ПЛАТЫ — мысль мозга как самостоятельное сообщение.
+        # v2.98: если собрался ПОЛНЫЙ текст — в чате с мыслями он выходит
+        # ЦЕЛИКОМ (не короткая фраза); хвост честно говорит, кто собрал
+        src_note = str(_GEN_STATE.get("full_src") or "")
+        src_tail = ("текст собран со всех нейрон-плат"
+                    if src_note == "нейроны" else
+                    "текст собрал zone LLM: мозг не подключен"
+                    if src_note == "zone LLM" else
+                    "фразу собрал сам словами из словаря — по тому, что знаю")
+        add_message("bot", "🧠 «%s»\n(%s)" % (phrase[:THOUGHT_CHARS], src_tail),
                     "Мысль")
         # 2) НЕЙРОНАМ — старый канал: chat_stim -> broadcastStim ->
         #    STIM;<фраза> всем 12 платам. Код нейронов не меняется.
         try:
-            _bridge_call("chat_stim", phrase[:90], wait=False)
+            pass  # Unverified thoughts are not echoed as positive input to physical neurons.
         except Exception:
             pass
         # 3) В ОБЛАКО — очередь сборщика мыслей (v2.20): фразы копятся и
@@ -7759,7 +8167,7 @@ def gen_register(phrase, speak=False, remember=False, announce=False):
         except Exception:
             pass
         try:                    # v2.75: мысль + частота генератора -> общий словарь
-            sdict().learn(phrase, hz=_signed_hz(), accept=dict_has)
+            pass  # Unverified generated phrases are not positive dictionary training examples.
         except Exception:
             pass
     # буквогенератор скетча учится произносить слова, которые мозг реально
@@ -7950,7 +8358,7 @@ _MN_SENT = {"ts": 0.0}       # когда в последний раз уход�
 # отдельный файл не нужен (лежит рядом — не мешает, но не используется).
 _MN_SRC = r'''# -*- coding: utf-8 -*-
 # ===========================================================================
-# mozgnet.py — АССОЦИАТИВНАЯ НЕЙРОСЕТЬ «МОЗГ-12» (v1.0, только stdlib)
+# mozgnet.py — АССОЦИАТИВНАЯ НЕЙРОСЕТЬ «STAR GATE» (v1.0, только stdlib)
 # ---------------------------------------------------------------------------
 # НАЗНАЧЕНИЕ (v2.25 платы / v2.5.0 облака):
 #   Нейросеть, которая УЧИТСЯ НА МАТЕРИАЛАХ и ПИШЕТ ДЛИННЫЙ ТЕКСТ по этим
@@ -8586,80 +8994,11 @@ def api_mozgnet_readings():
 
 
 # ===========================================================================
-# [3h] ТИХОЕ САМОПРОГРАММИРОВАНИЕ (v2.13): если письму мозга «что-то
-#      непонятно» (зоны ответили слабо, навыка нет) — мозг МОЛЧА, без спама
-#      в чатах, САМ собирает функцию из локальных заготовок (секция [3i],
-#      LLM не участвует), проверяет её локально и в песочнице облака,
-#      публикует в реестр облака. v2.24: LLM КОД БОЛЬШЕ НЕ ПИШЕТ — кодовый
-#      генератор работает ОТ МОЗГА (не вышло — честный отказ). Внешне видны
-#      ТОЛЬКО статус письма в чате
-#      облака («программирую функцию…», POST /api/brain/progress) и бейдж
-#      «навык» у ответа. Повторы честные: неудачный интент охлаждаётся,
-#      после SELF_MAX_FAILS провалов замораживается на сутки.
+# v2.97.3: ТИХОЕ САМОПРОГРАММИРОВАНИЕ УБРАНО («питоны» сняты): мозг
+# больше не пишет и не исполняет функции-навыки Python — ни локально,
+# ни в песочнице облака. Обучение родным ядрам (тензор, mozgnet) цело.
 # ===========================================================================
-SELF_COOLDOWN   = 6 * 3600     # повторная попытка по тому же интенту не раньше
-SELF_MAX_FAILS  = 3            # после стольких провалов интент замораживается
-SELF_FAIL_PENAL = 24 * 3600    # срок заморозки (сутки)
 _SKILLS_CACHE   = {"ts": 0.0, "list": []}   # кэш реестра функций облака (10 мин)
-_WEBISH_PREFIX = ("найди", "поищи", "погугли", "что такое", "что за",
-                  "кто такой", "кто такая", "открой", "прочитай", "новости",
-                  "расскажи про", "поиск", "/")
-# v2.19: похоже на ЗАДАЧУ (можно тихо собрать/достроить функцию-навык)
-_TASK_MARK = re.compile(
-    r"(посчитай|вычисли|сделай|сделать|напиши|создай|сгенерируй|реализуй|"
-    r"добавь|переведи|конвертируй|покажи|собери|брось|подбрось|кубик|"
-    r"сколько будет|чему равно|который час|какое число|день недели|"
-    r"случайное число|факториал)", re.I)
-
-
-def _self_state_path():
-    """Файл состояния самокода — рядом с памятью (переживает запуск)."""
-    try:
-        return os.path.join(os.path.dirname(_mem_path()),
-                            "selfcode_state.json")
-    except Exception:
-        return "/tmp/neuro12_selfcode.json"
-
-
-def _self_state():
-    try:
-        with open(_self_state_path()) as f:
-            d = json.load(f)
-        return d if isinstance(d, dict) else {}
-    except Exception:
-        return {}
-
-
-def _self_state_save(d):
-    try:
-        p = _self_state_path()
-        tmp = p + ".tmp"
-        with open(tmp, "w") as f:
-            json.dump(d, f, ensure_ascii=False)
-        os.replace(tmp, p)
-    except Exception:
-        pass
-
-
-def _self_key(task):
-    return "%x" % (zlib.crc32((task or "").lower()[:80].encode("utf-8"))
-                   & 0xFFFFFFFF)
-
-
-def _brain_progress(mid, note):
-    """Тихий статус письма для чата облака: POST /api/brain/progress.
-    Best-effort: любые ошибки молча игнорируются — статус не критичен."""
-    url, token = _cloud_base()
-    if not (url and mid and note):
-        return
-    try:
-        _http_json_err(url + "/api/brain/progress",
-                       {"id": str(mid)[:80], "note": str(note)[:160]},
-                       token=token, timeout=6)
-    except Exception:
-        pass
-
-
 def _cloud_skills_cached(period=600):
     """Реестр функций облака с кэшем (10 мин), чтобы не дёргать сеть."""
     now = time.time()
@@ -8685,502 +9024,8 @@ def _skill_match(text):
     return None
 
 
-def _selfcode_should(text):
-    """Решение о тихом самокоде: содержательная фраза (>= 2 слов), не команда
-    и не веб-поиск, интент не на кулдауне/заморозке."""
-    t = (text or "").strip()
-    low = t.lower()
-    if len(t.split()) < 2:
-        return False
-    if any(low.startswith(p) for p in _WEBISH_PREFIX):
-        return False
-    rec = _self_state().get(_self_key(task=t))
-    ts = float(rec.get("ts", 0) or 0) if isinstance(rec, dict) \
-        else float(rec or 0)
-    fails = int(rec.get("fails", 0) or 0) if isinstance(rec, dict) else 0
-    cooldown = (SELF_FAIL_PENAL if fails >= SELF_MAX_FAILS
-                else SELF_COOLDOWN * max(1, fails))
-    return (time.time() - ts) >= cooldown
-
-
-def _selfcode_mark(task, ok):
-    """Отметить попытку: успех сбрасывает счётчик провалов, провал копится."""
-    st = _self_state()
-    key = _self_key(task)
-    rec = st.get(key) if isinstance(st.get(key), dict) else {"ts": 0, "fails": 0}
-    rec["ts"] = time.time()
-    rec["fails"] = 0 if ok else int(rec.get("fails", 0) or 0) + 1
-    st[key] = rec
-    _self_state_save(st)
-
-
-# ===========================================================================
-# [3i] ЛОКАЛЬНЫЙ САМОКОД БЕЗ LLM (v2.13): мозг САМ собирает функцию-навык.
-#      Заготовки-семейства (калькулятор, конвертер единиц, дата/время,
-#      случайность, текстовые фокусы) пишут код навыка прямо на плате; код
-#      проверяется локально (ast + пробные прогоны) и в песочнице облака
-#      (просто исполнение, нейросети там нет), затем публикуется в реестр.
-#      v2.24: LLM НЕ УЧАСТВУЕТ НИГДЕ — старый путь «попросить LLM-учителя»
-#      удалён: кодовый генератор работает только ОТ МОЗГА.
-# ===========================================================================
-_SKILL_CALC_CODE = r'''# -*- coding: utf-8 -*-
-# Навык «Калькулятор» — собран мозгом платы сам, без нейросети (v2.13).
-# Понимает: сколько будет 2 плюс 2 | посчитай (5 - 3) * 4 | корень из 144
-#           12 в степени 2 | 20% от 150 | 15,5 разделить на 3
-import math
-import re
-
-def run(text, ctx=None):
-    s = re.sub(r",", ".", str(text or "").lower())
-    for a, b in (("умножить на", "*"), ("умножь на", "*"), ("умножение", "*"),
-                 ("умножить", "*"), ("умножь", "*"), ("разделить на", "/"),
-                 ("раздели на", "/"), ("поделить на", "/"), ("делить на", "/"),
-                 ("разделить", "/"), ("плюс", "+"), ("прибавить", "+"),
-                 ("минус", "-"), ("отнять", "-"), ("вычесть", "-"),
-                 ("в степени", "^"), ("в степень", "^"), ("степень", "^")):
-        s = re.sub(re.escape(a), b, s)
-    s = re.sub(r"корень из\s*([0-9.]+)", r" sqrt(\1) ", s)
-    s = re.sub(r"([0-9.]+)\s*%\s*от\s*([0-9.]+)", r" (\1/100*\2) ", s)
-    toks = re.findall(r"[0-9]+\.?[0-9]*|sqrt|[()+\-*/^]", s)
-    if not any(c.isdigit() for c in "".join(toks)):
-        return "дай пример цифрами: «сколько будет 12*8?»"
-    pos = [0]
-
-    def peek():
-        return toks[pos[0]] if pos[0] < len(toks) else None
-
-    def take():
-        t = toks[pos[0]]
-        pos[0] += 1
-        return t
-
-    def factor():
-        t = peek()
-        if t == "-":
-            take()
-            return -factor()
-        if t == "sqrt":
-            take()
-            return math.sqrt(factor())
-        if t == "(":
-            take()
-            v = addsub()
-            if peek() == ")":
-                take()
-            return v
-        if t and t[0].isdigit():
-            return float(take())
-        raise ValueError("ожидалось число")
-
-    def power():
-        v = factor()
-        if peek() == "^":
-            take()
-            return v ** power()
-        return v
-
-    def muldiv():
-        v = power()
-        while peek() in ("*", "/"):
-            op = take()
-            r = power()
-            if op == "*":
-                v = v * r
-            elif r == 0:
-                raise ZeroDivisionError("ноль")
-            else:
-                v = v / r
-        return v
-
-    def addsub():
-        v = muldiv()
-        while peek() in ("+", "-"):
-            op = take()
-            r = muldiv()
-            v = v + r if op == "+" else v - r
-        return v
-
-    try:
-        val = addsub()
-    except ZeroDivisionError:
-        return "на ноль делить нельзя"
-    except Exception:
-        return "не понял выражение — пиши цифрами: 2+2, 5*8, корень из 144"
-    if abs(val - round(val)) < 1e-9:
-        return "Ответ: %d" % round(val)
-    return "Ответ: %g" % round(val, 6)
-'''
-
-_SKILL_UNITS_CODE = r'''# -*- coding: utf-8 -*-
-# Навык «Конвертер единиц» — собран мозгом платы сам, без нейросети (v2.13).
-# Понимает: переведи 5 км в мили | 10 кг в фунты | 2 часа в минуты
-#           100 фаренгейт в цельсии | 120 км/ч в м/с
-import re
-
-_LEN = {"км": 1000.0, "километр": 1000.0, "километра": 1000.0,
-        "километров": 1000.0, "км/ч": 1.0, "м": 1.0, "метр": 1.0,
-        "метра": 1.0, "метров": 1.0, "метрах": 1.0, "дм": 0.1, "см": 0.01,
-        "мм": 0.001, "миля": 1609.344, "мили": 1609.344, "миль": 1609.344,
-        "милях": 1609.344, "фут": 0.3048, "фута": 0.3048, "футов": 0.3048,
-        "дюйм": 0.0254, "дюйма": 0.0254, "дюймов": 0.0254, "ярд": 0.9144,
-        "ярда": 0.9144, "ярдов": 0.9144}
-_MASS = {"кг": 1.0, "килограмм": 1.0, "килограмма": 1.0, "килограммов": 1.0,
-         "г": 0.001, "грамм": 0.001, "грамма": 0.001, "граммов": 0.001,
-         "т": 1000.0, "тонна": 1000.0, "тонны": 1000.0, "тонн": 1000.0,
-         "фунт": 0.4536, "фунта": 0.4536, "фунтов": 0.4536,
-         "унция": 0.02835, "унции": 0.02835}
-_VOL = {"л": 1.0, "литр": 1.0, "литра": 1.0, "литров": 1.0, "мл": 0.001,
-        "галлон": 3.785, "галлона": 3.785, "галлонов": 3.785}
-_TIME = {"секунда": 1.0, "секунды": 1.0, "секунд": 1.0, "минута": 60.0,
-         "минуты": 60.0, "минут": 60.0, "минутах": 60.0, "час": 3600.0,
-         "часа": 3600.0, "часов": 3600.0, "часах": 3600.0, "сутки": 86400.0,
-         "суток": 86400.0, "сутках": 86400.0, "день": 86400.0, "дня": 86400.0,
-         "дней": 86400.0, "днях": 86400.0}
-_SPEED = {"км/ч": 1.0, "м/с": 3.6, "миль/ч": 1.6093}
-_TABLES = (_LEN, _MASS, _VOL, _TIME, _SPEED)
-
-
-def _fmt(x):
-    x = round(x, 4)
-    if abs(x - round(x)) < 1e-9:
-        return str(int(round(x)))
-    return "%g" % x
-
-
-def _ufind(tab, u):
-    if u in tab:
-        return tab[u]
-    for k, v in tab.items():
-        if len(k) >= 2 and (u.startswith(k) or k.startswith(u)):
-            return v
-    return None
-
-
-def _tkey(u):
-    for p, k in (("цель", "C"), ("фарен", "F"), ("кельв", "K")):
-        if u.startswith(p):
-            return k
-    return ""
-
-
-def run(text, ctx=None):
-    t = re.sub(r",", ".", str(text or "").lower())
-    m = re.search(r"([0-9]+(?:\.[0-9]+)?)\s*([а-яa-z/]+)\s*(?:во|в)\s+([а-яa-z/]+)", t)
-    if not m:
-        return "дай так: «переведи 5 км в мили»"
-    n = float(m.group(1))
-    u1, u2 = m.group(2), m.group(3)
-    a, b = _tkey(u1), _tkey(u2)
-    if a and b:
-        c = n if a == "C" else (n - 32.0) * 5.0 / 9.0 if a == "F" else n - 273.15
-        v = c if b == "C" else c * 9.0 / 5.0 + 32.0 if b == "F" else c + 273.15
-        return "%s %s = %s %s" % (n, u1, _fmt(v), u2)
-    for tab in _TABLES:
-        f1, f2 = _ufind(tab, u1), _ufind(tab, u2)
-        if f1 and f2:
-            return "%s %s = %s %s" % (n, u1, _fmt(n * f1 / f2), u2)
-    return "не знаю таких единиц — попробуй км/мили, кг/фунты, литры, часы, C/F"
-'''
-
-_SKILL_TIME_CODE = r'''# -*- coding: utf-8 -*-
-# Навык «Дата и время» — собран мозгом платы сам, без нейросети (v2.13).
-# Понимает: который час | какое сегодня число | какой сегодня день недели
-#           сколько дней до 01.01.2027 | сколько дней до нового года
-import re
-from datetime import datetime
-
-_WD = ["понедельник", "вторник", "среда", "четверг", "пятница", "суббота",
-       "воскресенье"]
-_MO = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля",
-       "августа", "сентября", "октября", "ноября", "декабря"]
-
-
-def _plural(n, one, few, many):
-    n = abs(int(n)) % 100
-    if 11 <= n <= 14:
-        return many
-    n %= 10
-    if n == 1:
-        return one
-    if 2 <= n <= 4:
-        return few
-    return many
-
-
-def run(text, ctx=None):
-    t = str(text or "").lower()
-    now = datetime.now()
-    m = re.search(r"(\d{1,2})\s*[.\-/]\s*(\d{1,2})(?:\s*[.\-/]\s*(\d{2,4}))?", t)
-    target = None
-    if m:
-        d, mo = int(m.group(1)), int(m.group(2))
-        y = int(m.group(3)) if m.group(3) else now.year
-        if y < 100:
-            y += 2000
-        try:
-            target = datetime(y, mo, d)
-        except ValueError:
-            return "не похоже на дату — напиши так: «сколько дней до 01.01.2027»"
-        if target.date() < now.date() and not m.group(3):
-            target = datetime(y + 1, mo, d)
-    elif "нового года" in t or "новый год" in t:
-        target = datetime(now.year + 1, 1, 1)
-    if target is not None:
-        days = (target.date() - now.date()).days
-        if days < 0:
-            return "эта дата уже прошла"
-        if days == 0:
-            return "этот день наступил — сегодня!"
-        return "до %s осталось %d %s" % (target.strftime("%d.%m.%Y"), days,
-                                         _plural(days, "день", "дня", "дней"))
-    if "недел" in t or ("день" in t and "какой" in t):
-        return "сегодня %s" % _WD[now.weekday()]
-    if "число" in t or "дата" in t:
-        return "сегодня %d %s %d года" % (now.day, _MO[now.month - 1], now.year)
-    if "час" in t or "времени" in t:
-        return "сейчас %02d:%02d" % (now.hour, now.minute)
-    return "сейчас %02d:%02d, %d %s %d, %s" % (
-        now.hour, now.minute, now.day, _MO[now.month - 1], now.year,
-        _WD[now.weekday()])
-'''
-
-_SKILL_RAND_CODE = r'''# -*- coding: utf-8 -*-
-# Навык «Случайность» — собран мозгом платы сам, без нейросети (v2.13).
-# Понимает: брось кубик | подбрось монетку | случайное число от 5 до 10
-#           выбери из чая или кофе
-import random
-import re
-
-def run(text, ctx=None):
-    t = str(text or "").lower()
-    if "монет" in t:
-        return "монетка: %s" % random.choice(["орёл", "решка"])
-    if "кубик" in t:
-        return "кубик: выпало %d" % random.randint(1, 6)
-    if "выбери" in t:
-        tail = t.split("из", 1)[1] if "из" in t else ""
-        opts = [o.strip(" .!?-") for o in re.split(r",|или", tail)
-                if o.strip(" .!?-")]
-        if len(opts) >= 2:
-            return "выбираю: %s" % random.choice(opts)
-        return "перечисли варианты: «выбери из чая или кофе»"
-    m = re.search(r"от\s*(\d+)\s*до\s*(\d+)", t)
-    if m:
-        a, b = int(m.group(1)), int(m.group(2))
-        if a > b:
-            a, b = b, a
-        return "случайное число от %d до %d: %d" % (a, b, random.randint(a, b))
-    m = re.search(r"(\d+)\D+(\d+)", t)
-    if m:
-        a, b = int(m.group(1)), int(m.group(2))
-        return "случайное число от %d до %d: %d" % (
-            min(a, b), max(a, b), random.randint(min(a, b), max(a, b)))
-    return "случайное число от 1 до 100: %d" % random.randint(1, 100)
-'''
-
-_SKILL_TEXT_CODE = r'''# -*- coding: utf-8 -*-
-# Навык «Текстовые фокусы» — собран мозгом платы сам, без нейросети (v2.13).
-# Понимает: переверни слово дом | сколько букв в слове молоко
-#           сколько слов в этом коротком предложении
-import re
-
-def run(text, ctx=None):
-    t = str(text or "")
-    low = t.lower()
-    if "сколько слов" in low or ("слов" in low and "посчитай" in low):
-        return "слов: %d" % len(re.findall(r"[а-яёa-z0-9]+", low))
-    if "букв" in low:
-        ws = re.findall(r"[а-яёa-z]+", low)
-        w = ws[-1] if ws else ""
-        return "букв: %d" % len(w)
-    if "переверни" in low or "наоборот" in low or "разверни" in low:
-        ws = re.findall(r"[а-яёa-z0-9]+", low)
-        if ws:
-            return "%s наоборот — %s" % (ws[-1], ws[-1][::-1])
-        return "скажи слово, которое перевернуть"
-    return "скажи: «переверни слово», «сколько букв в слове», «сколько слов»"
-'''
-
-
-def _gen_calc(t):
-    if not re.search(r"сколько будет|посчитай|вычисли|чему равно|реши|плюс"
-                     r"|минус|корень из|в степени|умнож|раздели|делить|% от", t):
-        return None
-    if not re.search(r"\d", t):
-        return None
-    return {"id": "auto-calc", "name": "Калькулятор", "kind": "code",
-            "keywords": ["сколько будет", "посчитай", "вычисли", "калькулятор"],
-            "desc": "Считает примеры: + - * /, скобки, корень, степень, %",
-            "code": _SKILL_CALC_CODE,
-            "tests": ["сколько будет 2 плюс 2", "посчитай (5 - 3) * 4",
-                      "корень из 144", "12 в степени 2", "20% от 150",
-                      "15,5 разделить на 3"]}
-
-
-def _gen_units(t):
-    if not re.search(r"переведи|перевести|конвертируй|сконвертируй", t):
-        return None
-    if not re.search(r"\d", t):
-        return None
-    return {"id": "auto-units", "name": "Конвертер единиц", "kind": "code",
-            "keywords": ["переведи", "конвертер", "мили", "фунты", "часы"],
-            "desc": "Длина, масса, объём, время, скорость и температура",
-            "code": _SKILL_UNITS_CODE,
-            "tests": ["переведи 5 км в мили", "переведи 10 кг в фунты",
-                      "переведи 2 часа в минуты",
-                      "переведи 100 фаренгейт в цельсии"]}
-
-
-def _gen_time(t):
-    if not re.search(r"который час|сколько времени|какое.*?(число|дата)"
-                     r"|какая.*?дата|какой.*?день|день недели|дней до"
-                     r"|день до|нового года", t):
-        return None
-    return {"id": "auto-time", "name": "Дата и время", "kind": "code",
-            "keywords": ["который час", "какое число", "день недели",
-                         "сколько дней до"],
-            "desc": "Время, дата, день недели и счёт дней до даты",
-            "code": _SKILL_TIME_CODE,
-            "tests": ["который час", "какое сегодня число",
-                      "какой сегодня день недели",
-                      "сколько дней до 31.12.2030"]}
-
-
-def _gen_rand(t):
-    if not re.search(r"кубик|монет|случайн|выбери|жребий|подбрось|брось", t):
-        return None
-    return {"id": "auto-rand", "name": "Случайность", "kind": "code",
-            "keywords": ["кубик", "монетка", "случайное число", "выбери"],
-            "desc": "Кубик, монетка, случайные числа и выбор за мозг",
-            "code": _SKILL_RAND_CODE,
-            "tests": ["брось кубик", "подбрось монетку",
-                      "выбери из чая или кофе", "случайное число от 5 до 10"]}
-
-
-def _gen_text(t):
-    if not re.search(r"переверни|наоборот|разверни|сколько букв|сколько слов"
-                     r"|посчитай букв|посчитай слов", t):
-        return None
-    return {"id": "auto-text", "name": "Текстовые фокусы", "kind": "code",
-            "keywords": ["переверни", "сколько букв", "сколько слов"],
-            "desc": "Переворачивает слова и считает буквы/слова",
-            "code": _SKILL_TEXT_CODE,
-            "tests": ["переверни слово дом", "сколько букв в слове молоко",
-                      "сколько слов в этом коротком предложении"]}
-
-
-_SELF_GENS = (_gen_calc, _gen_units, _gen_time, _gen_rand, _gen_text)
-
-
-def _selfcode_verify(code, tests):
-    """Проверка собранного кода на плате: синтаксис + пробные прогоны.
-    -> (True, "") | (False, причина)."""
-    import ast
-    try:
-        ast.parse(code)
-    except SyntaxError as e:
-        return False, "синтаксис: %s" % e
-    g = {"__name__": "skill"}
-    try:
-        exec(compile(code, "<самокод>", "exec"), g)   # свой код — по построению
-        fn = g.get("run")
-        if not callable(fn):
-            return False, "нет функции run()"
-        for t in tests:
-            out = fn(t, {})
-            if not isinstance(out, str) or not out.strip():
-                return False, "пустой ответ на %r" % t
-    except Exception as e:
-        return False, str(e)[:120]
-    return True, ""
-
-
-def _selfcode_local(task):
-    """СБОРКА НАВЫКА НА ПЛАТЕ БЕЗ LLM (v2.13): перебираем заготовки-семейства,
-    каждая узнаёт «свою» задачу и отдаёт готовый код; проверяем локально.
-    -> (payload|None, причина). payload: id/name/keywords/desc/code/tests."""
-    t = (task or "").strip().lower()
-    if len(t.split()) < 2:
-        return None, "слишком короткая задача"
-    for gen in _SELF_GENS:
-        try:
-            payload = gen(t)
-        except Exception as e:
-            payload = None
-            log("САМОКОД", "генератор:", str(e)[:80])
-        if not payload:
-            continue
-        ok, why = _selfcode_verify(payload["code"], payload.get("tests") or [])
-        if ok:
-            log("САМОКОД", "собрал «%s» сам, код %d байт" %
-                (payload["name"], len(payload["code"])))
-            return payload, ""
-        log("САМОКОД", "свой код не прошёл проверку:", str(why)[:100])
-    return None, "ни одна заготовка не подошла к задаче"
-
-
-def _skill_publish(payload):
-    """Опубликовать готовый навык в реестре ОБЛАКА + отчёт «изучено».
-    True = реестр принял (навык заберут и другие мозги)."""
-    url, token = _cloud_base()
-    if not url:
-        return False
-    try:
-        r, _e = _http_json_err(url + "/api/skills",
-                               {"id": payload.get("id") or "",
-                                "name": payload.get("name") or "функция",
-                                "keywords": payload.get("keywords") or [],
-                                "kind": "code", "code": payload.get("code") or "",
-                                "deps": payload.get("deps") or [],
-                                "desc": payload.get("desc", "")},
-                               token=token, timeout=10)
-        ok = bool(r and r.get("ok"))
-    except Exception:
-        ok = False
-    if ok:
-        try:                               # отчёт «изучено» — видно в Studio
-            _http_json_err(url + "/api/skills/learned",
-                           {"board": _hostname(), "id": payload.get("id") or "",
-                            "ver": int(payload.get("ver", 1) or 1)},
-                           token=token, timeout=6)
-        except Exception:
-            pass
-        _SKILLS_CACHE["ts"] = 0.0          # сброс кэша — навык уже в реестре
-    return ok
-
-
-def _selfcode_try(task, mid):
-    """ТИХИЙ цикл самопрограммирования: мозг собирает функцию САМ,
-    из локальных заготовок (секция [3i], LLM не участвует), проверяет
-    её локально и прогоном в песочнице облака, публикует в реестр.
-    v2.24: LLM КОД НЕ ПИШЕТ — кодовый генератор работает ТОЛЬКО ОТ МОЗГА;
-    не вышло — честный отказ в журнал.
-    v2.19: ПОЛНАЯ ТИШИНА — никаких сообщений и статусов о кодогенерации:
-    ни в чаты, ни в письмо (mid больше не используется). Только журнал.
-    -> {"id","name"} | None."""
-    payload, why = _selfcode_local(task)
-    if not payload:
-        _selfcode_mark(task, False)
-        log("САМОКОД", "не вышло:", (why or "?")[:100])
-        return None
-    sid = str(payload.get("id") or "")
-    code = str(payload.get("code") or "")
-    name = str(payload.get("name") or sid or "функция")
-    if not sid or not code:
-        _selfcode_mark(task, False)
-        return None
-    # двойная проверка: песочница облака (просто исполнение, LLM там нет)
-    res, err = cloud_run_code(code, (payload.get("tests") or [task])[0])
-    if not (res and res.get("ok")):
-        _selfcode_mark(task, False)
-        log("САМОКОД", "песочница:",
-            str(err or (res or {}).get("error") or "?")[:100])
-        return None
-    published = _skill_publish(payload)
-    _selfcode_mark(task, True)
-    log("САМОКОД", "тихо освоил «%s» (сам, без нейросети), код %d байт" %
-        (name, len(code)))
-    return {"id": sid, "name": name}
+# v2.97.3: локальный самокод убран — заготовки навыков, проверка exec,
+# публикация навыков в реестр облака удалены целиком («питоны» сняты).
 
 
 def brainmail_send(to, text):
@@ -9205,21 +9050,6 @@ def brainmail_send(to, text):
 _MAILQ = []                       # письма, ждущие свободный поток
 _MAILQ_LOCK = threading.Lock()
 _MAILQ_MAX = 12                   # потолок очереди (старые вытесняются)
-_SELF_LOCK = threading.Lock()     # один тихий самокод за раз
-_ANSWER_RETRY_WAIT = 5.0          # v2.21: пауза перед повтором ответа
-
-
-def _selfcode_bg(task):
-    """v2.21: тихий самокод ВНЕ потока письма — ответ чату уходит сразу,
-    функция осваивается параллельно (одна за раз, очередь не копится)."""
-    if not _SELF_LOCK.acquire(False):
-        return                    # уже осваиваем другую функцию — тишина
-    try:
-        _selfcode_try(task, "")   # v2.19: mid не используется (полная тишина)
-    finally:
-        _SELF_LOCK.release()
-
-
 def _mail_handler():
     """v2.21: поток-обработчик писем мозг-почты: берёт письмо из очереди,
     думает и отвечает. Пока думает — опрос inbox идёт в другом потоке."""
@@ -9254,6 +9084,24 @@ def _brainmail_handle(m):
     frm = str(m.get("from") or "?")
     mid = str(m.get("id") or "")
     if not txt or not mid:
+        return
+    if m.get("kind") == "cloud_thought":
+        # v2.107.0: МЫСЛЬ ОБЛАКА — не вопрос. Нейроны слушают её, сеть материалов
+        # читает, окно платы показывает; ответа нет (цикл «мысль -> ответ ->
+        # мысль» исключён), в обучение как «правильный образец» не идёт.
+        try:
+            nn_excite(nn_stems(txt), 0.3)
+        except Exception:
+            pass
+        try:
+            mn_feed(txt[:2000], "мысль облака", "мысль облака")
+        except Exception:
+            pass
+        try:
+            add_message("bot", "☁ " + txt[:THOUGHT_CHARS], zone="Мысль облака")
+        except Exception:
+            pass
+        log("МОЗГ-ПОЧТА", "мысль облака:", txt[:60])
         return
     log("МОЗГ-ПОЧТА", frm, "пишет:", txt[:60])
     brain_remember("user", txt[:400])
@@ -9307,10 +9155,6 @@ def _brainmail_handle(m):
         # 3) зоны ответили слабо и интент незнакомый -> ТИХИЙ самокод.
         #    v2.21: В ФОНЕ и ПОСЛЕ отправки ответа — обдумывание функции
         #    (до ~2.5 мин) больше не задерживает ответ чату облака.
-        if not skill_note and len(weak.strip()) < 40 and \
-                _selfcode_should(txt):
-            threading.Thread(target=_selfcode_bg, args=(txt,),
-                             daemon=True).start()
     else:
         reply, zone = zone_reply(txt[:1500], zone=z_net)
         if skill_note:
@@ -9333,6 +9177,168 @@ def _brainmail_handle(m):
     # v2.18: зеркало письма в чат платы не пишем (автоответы убраны) —
     # ответ уходит письмом в облако и там показывается с бейджем мозга
     log("МОЗГ-ПОЧТА", "ответ ->", frm, "[%s]:" % zone, reply[:60])
+
+
+def _text_to_d4_frames(txt, per=95):
+    """v2.100: текст -> кадры 32x24 бит (192 hex-знака) для d4pure: байт 0 —
+    длина куска, дальше UTF-8 с нулевым добором. Содержание даёт облако,
+    ЧАСТОТЫ строк задаёт тензорная сеть платы (_breath_profile)."""
+    raw = re.sub(r"\s+", " ", str(txt or "")).strip().encode("utf-8")
+    res, pos = [], 0
+    while pos < len(raw):
+        end = min(pos + per, len(raw))
+        while end < len(raw) and end > pos and (raw[end] & 0xC0) == 0x80:
+            end -= 1
+        ch = raw[pos:end] or raw[pos:pos + per]
+        res.append((bytes([len(ch)]) + ch + b"\0" * (95 - len(ch))).hex())
+        pos += len(ch)
+    return res[:6]
+
+
+_D4T = {"sent": 0, "frames": 0, "last": "", "ts": 0.0, "busy": False}
+
+
+def _cloud_d4(m):
+    """v2.100: МЫСЛЬ ОБЛАКА (её LLM) -> ШИНА D4 (GET /api/brain/d4). Текст
+    кодируется в кадры d4pure; частотный профиль строк даёт тензорная сеть
+    платы (_breath_profile), облако частотой D4 не управляет. Кадры идут
+    по одному, соблюдая паузу _BR["next"]."""
+    txt = scrub_thought(m.get("text") or "")
+    if not txt or _D4T["busy"]:
+        return
+    frames = _text_to_d4_frames(txt)
+    if not frames:
+        return
+    log("МОЗГ-ПОЧТА", "мысль облака -> пин D4 (%d кадр.):" % len(frames),
+        txt[:60])
+
+    def run():
+        _D4T["busy"] = True
+        try:
+            for hx in frames:
+                t0 = time.time()
+                while time.time() < _BR["next"] and time.time() - t0 < 30:
+                    time.sleep(0.2)
+                prof = _breath_profile()
+                _bridge_call("d4pure", "%d:%s:%s" % (
+                    _cam_neg(), hx, ",".join(map(str, prof))), wait=False)
+                _BR["lo"], _BR["hi"] = min(prof), max(prof)
+                _BR["next"] = time.time() + 2.6 + _BR["interval"]
+                _D4T["frames"] += 1
+            _D4T["sent"] += 1
+            _D4T["last"] = txt[:80]
+            _D4T["ts"] = time.time()
+        except Exception as e:
+            log("МОЗГ-ПОЧТА", "D4-мысль не ушла:", str(e)[:100])
+        finally:
+            _D4T["busy"] = False
+    threading.Thread(target=run, daemon=True).start()
+
+
+# ===========================================================================
+# v2.112: СВОЯ LLM ОБЛАКА НА ПЛАТЕ И «ДРУЖБА НЕЙРОСЕТЕЙ».
+# Облако (v3.237) по кнопке «Загрузить LLM на плату» ставит пакет в очередь;
+# в ответе /api/brain/d6 приходит llm_push {sig}. Плата скачивает
+# /api/llm/bundle (zip: model.json + weights.f32 + board_llm.py), кладёт в
+# папку данных и запускает board_llm.BoardLLM — только генерация (учится LLM
+# в облаке). Команда чата «/ллм текст». Скетч не меняется.
+# Пакеты шины «дружбы сетей» приходят тем же ящиком D6 (зона «Дружба сетей»,
+# поле nb) и играются на пине D6; плата отвечает откликом: какие слова пакета
+# узнала её воля мозга (POST /api/netbus/post).
+# ===========================================================================
+_BLLM = {"m": None, "sig": "", "busy": False, "err": ""}
+
+
+def _bllm_dir():
+    return os.path.join(os.path.dirname(_mem_path()), "mozg_llm")
+
+
+def _bllm_load():
+    """Загрузить пакет с диска (если есть). -> модель | None."""
+    if _BLLM["m"] is not None:
+        return _BLLM["m"]
+    d = _bllm_dir()
+    if not os.path.isfile(os.path.join(d, "model.json")):
+        return None
+    try:
+        import board_llm
+        _BLLM["m"] = board_llm.BoardLLM(d)
+        _BLLM["sig"] = str(_BLLM["m"].meta.get("sig") or "")
+        _BLLM["err"] = ""
+    except Exception as e:
+        _BLLM["err"] = "%s: %s" % (type(e).__name__, str(e)[:120])
+    return _BLLM["m"]
+
+
+def _bllm_fetch(sig):
+    """Скачать и запустить пакет LLM из облака; сообщить облаку итог."""
+    import io
+    import urllib.request
+    import zipfile
+    url, token = _cloud_base()
+    host = _hostname()
+    rep = {"board": host, "sig": sig, "ok": False}
+    try:
+        req = urllib.request.Request(url + "/api/llm/bundle?board=" + host,
+                                     headers={"User-Agent": "neuro12-app/%s" % APP_VERSION,
+                                              "X-Mozg-Token": token})
+        with urllib.request.urlopen(req, timeout=180) as r:
+            blob = r.read(256 << 20)
+        d = _bllm_dir()
+        tmp = d + ".new"
+        if os.path.isdir(tmp):
+            import shutil
+            shutil.rmtree(tmp, ignore_errors=True)
+        os.makedirs(tmp, exist_ok=True)
+        with zipfile.ZipFile(io.BytesIO(blob)) as zf:
+            for n in ("model.json", "weights.f32", "README.txt"):
+                with open(os.path.join(tmp, n), "wb") as f:
+                    f.write(zf.read(n))
+        if os.path.isdir(d):
+            import shutil
+            shutil.rmtree(d, ignore_errors=True)
+        os.replace(tmp, d)
+        _BLLM["m"] = None
+        m = _bllm_load()
+        if m is None:
+            raise RuntimeError(_BLLM["err"] or "пакет не загрузился")
+        t0 = time.time()
+        smp = m.generate("мозг", max_new=6)
+        rep.update(ok=True, info=dict(m.info(), gen_s=round(time.time() - t0, 1)), sample=smp)
+        log("LLM", "своя LLM облака загружена на плату (%s, numpy=%s): «%s»" % (sig, m.np, smp[:60]))
+    except Exception as e:
+        rep["error"] = "%s: %s" % (type(e).__name__, str(e)[:200])
+        _BLLM["err"] = rep["error"]
+        log("LLM", "не удалось загрузить LLM облака:", rep["error"])
+    try:
+        _http_json_err(url + "/api/llm/board_state", rep, token=token, timeout=20)
+    except Exception:
+        pass
+    _BLLM["busy"] = False
+
+
+def _llm_push_on(pu):
+    if not isinstance(pu, dict) or not pu.get("sig") or _BLLM["busy"]:
+        return
+    if pu["sig"] == _BLLM["sig"] and _BLLM["m"] is not None:
+        return
+    _BLLM["busy"] = True
+    threading.Thread(target=_bllm_fetch, args=(str(pu["sig"]),), daemon=True).start()
+
+
+def _netbus_reply(nb, kws):
+    """Отклик платы на пакет дружбы сетей: слова, которые узнала воля мозга."""
+    try:
+        url, token = _cloud_base()
+        if not url:
+            return
+        _http_json_err(url + "/api/netbus/post",
+                       {"board": _hostname(), "re": str(nb)[:24], "kind": "отклик",
+                        "keys": [w for w, _a in (kws or [])][:8],
+                        "text": " ".join(w for w, _a in (kws or [])[:8])},
+                       token=token, timeout=15)
+    except Exception:
+        pass
 
 
 def _cloud_d6(m):
@@ -9361,6 +9367,18 @@ def _cloud_d6(m):
         mn_feed(txt[:2000], zone, "мысль облака")
     except Exception:
         pass
+    try:          # v2.98: ВОЛЯ МОЗГА отбирает КЛЮЧЕВЫЕ СЛОВА мысли облака
+                  # и передаёт их мозгу: word_push (словарь платы — мозг
+                  # произнесёт и выучит) + chat_stim (внимание нейронов)
+        kws = brain_keywords(txt, limit=6)
+        if m.get("nb"):       # v2.112: пакет дружбы сетей — ответить откликом
+            threading.Thread(target=_netbus_reply, args=(m.get("nb"), kws), daemon=True).start()
+        if kws:
+            _kw_to_brain(kws)
+            log("МОЗГ-ПОЧТА", "ключевые слова (воля мозга) -> плате:",
+                ", ".join(w for w, _a in kws))
+    except Exception:
+        pass
     try:          # физика: буквы мысли — скрытно на пин D6 (как gen_register)
         threading.Thread(target=_gen_d6_seq, args=(txt[:240], sg6, False),
                          daemon=True).start()
@@ -9371,6 +9389,86 @@ def _cloud_d6(m):
     except Exception:
         pass
     _mail_set(d6=int(SH.brainmail.get("d6", 0)) + 1, last_d6=txt[:80])
+
+
+# ===========================================================================
+# v2.113: «ПОЗВОНИТЬ ПЛАТЕ» — СИНХРОННЫЙ СПИН MAC ДВУХ ПЛАТ (скрытый канал).
+# Облако (spin.py) заводит сессию между двумя платами; обе крутят MAC в одном
+# ритме (mac_spin.py), не дольше 38 минут. Скрипт вращения — модуль mac_spin
+# в самом приложении (грузится автоматически при старте сессии), IP платы
+# объявляется облаку на каждом шаге (предсказание адреса напарницей). Пока
+# сессия идёт — только это общение плат и облаков, и ничего более.
+# ===========================================================================
+_SPIN = {"th": None, "id": "", "stop": False}
+_OSC = {"last": None}
+
+
+def _osc_apply(wire):
+    """v2.113: колебания частиц от облака -> меандры на D5/D7/A5 (RPC osc скетча).
+    Пустая строка (облако выключило) -> погасить все три."""
+    w = str(wire or "").strip()
+    cmd = w if w else "m:0,g:0,p:0"
+    if cmd == _OSC["last"]:
+        return
+    try:
+        r = _bridge_call("osc", cmd, wait=False)
+        _OSC["last"] = cmd
+        if w:
+            log("КОЛЕБАНИЯ", "частицы на пины D5/D7/A5:", w)
+    except Exception:
+        pass
+
+
+
+def _spin_report(step_kwargs):
+    url, token = _cloud_base()
+    if not url:
+        return
+    try:
+        _http_json_err(url + "/api/spin",
+                       dict(step_kwargs, action="report", board=_hostname()),
+                       token=token, timeout=12)
+    except Exception:
+        pass
+
+
+def _spin_apply(info):
+    """Решение по ответу /api/spin: запустить/остановить синхронный спин."""
+    active = bool(info.get("active"))
+    sid = str(info.get("id") or "")
+    cur = _SPIN["id"]
+    if active and sid and sid != cur and _SPIN["th"] is None:
+        try:
+            import mac_spin
+        except Exception as e:
+            log("СПИН", "не удалось загрузить mac_spin:", str(e)[:80])
+            return
+        seed = str(info.get("seed") or "")
+        start = float(info.get("start") or 0)
+        period = float(info.get("period") or 8)
+        end = float(info.get("end") or 0)
+        cnow = float(info.get("now") or time.time())
+        skew = cnow - time.time()                 # облачное время ≈ local + skew
+        _SPIN.update(id=sid, stop=False)
+        log("СПИН", "звонок принят (сессия %s): кручу MAC синхронно с %s, период %.1f с, до %d мин"
+            % (sid[:10], info.get("partner") or "?", period, int(max(0, end - cnow)) // 60))
+
+        def worker():
+            try:
+                mac_spin.run(seed, start, period, end, _hostname(),
+                             report=lambda **k: _spin_report(k),
+                             log=lambda *a: log("СПИН", *a),
+                             stop=lambda: _SPIN["stop"] or _SPIN["id"] != sid,
+                             now_fn=lambda: time.time() + skew)
+            finally:
+                if _SPIN["id"] == sid:
+                    _SPIN.update(th=None, id="")
+                else:
+                    _SPIN["th"] = None
+        _SPIN["th"] = threading.Thread(target=worker, daemon=True, name="mac-spin")
+        _SPIN["th"].start()
+    elif not active and cur and _SPIN["th"] is not None:
+        _SPIN["stop"] = True                       # сессия кончилась/отбой — остановить
 
 
 def brainmail_worker():
@@ -9462,6 +9560,23 @@ def brainmail_worker():
                         _d4_apply(0)          # галочку сняли — меандр обычный
                     for m6 in (r6.get("msgs") or []):
                         _cloud_d6(m6)
+                    _llm_push_on(r6.get("llm_push"))            # v2.112
+                    _osc_apply(r6.get("osc"))                  # v2.113: колебания частиц на пины
+            except Exception:
+                pass
+            try:      # v2.100: мысли облака -> шина D4 (частоты — тензорная сеть)
+                r4, _e4 = _http_get_json_err(
+                    url + "/api/brain/d4?board=" + host,
+                    token=token, timeout=BRIN_TIMEOUT)
+                if r4 and r4.get("ok"):
+                    for m4 in (r4.get("msgs") or [])[-2:]:
+                        _cloud_d4(m4)
+            except Exception:
+                pass
+            try:      # v2.113: «позвонить плате» — синхронный спин MAC двух плат
+                rsp, _es = _http_get_json_err(url + "/api/spin?board=" + host,
+                                              token=token, timeout=BRIN_TIMEOUT)
+                _spin_apply(rsp or {})
             except Exception:
                 pass
         except Exception as e:
@@ -9672,7 +9787,7 @@ def llm_pick_word(user_text):
             note = line.strip()[6:].strip()[:300]
     if not word:
         word = _norm_word(str(out).strip().splitlines()[0])[:24]
-    if word and not (3 <= len(word) <= 16 and set(word) <= _RU_ALPHABET):
+    if word and not (3 <= len(word) <= 16 and set(word) <= _RU_ALPHABET and dict_has(word)):
         word = ""
     return word, note
 
@@ -10024,7 +10139,7 @@ def _cloud_tts(text):
     payload = {"text": text}
     if (CFG.get("tts_voice") or "").strip():
         payload["voice"] = CFG["tts_voice"].strip()
-    data, err = _http_bytes_err(url + "/api/tts", payload,
+    data, err = _http_bytes_err(url + "/api/tts/ru", payload,
                                 token=token, timeout=40)
     if err:
         return None, err
@@ -10034,26 +10149,36 @@ def _cloud_tts(text):
 
 
 def _board_play_wav(data):
-    """Играть WAV на плате (Linux-сторона UNO Q). True — если прозвучало."""
-    import subprocess
-    path = "/tmp/neuro12_tts.wav"
-    try:
-        with open(path, "wb") as f:
-            f.write(data)
-    except Exception:
-        return False
-    for cmd in (["aplay", "-q", path],
-                ["paplay", path],
-                ["ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", path]):
+    if CFG.get('tts_output', 'pwm9') == 'pwm9':
+        with SH.lock:
+            ready=SH.bridge_seen and time.time()-SH.bridge_ts < 10
+        if not ready:raise RuntimeError('PWM D9: скетч ещё не ответил; сначала восстановите связь Bridge')
+        import pwm_voice
         try:
-            r = subprocess.run(cmd, stdout=subprocess.DEVNULL,
-                               stderr=subprocess.DEVNULL, timeout=40)
-            if r.returncode == 0:
-                return True
-        except FileNotFoundError:
-            continue                      # игрока нет — пробуем следующий
-        except Exception:
-            continue
+            result=pwm_voice.play(data,_bridge_call,enabled=lambda:bool(CFG.get('tts_on')))
+        except RuntimeError as e:
+            # v2.102: аппаратный PCM на D9 выключен в скетче (драйверы Zephyr
+            # не грузятся как llext) — не молчим: звук через ALSA платы, а слова
+            # мелодией звучат на D9/D8 (скетч зеркалит голос на D9)
+            if 'unavailable' not in str(e) and 'error:' not in str(e):raise
+            log('ЗВУК','PWM D9 (PCM) недоступен в скетче — ALSA:',str(e)[:80])
+            return _alsa_play_wav(data)
+        _speech_event(pin=9,rate=8000,underruns=result['underruns'],output='pwm9')
+        return True
+    return _alsa_play_wav(data)
+
+
+def _alsa_play_wav(data):
+    import subprocess,tempfile
+    from pathlib import Path
+    import russian_voice
+    timeout=max(40,min(180,russian_voice.pcm_seconds(data)+10))
+    with tempfile.TemporaryDirectory(prefix='neuro12-audio-') as d:
+        path=Path(d)/'speech.wav';path.write_bytes(data)
+        for cmd in (['aplay','-q',str(path)],['paplay',str(path)],['ffplay','-nodisp','-autoexit','-loglevel','quiet',str(path)]):
+            try:
+                if subprocess.run(cmd,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=timeout).returncode==0:return True
+            except (OSError,subprocess.TimeoutExpired):continue
     return False
 
 
@@ -10105,127 +10230,33 @@ def _wav_frames(wav, max_frames=88, frame_ms=60):
         return ""
 
 
-def play_wav_any(wav, why="звук"):
-    """v2.96.1: сыграть WAV тем же путём, что речь: огибающая -> скетч
-    (say_wave, динамик D8); иначе динамик платы (aplay); иначе браузер.
-    -> 'sketch' | 'board' | 'browser' | ''."""
-    if not wav or len(wav) < 100:
-        return ""
-    via = ""
-    try:
-        _MIC["mute_until"] = time.time() + len(wav) / 32000.0 + 1.5   # не слушать себя
-    except Exception:
-        pass
-    try:
-        frames = _wav_frames(wav)
-    except Exception:
-        frames = ""
-    # v2.96.2: речь — ВНЕ очереди моста (urgent, канал say)
-    # v2.96.4: ПОРЦИЯМИ ≤ BRIDGE_MAX_ARG (буфер RPC у MCU 256 Б): первая
-    # порция заменяет речь, следующие — с префиксом '+' дописываются в хвост
-    if frames and _say_wave_chunked(frames):
-        via = "sketch"
-    if not via and _board_play_wav(wav):
-        via = "board"
-    if not via:
-        import base64
-        _TTS_SEQ[0] += 1
-        with SH.lock:
-            SH.tts_audio = {"id": _TTS_SEQ[0], "b64": base64.b64encode(wav).decode("ascii"),
-                            "mime": "audio/wav"}
-        via = "browser"
-    log("ЗВУК", "%s сыгран через %s (%d КБ)" % (why, via, len(wav) // 1024))
-    return via
+_RU_SPEAKER=None
+_RU_SPEAKER_LOCK=threading.Lock()
+_TTS_BROWSER_QUEUE=deque(maxlen=32)
 
 
-def _say_wave_chunked(frames):
-    """v2.96.4: строка кадров «hz:ms;…» -> скетч порциями ≤ BRIDGE_MAX_ARG.
-    True — если первая порция принята (речь пошла на D8); хвост — best-effort."""
-    parts = [p for p in str(frames).split(";") if p]
-    chunks, cur = [], ""
-    for p in parts:
-        if len(cur) + len(p) + 1 > BRIDGE_MAX_ARG - 2:
-            chunks.append(cur)
-            cur = ""
-        cur += p + ";"
-    if cur:
-        chunks.append(cur)
-    if not chunks:
-        return False
-    r = _bridge_call("say_wave", chunks[0], timeout=8, channel="say", urgent=True)
-    if not r or str(r).startswith(("voice_off", "empty")):
-        return False
-    for ch in chunks[1:]:
-        r = _bridge_call("say_wave", "+" + ch, timeout=6, channel="say", urgent=True)
-        if not r or str(r) == "gone":
-            break
-    return True
+def _speech_event(**state):
+    with SH.lock:
+        SH.tts_state.update(state,ts=time.time())
+        if state.get('phase')=='playing':
+            try:_MIC['mute_until']=time.time()+float(state.get('duration') or 0)+1.5
+            except Exception:pass
 
 
-def _play_from_cloud(pl):
-    """v2.96.1: облако попросило сыграть звук из карточки микрофона
-    (ответ /api/link: play{url, what}) — скачать WAV и сыграть динамиком."""
-    url, token = _cloud_base()
-    if not url or not isinstance(pl, dict) or not pl.get("url"):
-        return
-    try:
-        req = urllib.request.Request(url + str(pl["url"]), headers={"X-Mozg-Token": token or ""})
-        with urllib.request.urlopen(req, timeout=30) as rr:
-            wav = rr.read(4000000)
-    except Exception as e:
-        log("ЗВУК", "звук из облака не скачался: %s" % str(e)[:100])
-        return
-    with _TTS_LOCK:
-        via = play_wav_any(wav, "звук из облака (%s)" % ("фраза" if pl.get("what") == "phrase" else "запись"))
-    add_message("system", "🔊 Звук из облака (%s, %d КБ) сыгран через %s" % (
-        "последняя фраза" if pl.get("what") == "phrase" else "живая запись", len(wav) // 1024,
-        {"sketch": "динамик D8 (огибающая)", "board": "динамик платы (aplay)",
-         "browser": "браузер"}.get(via, via or "—")), "Слух")
+def _speech_browser(data):
+    import base64
+    with SH.lock:
+        if len(_TTS_BROWSER_QUEUE)>=32:raise RuntimeError('Очередь звука браузера заполнена; оставшиеся части не потеряны молча')
+        _TTS_SEQ[0]+=1
+        _TTS_BROWSER_QUEUE.append({'id':_TTS_SEQ[0],'b64':base64.b64encode(data).decode('ascii'),'mime':'audio/wav'})
 
 
 def tts_say(text):
-    """Озвучить текст (v2.14): облако -> WAV -> СКЕТЧ (say_wave, динамик D8),
-    иначе динамик платы (aplay), иначе браузер (/api/tts_audio)."""
-    if not CFG.get("tts_on"):
-        return
-    clean = " ".join(str(text or "").split())[:220]
-    if not clean:
-        return
-    with _TTS_LOCK:
-        try:
-            wav, err = _cloud_tts(clean)
-            if not wav:
-                raise RuntimeError(err)
-            via = ""
-            try:
-                frames = _wav_frames(wav)
-            except Exception:
-                frames = ""
-            try:                           # v2.70: микрофон не слушает свою речь
-                _MIC["mute_until"] = time.time() + len(wav) / 32000.0 + 1.5
-            except Exception:
-                pass
-            if frames and _say_wave_chunked(frames):
-                via = "sketch"               # «речь» играет динамик D8 (v2.96.4: порциями ≤200 Б)
-            if not via and _board_play_wav(wav):
-                via = "board"
-            if not via:
-                import base64
-                _TTS_SEQ[0] += 1
-                with SH.lock:
-                    SH.tts_audio = {"id": _TTS_SEQ[0],
-                                    "b64": base64.b64encode(wav).decode("ascii"),
-                                    "mime": "audio/wav"}
-                via = "browser"
-            with SH.lock:
-                SH.tts_state = {"available": True, "via": via, "err": "",
-                                "ts": time.time()}
-        except Exception as e:
-            msg = str(e)[:140]
-            with SH.lock:
-                SH.tts_state = {"available": False, "via": "", "err": msg,
-                                "ts": time.time()}
-            log("TTS:", msg)
+    global _RU_SPEAKER
+    import russian_voice
+    with _RU_SPEAKER_LOCK:
+        if _RU_SPEAKER is None:_RU_SPEAKER=russian_voice.RussianSpeaker(_cloud_tts,_board_play_wav,_speech_browser,_speech_event,enabled=lambda:bool(CFG.get('tts_on')))
+    return _RU_SPEAKER.submit(text)
 
 
 # ===========================================================================
@@ -10313,8 +10344,7 @@ def _bridge_worker():
         method, args, timeout, channel, box = item[:5]
         ts = item[5] if len(item) > 5 else time.time()
         # v2.33: устарел, пока стоял в очереди (канал занял долгий вызов)
-        # v2.96.2: речь (say) — как пинг: идёт вне очереди и не «устаревает»
-        if time.time() - ts > timeout + 4.0 and channel not in ("ping", "say"):
+        if time.time() - ts > timeout + 4.0 and channel != "ping":
             _rpc_stat(method, False, "устарел в очереди (>%.0f c)" % (timeout + 4))
             with SH.lock:
                 SH.bridge_dropped += 1
@@ -10326,7 +10356,7 @@ def _bridge_worker():
         # v2.18: тихий мост — не-urgent вызов устарел, сбрасываем
         with SH.lock:
             stale_for = time.time() - SH.bridge_ts if SH.bridge_seen else 0.0
-        if stale_for > _BRIDGE_STALE_S and channel not in ("ping", "say"):
+        if stale_for > _BRIDGE_STALE_S and channel != "ping":
             _rpc_stat(method, False, "мост молчит %.0f с" % stale_for)
             with SH.lock:
                 SH.bridge_dropped += 1
@@ -10380,40 +10410,11 @@ def _bridge_enqueue(method, args, timeout=4.0, channel="", urgent=False):
     return box
 
 
-# v2.96.4: ВХОДНОЙ БУФЕР RPC У МОСТА MCU — 256 БАЙТ (Arduino_RPClite:
-# DEFAULT_RPC_BUFFER_SIZE = DECODER_BUFFER_SIZE/4), стек потока моста — 500 Б.
-# Запрос длиннее MCU не разбирает: ответа нет (таймаут), а декодер потока
-# сбивается — следом пропадают даже короткие word_push/ping (на плате было
-# 48 удачных вызовов из 1390). Поэтому длинные аргументы в мост НЕ УХОДЯТ:
-# вызов честно помечается ошибкой «слишком длинно», а речь и прочее режутся
-# на порции ≤ BRIDGE_MAX_ARG на стороне отправителя.
-BRIDGE_MAX_ARG = 200
-_BRIDGE_LONG_LOGGED = {}
-
-
-def _bridge_arg_len(args):
-    n = 0
-    for a in args:
-        try:
-            n += len(str(a).encode("utf-8")) if not isinstance(a, (bytes, bytearray)) else len(a)
-        except Exception:
-            n += 32
-    return n + 24                                      # имя метода + обвязка msgpack
-
-
 def _bridge_call(method, *args, timeout=4, channel="", urgent=False,
                  wait=True):
     """Вызов RPC-метода скетча через очередь (никогда не кидает исключение).
     wait=True — дождаться результата (обрезка по timeout+2 с); wait=False —
     «выстрелил и забыл» (результат не нужен)."""
-    ln = _bridge_arg_len(args)
-    if ln > BRIDGE_MAX_ARG + 24:
-        _rpc_stat(method, False, "слишком длинно для моста: %d Б > %d (буфер MCU 256 Б)" % (ln, BRIDGE_MAX_ARG))
-        if time.time() - _BRIDGE_LONG_LOGGED.get(method, 0) > 120:
-            _BRIDGE_LONG_LOGGED[method] = time.time()
-            log("мост:", method, "-> не отправлен: аргумент %d Б, а буфер RPC у MCU 256 Б "
-                "(порежь на порции ≤ %d Б)" % (ln, BRIDGE_MAX_ARG))
-        return None
     if not _BRIDGE_WORKER_ON[0]:
         # работник ещё не поднят (ранние вызовы при старте) — прямой вызов
         try:
@@ -10496,11 +10497,25 @@ def on_state(gen, ltr, chr_, word, say, spk, act, top, cyc):
     # v2.17: СОФТ-НЕЙРОНЫ СЛУШААТ АППАРАТНЫЕ: спайки и топ-нейрон скетча
     # зажигают нейроны соответствующей зоны (нейрон №i = зона ZONES[i])
     try:
-        if (spk or 0) > 0 and 0 <= (top or -1) < len(ZONES):
+        if not neural_bridge.BUS.snapshot()["fresh"] and (spk or 0) > 0 and 0 <= (top if top is not None else -1) < len(ZONES):
             nn_excite_zone(ZONES[int(top or 0)][0],
                            min(0.4, 0.08 * int(spk or 0)))
     except Exception:
         pass
+
+
+def on_neurons(packet):
+    try:
+        neural_bridge.BUS.ingest(packet)
+        frame=neural_bridge.BUS.snapshot()
+        for row in frame['nodes']:
+            if row['online'] and row['spikes']>0:
+                gain=min(.4,.08*math.log1p(row['spikes']))
+                if row['id']<len(ZONES):nn_excite_zone(ZONES[row['id']][0],gain)
+                if row['word']:nn_excite(nn_stems(row['word']),gain)
+        with SH.lock:_bridge_touch()
+    except (TypeError,ValueError) as e:
+        neural_bridge.BUS.reject(e,packet)
 
 
 def on_msg(msg):
@@ -10551,6 +10566,11 @@ def on_word(word):
         _bridge_touch()                        # v2.16: любой пакет = мост жив
         SH.words_made += 1
         SH.mem_dirty = True
+    try:          # v2.98: копилка слов скетча — полный текст соберём со всех плат
+        with _NW_LOCK:
+            _NEURO_WORDS.append(w)
+    except Exception:
+        pass
 
 
 def on_say(phrase):
@@ -10590,6 +10610,7 @@ def register_bridge():
     обработчиков: дедлок диспетчера)."""
     Bridge.provide("on_state", on_state)
     Bridge.provide("on_msg", on_msg)
+    Bridge.provide("on_neurons", on_neurons)
     Bridge.provide("on_net", on_net)          # v2.11: карта связи с нейронами
     Bridge.provide("on_letter", on_letter)
     Bridge.provide("on_word", on_word)
@@ -10602,11 +10623,7 @@ def register_bridge():
     Bridge.provide("cap_noise", lambda v: _part_note("cap", v))
     Bridge.provide("d6_act", lambda v: _part_note("d6", v))
     Bridge.provide("learn_scale", lambda v: _part_note("scale", v))
-    # v2.96: камера по проводу — скетч шлёт кадр, счётчики и зрение САМ
-    Bridge.provide("on_cam", on_cam)
-    Bridge.provide("on_cam_info", on_cam_info)
-    Bridge.provide("on_cam_vis", on_cam_vis)
-    log("мост: on_state/on_msg/on_letter/on_word/on_say/on_log/on_boot/on_cam зарегистрированы")
+    log("мост: on_state/on_msg/on_letter/on_word/on_say/on_log/on_boot зарегистрированы")
 
 
 # v2.68: ЖУРНАЛ И ДИАГНОСТИКА СКЕТЧА --------------------------------------
@@ -11049,39 +11066,8 @@ def codemem_find(task, min_sim=0.5):
     return dict(best, sim=round(bs, 2))
 
 
-def _py_check(text):
-    """Синтаксис Python-блоков ответа — проверка прямо на плате."""
-    blocks = re.findall(r"```(?:python|py)[^\n]*\n(.*?)```", str(text or ""),
-                        re.S | re.I)
-    if not blocks:
-        return ""
-    bad = []
-    for i, b in enumerate(blocks[:4]):
-        try:
-            compile(b, "<код %d>" % (i + 1), "exec")
-        except SyntaxError as e:
-            bad.append("блок %d, строка %s: %s" % (i + 1, e.lineno, e.msg))
-    if bad:
-        return "⚠ Проверка синтаксиса на плате: " + "; ".join(bad)
-    return "✓ Синтаксис Python проверен на плате (compile)."
+# v2.97.3: _py_check и _code_done убраны вместе с «питонами».
 
-
-def _code_done(task, reply, who):
-    """Код получен: показать, проверить, запомнить, научить тензор."""
-    note = _py_check(reply)
-    add_message("system", "⌨ %s собрал код (без LLM):\n%s%s"
-                % (who, str(reply)[:6000], ("\n\n" + note) if note else ""),
-                "Код")
-    codemem_add(task, reply, who)
-    try:     # удачный код — пример тензору: такие слова = задача на код
-        if tn_observe(task, "Кирпичики", "код"):
-            _QA["stats"]["tn_examples"] += 1
-    except Exception:
-        pass
-    brain_remember("bot", "код по задаче «%s» (%s)" % (str(task)[:120], who))
-
-
-# --------------------------- обучение на вопросах/ответах --------------------
 def _qa_path():
     try:
         return os.path.join(os.path.dirname(_mem_path()), "neuro12_qa.json")
@@ -11301,65 +11287,141 @@ def _qa_status_raw():
                           ("pushed", "pulled", "err", "ts")})
 
 
-def _code_job(task):
-    """Фоновая запись кода (команда /код и задачи, что узнал тензор).
-    v2.24: мозг собирает функцию САМ (локальные заготовки, без LLM);
-    песочница облака проверяет. v2.40: дальше — ИИ-агент облака (весь
-    мозг, режим code), заготовки облака, память кода; синтаксис Python
-    проверяется на плате; удачный код учит тензор и пополняет память."""
+_CL = {"items": None}
+_CL_MIN = 0.34
+
+
+def _cl_items():
+    """v2.109: уроки программирования (code_lessons.json рядом с main.py)."""
+    if _CL["items"] is None:
+        try:
+            with open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "code_lessons.json"),
+                      "r", encoding="utf-8") as f:
+                d = json.loads(f.read() or "[]")
+            _CL["items"] = [x for x in d if isinstance(x, dict) and x.get("id") and x.get("code")]
+        except Exception:
+            _CL["items"] = []
+    return _CL["items"]
+
+
+_CL_GEN = {"сдела", "напиш", "созда", "прове", "найди", "найти", "посчит", "нужен", "нужна", "функци", "скрипт", "програ", "код", "почему", "как", "что", "это", "для", "над", "при", "исправ", "ошибк", "помог", "хочу", "надо", "можно", "собер", "запиш", "вычис", "покаж", "дай", "мне", "def", "func", "functi", "python", "питон", "пишет", "напис", "задач", "прим", "пример", "сделай", "напиши", "создай", "проверь", "найди", "посчитай", "собери", "запиши", "покажи", "вычисл", "сделат", "написа", "проверк", "провер", "исправь", "ошибка", "ошибку", "функцию", "функция", "скрипт"}
+
+
+def _cl_stems(s):
+    return set(w[:6] for w in re.findall(r"[a-zа-яё0-9]{3,}", str(s).lower())) - _CL_GEN
+
+
+def cl_match(task):
+    """Лучший урок по задаче -> (оценка, урок) | None."""
+    q = _cl_stems(task)
+    best, bs = None, 0.0
+    if not q:
+        return None
+    for it in _cl_items():
+        for ph in list(it.get("ask") or []) + [it.get("title", "")]:
+            p = _cl_stems(ph)
+            inter = len(q & p)
+            if not p or not inter:
+                continue
+            sc = inter / float(len(p)) * 0.7 + inter / float(len(q)) * 0.3
+            if sc > bs:
+                best, bs = it, sc
+    return (round(bs, 2), best) if best and bs >= _CL_MIN else None
+
+
+def _cl_run(src, timeout=15):
+    """Запуск проверки в отдельной папке, изолированно (-I), с таймаутом -> (ok, вывод)."""
+    import subprocess
+    import sys
+    import tempfile
+    import shutil
+    d = tempfile.mkdtemp(prefix="n12cl_")
     try:
-        payload, why = _selfcode_local(task)
-        if not payload:
-            r, cerr = cloud_think(task, mode="code", ctx=_mem_ctx(),
-                                  timeout=40)
-            if r and r.get("answer") and r.get("zone") == "Код":
-                _code_done(task, str(r["answer"]), "ИИ-агент облака")
-                return
-            # v2.37: локальных заготовок не хватило — заготовки облака
-            cg, cerr2 = cloud_codegen(task)
-            if cg and cg.get("reply"):
-                _code_done(task, str(cg["reply"]), "Облако (заготовки)")
-                return
-            mem = codemem_find(task)
-            if mem:
-                add_message("system",
-                            "🧠 Сейчас код не собрался (облако: %s), но в "
-                            "памяти кода есть похожая задача «%s» (сходство "
-                            "%.2f) — вот что тогда получилось:\n%s"
-                            % (cerr or cerr2 or "нет ответа",
-                               mem["task"][:80], mem["sim"],
-                               mem["text"][:6000]), "Код")
-                return
-            add_message("system",
-                        "⌨ Код не получился: мозг не смог собрать функцию сам "
-                        "(%s), облако тоже (%s). LLM код не пишет — только "
-                        "наставляет." % (why or "заготовки не подошли",
-                                         cerr2 or cerr or "нет ответа"), "Код")
+        f = os.path.join(d, "t.py")
+        with open(f, "w", encoding="utf-8") as fh:
+            fh.write(src)
+        r = subprocess.run([sys.executable, "-I", f], cwd=d, stdin=subprocess.DEVNULL,
+                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=timeout)
+        return r.returncode == 0, r.stdout.decode("utf-8", "replace")[-500:]
+    except subprocess.TimeoutExpired:
+        return False, "таймаут %d с" % timeout
+    except Exception as e:
+        return False, "%s: %s" % (type(e).__name__, str(e)[:160])
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+
+
+def _cl_compile(code):
+    """Только синтаксис (код не запускается) -> (ok, сообщение)."""
+    try:
+        compile(code, "<код>", "exec")
+        return True, "синтаксис верный"
+    except SyntaxError as e:
+        return False, "синтаксис: %s (строка %s)" % (e.msg, e.lineno)
+
+
+def _applab_job(task):
+    """v2.110: App Lab с платы. Star Gate в облаке пишет приложение/кирпичик по интернету, проверяет и
+    запускает; плата отправляет просьбу (POST /api/brain/think, mode=applab) и показывает ответ.
+    Облако без ответа — честно говорим; ничего не запускается на самой плате."""
+    try:
+        t = task.strip()
+        if not re.match(r"^(список|приложения|напиши|создай|сделай|проверь|запусти|вызови|открой|выполни)", t.lower()):
+            t = "проверь " + t
+        r, err = cloud_think(t, mode="applab", ctx=[], timeout=90)
+        ans = str((r or {}).get("answer") or "")
+        if not ans:
+            add_message("bot", "🧩 Облако не ответило (%s). App Lab живёт в облаке — проверьте связь."
+                        % (err or "пусто"), "App Lab")
             return
-        name = str(payload.get("name") or payload.get("id") or "функция")
-        code = str(payload.get("code") or "")
-        res, err = cloud_run_code(code, (payload.get("tests") or [task])[0])
-        if res and res.get("ok"):
-            out = str(res.get("result") or res.get("output") or "").strip()[:400]
-            _skill_publish(payload)
-            with SH.lock:
-                SH.cloud_code = code[:24000]
-                SH.mem_dirty = True
-            add_message("system", "🧠 Мозг сам собрал «%s» (без нейросети):\n%s"
-                        % (name, code[:1200]), "Код")
-            add_message("system", "▶ Прогон в песочнице: %s"
-                        % (out or "выполнено"), "Код")
-            codemem_add(task, "```python\n%s\n```" % code[:7000],
-                        "свои заготовки")
-            try:
-                if tn_observe(task, "Кирпичики", "код"):
-                    _QA["stats"]["tn_examples"] += 1
-            except Exception:
-                pass
+        add_message("bot", "🧩 App Lab (облако):\n" + ans[:5000], "App Lab")
+    except Exception:
+        traceback.print_exc()
+
+
+def _code_job(task):
+    """v2.109: ПЛАТА ПРОГРАММИРУЕТ ПО УРОКАМ. Задача -> проверенный шаблон из
+    code_lessons.json -> шаблон и его тест запускаются на плате в песочнице
+    (отдельная папка, -I, таймаут) -> удачное в память кода. Нет урока —
+    спрашиваем облако: его код только проверяется на синтаксис, НЕ запускается.
+    Свободно писать новое плата не умеет — об этом говорится прямо."""
+    try:
+        if not CFG.get("selfcode_on", True):
+            add_message("bot", "Самосборка кода на плате выключена (настройка selfcode_on).", "Код")
             return
-        add_message("system",
-                    "⌨ Код не получился: свой вариант не прошёл песочницу (%s)."
-                    % str(err or (res or {}).get("error") or "?")[:120], "Код")
+        task = str(task or "").strip()[:300]
+        mem = codemem_find(task, 0.7)
+        m = cl_match(task)
+        if m:
+            sc, it = m
+            code = str(it.get("fixcode") or it["code"])
+            ok, out = _cl_run(code + "\n\n" + str(it.get("test") or ""))
+            log("КОД", "урок «%s» (%.2f): проверка на плате %s" % (it["title"], sc, "ок" if ok else "НЕ прошла"))
+            if ok:
+                codemem_add(task, "```python\n%s```" % code, "урок:" + it["id"])
+                add_message("bot", "🧠 Беру проверенный шаблон «%s» (совпадение %.2f):\n```python\n%s```\n"
+                            "✅ Шаблон и его тест запущены на плате — прошли." % (it["title"], sc, code[:3500]), "Код")
+            else:
+                add_message("bot", "⌨ Нашёл шаблон «%s», но на этой плате его проверка не прошла: %s. "
+                            "Код не выдаю." % (it["title"], out.strip()[-200:]), "Код")
+            return
+        if mem:
+            add_message("bot", "🧠 Из памяти кода (похожая задача «%s», сходство %.2f):\n%s"
+                        % (mem["task"][:80], mem["sim"], mem["text"][:5000]), "Код")
+            return
+        r, cerr = cloud_think(task, mode="code", ctx=_mem_ctx(), timeout=40)
+        ans = str((r or {}).get("answer") or "")
+        mm = re.search(r"```[ \t]*python[ \t]*\n([\s\S]*?)```", ans)
+        if mm:
+            ok, why = _cl_compile(mm.group(1))
+            add_message("bot", "☁ Подходящего урока на плате нет. Ответ облака (на плате НЕ запускался, "
+                        "%s):\n%s" % (why, ans[:5000]), "Код")
+            if ok:
+                codemem_add(task, ans[:7000], "облако")
+            return
+        add_message("bot", "⌨ Не получилось: на плате нет урока под эту задачу, а облако кода не дало (%s). "
+                    "Свободно писать новое плата не умеет — только типовые задачи по урокам (%d шт.)."
+                    % (cerr or "нет ответа", len(_cl_items())), "Код")
     except Exception:
         traceback.print_exc()
 
@@ -11639,17 +11701,69 @@ def process_item(text, whisper, user=""):
         add_message("system", "🌐 Ищу в облаке: «%s»…" % q, "Поиск")
         threading.Thread(target=_search_job, args=(q,), daemon=True).start()
         return
+    if low.startswith(("/колеб", "/osc", "/частиц")):
+        arg = text.split(None, 1)[1].strip().lower() if " " in text.strip() else ""
+        if arg in ("стоп", "off", "выкл"):
+            _osc_apply("")
+            add_message("bot", "Колебания частиц на пинах погашены (D5, D7, A5). Включит облако при следующем опросе, "
+                        "если osc_on в настройках включён.", "Колебания", user=user)
+            return
+        cur = _OSC.get("last") or "ещё не приходили от облака"
+        add_message("bot", "Колебания частиц на ОТДЕЛЬНЫХ пинах (меандр, частоту задаёт облако):\n"
+                    "• мюон → D5\n• гравитон → D7\n• фотон → A5\nСейчас: %s.\n"
+                    "«/колеб стоп» — погасить. Скетч должен быть 2.114.0 (RPC osc); иначе включи NEURO_OSC в скетче."
+                    % cur, "Колебания", user=user)
+        return
+    if low.startswith(("/пин", "/железо", "/hw")):
+        cmds = text.split(None, 1)[1] if " " in text.strip() else ""
+        if not cmds:
+            add_message("bot", "Аппаратный уровень мозга-12: свободные выводы %s.\n"
+                        "«/пин w D7 1» — включить D7, «/пин a A5» — прочитать A5, "
+                        "«/пин pulse D5 200» (мс, до 500), несколько — через «;». Занятые мозгом выводы не трогаются."
+                        % ", ".join(HW_PINS), "Железо", user=user)
+            return
+        r = hw_io(cmds)
+        add_message("bot", ("🔌 " if r["ok"] else "⚠ ") + r["out"], "Железо", user=user)
+        return
+    if low.startswith(("/ллм", "/llm")):
+        q = text.split(None, 1)[1] if " " in text.strip() else ""
+        def _bllm_job(q=q):
+            mm = _bllm_load()
+            if mm is None:
+                add_message("bot", "Своей LLM облака на плате нет%s. В облаке: ⚙ → «Своя LLM» → «Загрузить LLM на плату»."
+                            % ((" (" + _BLLM["err"] + ")") if _BLLM["err"] else ""), "LLM", user=user)
+                return
+            if not q:
+                add_message("bot", "Своя LLM облака на плате: %s. «/ллм текст» — продолжить текст." % mm.info(), "LLM", user=user)
+                return
+            t0 = time.time()
+            try:
+                out = mm.generate(q, max_new=24)
+            except Exception as e:
+                out = "ошибка: %s" % e
+            add_message("bot", "🧠 Своя LLM (на плате, %.0f с): %s" % (time.time() - t0, out or "…"), "LLM", user=user)
+        add_message("system", "🧠 Своя LLM на плате думает…", "LLM")
+        threading.Thread(target=_bllm_job, daemon=True).start()
+        return
+    if low.startswith("/апп"):
+        task = text[4:].strip()
+        if not task:
+            add_message("bot", "App Lab с платы (всё делает облако, плата только просит и показывает):\n"
+                        "«/апп список», «/апп напиши приложение …», «/апп напиши кирпичик …», "
+                        "«/апп проверь <имя>», «/апп запусти <имя>». Новое приложение сохраняется ВЫКЛЮЧЕННЫМ — "
+                        "включает владелец.", "App Lab", user=user)
+            return
+        add_message("system", "🧩 Прошу облако (App Lab): «%s»…" % task[:80], "App Lab")
+        threading.Thread(target=_applab_job, args=(task,), daemon=True).start()
+        return
     if low.startswith("/код"):
         task = text[4:].strip()
         if not task:
-            add_message("bot", "Опиши задачу: «/код посчитай факториал 10» — "
-                        "мозг сам соберёт функцию из своих заготовок (без "
-                        "нейросети), песочница облака проверит и выполнит. "
-                        "LLM код не пишет — только наставляет (v2.24).",
-                        "Код", user=user)
+            add_message("bot", "Напиши задачу: «/код проверь палиндром». Беру проверенные шаблоны "
+                        "(%d уроков), проверяю их на плате в песочнице; новое с нуля плата не пишет."
+                        % len(_cl_items()), "Код", user=user)
             return
-        add_message("system", "⌨ Собираю функцию «%s» сам, из своих "
-                    "заготовок (без нейросети)…" % task, "Код")
+        add_message("system", "⌨ Ищу урок под задачу: «%s»…" % task[:80], "Код")
         threading.Thread(target=_code_job, args=(task,), daemon=True).start()
         return
     if low.startswith(("цель ", "/цель ")):
@@ -11715,7 +11829,7 @@ def process_item(text, whisper, user=""):
         topic = text.split(None, 1)[1].strip() if " " in text.strip() else ""
         if not topic:
             add_message("bot", "О чём писать? Например: «статья как устроен "
-                        "мозг-12». Пишу ТОЛЬКО по своим материалам: загрузите "
+                        "Star Gate». Пишу ТОЛЬКО по своим материалам: загрузите "
                         "файлы 📎 или дайте «/поиск» — и сеть обучится.",
                         "Материалы", user=user)
             return
@@ -11812,7 +11926,7 @@ def process_item(text, whisper, user=""):
                     "Команды: «статус», «повтори …», «мысль <тема>» — мозг сам "
                     "выскажется словами из словаря, «статья <тема>» — длинный "
                     "текст от нейросети материалов, «цель слово» — задать "
-                    "диктант, «/поиск запрос» — поиск в облаке, «/код задача» "
+                    "диктант, «/поиск запрос» — поиск в облаке, «/апп …» — App Lab, «/ллм текст» — своя LLM на плате, «/код задача» "
                     "— мозг напишет и выполнит функцию, «+1/-1» — "
                     "оценка последней фразы, «верно»/«неверно» — оценка "
                     "моего ответа (обучение), «правильный ответ: …» — "
@@ -11822,21 +11936,6 @@ def process_item(text, whisper, user=""):
                     "память мозга и в личную память облака.", "Помощь", user=user)
         return
 
-    # v2.40: ЗАДАЧА НА КОД — узнают ключи или тензорная сеть; код собирается
-    # фоном (_code_job), зонный ответ-заготовка не нужен
-    if not whisper:
-        try:
-            _ci, _lead, _why = code_intent(text)
-        except Exception:
-            _ci, _lead, _why = False, {}, ""
-        if _ci:
-            add_message("system", "⌨ Задача на код (узнал%s) — собираю…" % (
-                (" тензор: зона «%s», p=%.2f" % (_lead.get("zone"),
-                                                 _lead.get("p", 0)))
-                if _why == "тензор" else "и ключевые слова"), "Код")
-            threading.Thread(target=_code_job, args=(text,),
-                             daemon=True).start()
-            return
 
     if whisper:
         # --- РЕЖИМ УЧИТЕЛЯ (v2.8): LLM больше НЕ отвечает в чате. Он молча
@@ -11928,13 +12027,6 @@ def process_item(text, whisper, user=""):
             except Exception as e:
                 log("НАВЫК:", str(e)[:80])
         threading.Thread(target=_skill_job, daemon=True).start()
-    else:
-        try:
-            if _TASK_MARK.search(text) and _selfcode_should(text):
-                threading.Thread(target=_selfcode_try, args=(text, ""),
-                                 daemon=True).start()
-        except Exception:
-            pass
     # зонный ответ разворачиваем памятью, файлами и базами знаний
     if CFG.get("long_answers", True):
         reply = _long_reply(text, reply, zone, advice=adv)
@@ -12056,6 +12148,8 @@ def api_state():
             "bridge_stats": bridge_stats(),  # v2.33: RPC по методам (word_push!)
             "word_pump": dict(SH.word_pump),  # v2.33: честная ошибка word_push
             "net": SH.net,                      # v2.11: карта связи с нейронами
+            "neuron_activity": neural_bridge.BUS.snapshot(),
+            "reflection": neural_bridge.status(),
             "neurons": [{"id": i, "online": SH.net[i] == "1"}
                         for i in range(len(SH.net)) if len(SH.net) == 12],
             "neurons_online": SH.net.count("1") if len(SH.net) == 12 else 0,
@@ -12312,7 +12406,7 @@ def api_get_settings():
             "cloud_url": CFG.get("cloud_url", ""), "token": _mask(CFG.get("token")),
             "direct_url": CFG.get("direct_url", ""), "direct_key": _mask(CFG.get("direct_key")),
             "direct_model": CFG.get("direct_model", ""),
-            "tts_on": bool(CFG.get("tts_on")), "tts_voice": CFG.get("tts_voice", ""),
+            "tts_on": bool(CFG.get("tts_on")), "tts_voice": CFG.get("tts_voice", ""), "tts_output": CFG.get("tts_output", "pwm9"),
             "teach_on": bool(CFG.get("teach_on")),
             "whisper_hint": bool(CFG.get("whisper_hint")),
             "mem_sync": bool(CFG.get("mem_sync")),
@@ -12328,6 +12422,7 @@ def api_get_settings():
             "mic_on": bool(CFG.get("mic_on", True)),        # v2.70
             "mic_board_asr": bool(CFG.get("mic_board_asr", True)),      # v2.93
             "code_from_cloud": bool(CFG.get("code_from_cloud", True)),  # v2.93
+            "hw_on": bool(CFG.get("hw_on", True)),                        # v2.111
             "admin_from_cloud": bool(CFG.get("admin_from_cloud", True)),
             "vr_on": bool(CFG.get("vr_on", True)), "vr_to_brain": bool(CFG.get("vr_to_brain", True)),
             "vr_load": str(CFG.get("vr_load") or ""),
@@ -12346,6 +12441,9 @@ def api_get_settings():
 
 def api_set_settings(data: dict):
     d = data or {}
+    if "tts_output" in d:
+        if d["tts_output"] not in ("pwm9", "alsa"):return {"ok":False,"error":"Выберите PWM D9 или аудиоустройство Linux"}
+        CFG["tts_output"] = d["tts_output"]
     for k in ("cloud_url", "direct_url", "direct_model", "tts_voice", "mic_dev",
               "cam_url", "vr_load"):
         if k in d:
@@ -12360,7 +12458,7 @@ def api_set_settings(data: dict):
               "dictate_on", "curious_on", "brain_on", "long_answers",
               "advice_on", "gen_on", "words_to_board", "dict_sync",
               "grav_on", "sync_on", "game_on", "mic_on", "cam_on", "cam_ai",
-              "mic_board_asr", "code_from_cloud", "admin_from_cloud", "vr_on", "vr_to_brain"):
+              "mic_board_asr", "code_from_cloud", "admin_from_cloud", "vr_on", "vr_to_brain", "hw_on"):
         if k in d:
             CFG[k] = bool(d.get(k))
     if "cam_ai_w" in d:                    # v2.88: вес голоса камеры
@@ -12405,25 +12503,15 @@ def api_tts_audio(after: int = 0):
     except Exception:
         after = 0
     with SH.lock:
-        a = dict(SH.tts_audio)
-    if a["id"] and a["id"] > after and a["b64"]:
-        return a
-    return {"id": a["id"], "b64": "", "mime": ""}
+        while _TTS_BROWSER_QUEUE and _TTS_BROWSER_QUEUE[0]['id']<=after:_TTS_BROWSER_QUEUE.popleft()
+        return dict(_TTS_BROWSER_QUEUE[0]) if _TTS_BROWSER_QUEUE else {'id':after,'b64':'','mime':''}
 
 
 def api_speak(data: dict):
-    text = str((data or {}).get("text", "")).strip()[:220]
-    if not text:
-        return {"ok": False, "error": "пустой текст"}
-    tts_say(text)
-    with SH.lock:
-        st = dict(SH.tts_state)
-    if st.get("err"):
-        return {"ok": False, "error": st["err"]}
-    return {"ok": True, "played": st.get("via", "")}
+    text=str((data or {}).get('text','')).strip()
+    return tts_say(text)
 
 
-# --- [9b] ОБЛАЧНЫЕ ФИЧИ И СЛОВАРИ (v2.8): REST для панели и команд ---------
 def api_cloud_search(data: dict):
     q = str((data or {}).get("q") or "").strip()[:120]
     if not q:
@@ -12456,56 +12544,22 @@ def api_cloud_search(data: dict):
 
 
 def api_cloud_code(data: dict):
-    """Выполнить код в ОБЛАЧНОЙ песочнице (и запомнить его в памяти)."""
-    code = str((data or {}).get("code") or "").strip()
-    text = str((data or {}).get("text") or "").strip()[:2000]
-    if not code:
-        return {"ok": False, "error": "пустой код"}
-    res, err = cloud_run_code(code, text=text)
-    with SH.lock:
-        SH.cloud_code = code[:24000]
-        SH.mem_dirty = True
-    if not res or not res.get("ok"):
-        add_message("system", "▶ Песочница облака: %s" % (err or "код не выполнился"), "Код")
-        return {"ok": False, "error": err or "код не выполнился"}
-    out = str(res.get("result") or "").strip()[:800]
-    add_message("system", "▶ Песочница облака (%d мс): %s" %
-                (res.get("ms", 0), out or "выполнено"), "Код")
-    return {"ok": True, "result": out, "ms": res.get("ms", 0)}
+    """Выполнить код в ОБЛАЧНОЙ песочнице. v2.97.3: УБРАНО («питоны» сняты)."""
+    return {"ok": False,
+            "error": "исполнение кода убрано с платы (v2.97.3)"}
 
 
 def api_cloud_write(data: dict):
-    """v2.24: МОЗГ САМ собирает функцию (локальные заготовки, без LLM):
-    сборка -> локальная проверка -> песочница облака -> реестр."""
-    task = str((data or {}).get("task") or "").strip()[:400]
-    if not task:
-        return {"ok": False, "error": "опиши задачу"}
-    payload, err = _selfcode_local(task)
-    if not payload:
-        return {"ok": False,
-                "error": "мозг не смог собрать функцию сам (%s); LLM код не "
-                         "пишет — только наставляет"
-                         % (err or "заготовки не подошли")}
-    code = str(payload.get("code") or "")
-    with SH.lock:
-        SH.cloud_code = code[:24000]
-        SH.mem_dirty = True
-    add_message("system", "🧠 Мозг сам собрал «%s» (без нейросети):\n%s"
-                % (str(payload.get("name") or payload.get("id") or "функция"),
-                   code[:1200]), "Код")
-    return {"ok": True, "code": code, "id": payload.get("id"),
-            "name": payload.get("name"), "verified": True}
+    """Мозг сам собирает функцию. v2.97.3: УБРАНО («питоны» сняты)."""
+    return {"ok": False, "error": "кодовые навыки убраны (v2.97.3)"}
 
 
 def api_cloud_code_get():
-    """Код редактора «облака» (переживает запуск через память)."""
+    """Код редактора «облака». v2.97.3: исполнение кода убрано."""
     with SH.lock:
         code = SH.cloud_code
-    if not code:
-        code = ("def run(text, ctx=None):\n"
-                "    # это выполняется в песочнице ОБЛАКА\n"
-                "    return \"Привет из облака! Ты сказал: \" + str(text)\n")
-    return {"ok": True, "code": code}
+    return {"ok": False, "code": code or "",
+            "error": "исполнение кода убрано с платы (v2.97.3)"}
 
 
 def api_cloud_skills():
@@ -12593,7 +12647,7 @@ def api_dictate(data: dict):
 # --- [9c] СТРАНИЦА «ОБЛАКО» (ChatGPT-стиль) И ФАЙЛЫ (v2.9/v2.10) ----------
 #     Отдельная страница /cloud.html: разговор как в ChatGPT (история,
 #     пузыри, вложения). v2.10: ОТВЕЧАЕТ МОЗГ, а не нейросеть — LLM остался
-#     только учителем (как и во всём проекте «Мозг-12» v2.4). Режимы:
+#     только учителем (как и во всём проекте «Star Gate» v2.4). Режимы:
 #       «мой мозг» — зоны + память + файлы + базы знаний, развёрнуто;
 #       «другой мозг» — вопрос уходит свободному устройству через облако
 #       (POST /api/brains/ask), устройства работают как единый мозг.
@@ -13207,7 +13261,6 @@ def _game_mood():
     idle = time.time() - _last_user_ts()
     return {"idle_s": idle, "talk_s": idle, "strain": _GRAV.get("strain") or 0.0,
             "hz": _signed_hz(), "invite": bool(cg.get("invite")) and fresh,
-            "invite_by": str(cg.get("invite_by") or "владелец"),
             "game_on": bool(CFG.get("game_on", True)),
             "cloud_game": fresh and bool(cg.get("on")),
             "breath": breath_mod("Игрок «РОК-12»", 1.0, 1.0) - 1.0}   # v2.74
@@ -13218,7 +13271,6 @@ def _game_say(text, force=False):
     if not force and time.time() - _GAME["last_thought"] < 60:
         return ""
     _GAME["last_thought"] = time.time()
-    _GAME["say_pending"] = str(text)[:160]       # v2.96: и в общий чат игры
     try:
         _thought_push(text)
     except Exception:
@@ -13290,17 +13342,6 @@ def game_worker():
             if t0 - last_brain > 2.0:
                 payload["brain"] = b.info()
                 last_brain = t0
-            # v2.96: плата САМА предлагает своей LLM сыграть вместе — когда
-            # играет одна дольше минуты (ни людей, ни LLM), не чаще раза в 10 мин
-            if _GAME.get("alone_since") and t0 - _GAME["alone_since"] > 60 and \
-                    t0 - _GAME.get("llm_invited_ts", 0.0) > 600 and not _GAME.get("llm_in"):
-                _GAME["llm_invited_ts"] = t0
-                payload["want"]["invite_llm"] = True
-                payload["want"]["invite_why"] = "играю один уже минуту — сыграем вместе?"
-                add_message("system", "🎮 Зову свою LLM облака сыграть со мной в «РОК-12»", "Игра")
-                _game_say("Зову свою LLM сыграть со мной в РОК-12", force=True)
-            if _GAME.get("say_pending"):
-                payload["say"] = _GAME.pop("say_pending")
             r, err = _http_json_err(url + "/api/doom/bot", payload, token=token, timeout=4)
             _GAME["calls"] += 1
             _GAME["ms"] = int((time.time() - t0) * 1000)
@@ -13320,12 +13361,7 @@ def game_worker():
             if not r.get("playing"):
                 break
             _GAME["level"] = r.get("level") or 0
-            _GAME["llm_in"] = bool(r.get("llm"))
-            if r.get("llm") or (r.get("humans") or 0) > 0:
-                _GAME["alone_since"] = 0.0
-            elif not _GAME.get("alone_since"):
-                _GAME["alone_since"] = time.time()
-            evs = [e for e in (r.get("events") or []) if not str(e).startswith("💭")]
+            evs = r.get("events") or []
             b.on_events(evs)
             for ev in evs:
                 if "пройден" in ev:
@@ -13672,15 +13708,7 @@ def mic_send_worker():
             "wav": base64.b64encode(_mic_wav(pcm)).decode("ascii")},
             token=token, timeout=60)
         if not r or not r.get("ok"):
-            e_ = str(err or (r or {}).get("error") or "?")
-            if "503" in e_ or "starting" in e_ or "запускается" in e_:
-                # v2.96: облако перезапускается (обновление) — это не ошибка
-                # платы: фразу вернём в очередь и подождём
-                _MIC["err"] = "облако перезапускается — жду (фраза подождёт)"
-                _MIC_Q.appendleft((pcm, lvl, ts))
-                time.sleep(10)
-                continue
-            _MIC["err"] = "облако: %s" % e_[:120]
+            _MIC["err"] = "облако: %s" % str(err or (r or {}).get("error") or "?")[:120]
             if "404" in _MIC["err"]:
                 _MIC["err"] = "облако старше v3.128 — уши не поддерживает"
                 time.sleep(300)
@@ -13756,69 +13784,40 @@ def vosk_text(pcm):
         return ""
 
 
-_VOSK_LOCK = threading.Lock()
-
-
-def api_vosk_install(data: dict = None):
-    """v2.96: кнопка «поставить Vosk на плату» (панель платы / облако)."""
-    if _VOSK_ST.get("state") == "готов":
-        return {"ok": True, "state": "готов", "note": "Vosk уже установлен"}
-    if _VOSK_LOCK.locked():
-        return {"ok": True, "state": _VOSK_ST.get("state"), "note": "установка уже идёт"}
-    _VOSK_ST["force"] = True
-    threading.Thread(target=vosk_install_once, kwargs={"force": True}, daemon=True).start()
-    add_message("system", "🧠 Ставлю распознавание речи Vosk на плату (в папку приложения pylib) — "
-                "несколько минут", "Слух")
-    return {"ok": True, "state": "ставлю vosk"}
-
-
-def vosk_install_once(force=False):
-    """Поставить Vosk (пакет -> <приложение>/pylib, модель -> vosk-ru).
-    -> True, если готов. v2.96: пакет ставится в ПОСТОЯННУЮ папку pylib
-    (контейнер пересоздаётся при обновлении — обычный pip install пропадал)."""
+def vosk_install_worker():
+    """Поставить Vosk на плату (один раз, в фоне)."""
     import subprocess
+    import sys
     import zipfile
-    if not _VOSK_LOCK.acquire(blocking=False):
-        return False
-    try:
-        if not force and not CFG.get("mic_board_asr", True):
+    time.sleep(40)                      # сперва пусть поднимется всё остальное
+    while True:
+        if not CFG.get("mic_board_asr", True):
             _VOSK_ST["state"] = "выкл"
-            return False
+            time.sleep(60)
+            continue
         try:
             try:
                 import vosk  # noqa: F401
-                _VOSK_ST.setdefault("where", os.path.dirname(os.path.dirname(vosk.__file__)))
             except Exception:
                 _VOSK_ST.update(state="ставлю vosk", err="")
-                log("СЛУХ", "ставлю распознаватель речи Vosk на плату (pip install --target %s vosk)…" % PYLIB_DIR)
+                log("СЛУХ", "ставлю распознаватель речи Vosk на плату (pip install vosk)…")
                 ok = False
-                try:
-                    os.makedirs(PYLIB_DIR, exist_ok=True)
-                except Exception:
-                    pass
-                # сначала — в окружение приложения (App Lab держит venv в
-                # /app/.cache/.venv — папка приложения, переживает пересоздание
-                # контейнера), затем — в постоянную pylib, затем --user
-                for extra in ([], ["--target", PYLIB_DIR, "--upgrade"], ["--user"],
-                              ["--break-system-packages"]):
+                for extra in ([], ["--user"], ["--break-system-packages"]):
                     r = subprocess.run([sys.executable, "-m", "pip", "install",
                                         "--disable-pip-version-check", "-q", "vosk"] + extra,
                                        stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                        timeout=1200)
                     if r.returncode == 0:
                         ok = True
-                        _VOSK_ST["where"] = PYLIB_DIR if extra and extra[0] == "--target" else \
-                            (" ".join(extra) or os.path.dirname(sys.executable))
                         break
                     _VOSK_ST["err"] = r.stdout.decode("utf-8", "replace").strip()[-200:]
                 if not ok:
                     _VOSK_ST["state"] = "ошибка pip"
-                    return False
+                    time.sleep(1800)
+                    continue
                 import importlib
                 import site
                 importlib.invalidate_caches()
-                if PYLIB_DIR not in sys.path:
-                    sys.path.insert(0, PYLIB_DIR)
                 try:
                     sys.path.append(site.getusersitepackages())
                 except Exception:
@@ -13861,25 +13860,11 @@ def vosk_install_once(force=False):
                 log("СЛУХ", "модель Vosk установлена на плату (из %s)" % src)
             _VOSK_ST["model"] = _VOSK_ST["model"] or "vosk-model-small-ru"
             _VOSK_ST.update(state="готов", err="")
-            log("СЛУХ", "Vosk готов: пакет в %s, модель %s" % (_VOSK_ST.get("where") or "site", _vosk_dir()))
-            add_message("system", "🧠 Vosk на плате готов — речь с микрофона распознаётся прямо на плате", "Слух")
-            return True
+            return
         except Exception as e:
             _VOSK_ST.update(state="ошибка", err="%s: %s" % (type(e).__name__, str(e)[:150]))
             log("СЛУХ", "Vosk на плату не встал: %s" % _VOSK_ST["err"])
-            return False
-    finally:
-        _VOSK_LOCK.release()
-
-
-def vosk_install_worker():
-    """Фон: поставить Vosk один раз (через 40 с после старта), при неудаче —
-    повтор через 30 мин. Кнопка (api_vosk_install) ставит сразу."""
-    time.sleep(40)                      # сперва пусть поднимется всё остальное
-    while True:
-        if vosk_install_once():
-            return
-        time.sleep(60 if _VOSK_ST.get("state") == "выкл" else 1800)
+            time.sleep(1800)
 
 
 # ===========================================================================
@@ -13895,22 +13880,89 @@ def vosk_install_worker():
 _CODEJOBS = {"done": 0, "last": "", "busy": False}
 
 
-def _code_job(j):
+HW_PINS = ("D5", "D7", "A5")      # v2.111.1: D9 — речь PCM (TIM4), ШИМ не даём: таймеры заняты D6/D9
+_HW_CMD = re.compile(r"^(?:pins|(?:mode\s+(?:D5|D7|A5)\s+(?:in|out|pullup))|(?:w\s+(?:D5|D7)\s+[01])|"
+                     r"(?:r\s+(?:D5|D7|A5))|(?:a\s+A5)|(?:pulse\s+(?:D5|D7)\s+\d{1,4}))$", re.I)
+_HW_LOG = deque(maxlen=40)
+
+
+def _hw_wire(c):
+    """Команда человека -> компактная команда скетча 2.111.3 (w5=1, r7, a, p5=200) | ('', ответ без скетча)."""
+    w = re.sub(r"\s+", " ", c.strip()).split(" ")
+    op = w[0].lower()
+    pin = w[1].upper() if len(w) > 1 else ""
+    if op == "pins":
+        return "", "ok:D5,D7,A5"
+    if op == "mode":                           # режим скетч ставит сам при w/r/pulse
+        return "", "ok:" + w[2].lower()
+    if op == "a" or (op == "r" and pin == "A5"):
+        return "a", ""
+    n = pin[1:]
+    if op == "w":
+        return "w%s=%s" % (n, w[2]), ""
+    if op == "r":
+        return "r%s" % n, ""
+    if op == "pulse":
+        return "p%s=%d" % (n, min(500, int(w[2]))), ""
+    return "", "e:op"
+
+
+def hw_io(cmds):
+    """v2.111: АППАРАТНЫЙ УРОВЕНЬ. Команды выводам МК через RPC hw_io скетча.
+    Только свободные выводы (D5, D7 — цифровые, A5 — АЦП) — те, что не заняты мозгом;
+    каждая команда проверяется здесь (белый список) и ещё раз в скетче. v2.111.3: в скетч
+    уходит по одной компактной команде за вызов. Выключается настройкой hw_on.
+    -> {ok, out, results:[…]}"""
+    if not CFG.get("hw_on", True):
+        return {"ok": False, "out": "на плате выключено hw_on (аппаратный уровень)"}
+    parts = [c.strip() for c in re.split(r"[;\n]", str(cmds or "")) if c.strip()][:16]
+    if not parts:
+        return {"ok": False, "out": "нет команд; пример: «w D7 1; a A5»"}
+    bad = [c for c in parts if not _HW_CMD.match(c)]
+    if bad:
+        return {"ok": False, "out": "не разрешено: %s. Можно: w/r/pulse на D5, D7 и a A5." % bad[0][:40]}
+    items = []
+    for c in parts:
+        wire, local = _hw_wire(c)
+        if not wire:
+            items.append(local)
+            continue
+        res = _bridge_call("hw_io", wire, timeout=4)
+        if res is None:
+            return {"ok": False, "out": "скетч не ответил на hw_io (скетч старше 2.111.3 или NEURO_HW_IO 0)"}
+        items.append(str(res))
+    ok = all(x.startswith("ok:") for x in items)
+    _HW_LOG.append({"ts": time.time(), "cmd": ";".join(parts), "res": ";".join(items)[:200]})
+    log("ЖЕЛЕЗО", "%s -> %s" % (";".join(parts), ";".join(items)[:120]))
+    return {"ok": ok, "out": "\n".join("%s → %s" % (c, r) for c, r in zip(parts, items)),
+            "results": [{"cmd": c, "res": r} for c, r in zip(parts, items)]}
+
+
+def _cloud_job_exec(j):
+    """v2.108: задание облака — выполнить на плате (agent администрирования).
+    sh — команда оболочки в контейнере приложения; py_check/py_run — Python.
+    Только то, что прислало облако (с токеном); код самого мозга по-прежнему
+    не пишется и не запускается («питоны» мозга сняты). Таймаут и лимит вывода."""
     import subprocess
     import sys
     import tempfile
     mode = str(j.get("mode") or "py_check")
-    code = str(j.get("code") or "")
+    code = str(j.get("code") or "")[:24000]
     try:
         tmo = max(2, min(120, int(j.get("timeout") or 20)))
     except Exception:
         tmo = 20
+    if mode == "hw":                      # v2.111: аппаратный уровень — свободные выводы МК
+        r = hw_io(code)
+        return {"ok": bool(r.get("ok")), "rc": 0 if r.get("ok") else 1, "out": r.get("out", "")}
+    if mode not in ("sh", "py_check", "py_run"):
+        return {"ok": False, "rc": -1, "out": "неизвестный режим: %s" % mode[:20]}
     if mode == "sh":
         if not CFG.get("admin_from_cloud", True):
             return {"ok": False, "rc": -1, "out": "на плате выключено admin_from_cloud"}
     elif not CFG.get("code_from_cloud", True):
         return {"ok": False, "rc": -1, "out": "на плате выключено code_from_cloud"}
-    work = tempfile.mkdtemp(prefix="n12code_")
+    work = tempfile.mkdtemp(prefix="n12job_")
     try:
         if mode == "sh":
             cmd = ["sh", "-c", code]
@@ -13922,8 +13974,8 @@ def _code_job(j):
                 else [sys.executable, "-I", f]
         r = subprocess.run(cmd, cwd=work, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
                            stderr=subprocess.STDOUT, timeout=tmo)
-        out = r.stdout.decode("utf-8", "replace")
-        return {"ok": r.returncode == 0, "rc": r.returncode, "out": out[-6000:]}
+        return {"ok": r.returncode == 0, "rc": r.returncode,
+                "out": r.stdout.decode("utf-8", "replace")[-6000:]}
     except subprocess.TimeoutExpired:
         return {"ok": False, "rc": -9, "out": "таймаут %d с" % tmo}
     except Exception as e:
@@ -13934,6 +13986,7 @@ def _code_job(j):
 
 
 def _code_jobs_run(jobs):
+    """v2.108: задания облака на плате выполняются (v2.97.3 их отклоняла)."""
     import platform
     url, token = _cloud_base()
     _CODEJOBS["busy"] = True
@@ -13942,7 +13995,7 @@ def _code_jobs_run(jobs):
             if not isinstance(j, dict) or not j.get("id"):
                 continue
             t0 = time.time()
-            res = _code_job(j)
+            res = _cloud_job_exec(j)
             res.update(id=str(j["id"])[:40], board=_hostname(), mode=j.get("mode"),
                        ms=int((time.time() - t0) * 1000),
                        py=platform.python_version(), machine=platform.machine())
@@ -14253,7 +14306,7 @@ _PAIR_NETS = ("192.168.1", "192.168.0", "192.168.2", "192.168.3", "192.168.31", 
 
 
 def _find_cloud():
-    """Ищем облако «мозг-12» (порт 8077, /api/health) в типичных домашних сетях."""
+    """Ищем облако «Star Gate» (порт 8077, /api/health) в типичных домашних сетях."""
     import socket
     from concurrent.futures import ThreadPoolExecutor
     nets = list(_PAIR_NETS)
@@ -14377,7 +14430,6 @@ def register_web():
     ui.expose_api("GET", "/api/state", api_state)
     ui.expose_api("GET", "/api/alive", api_alive)          # v2.62: сторож
     ui.expose_api("POST", "/api/game/reset", api_game_reset)  # v2.69: игра
-    ui.expose_api("POST", "/api/vosk/install", api_vosk_install)  # v2.96: Vosk по кнопке
     ui.expose_api("GET", "/api/messages", api_messages)
     ui.expose_api("POST", "/api/send", api_send)
     ui.expose_api("POST", "/api/think", api_think)          # v2.58
@@ -14531,7 +14583,7 @@ def brain_tick():
 
 
 def main():
-    log("neuro_12 v%s стартует (App Lab): мозг-12, зонная сеть с речью из "
+    log("neuro_12 v%s стартует (App Lab): Star Gate, зонная сеть с речью из "
         "словаря (генератор СЛУШААТ нейроны, v2.17), единый мозг "
         "(мозг-почта), словари, диктант, "
         "советы-наставления; LLM — только учитель/наставник (/api/llm/teach); "
@@ -14598,7 +14650,7 @@ def main():
     threading.Thread(target=platform_worker, daemon=True).start()
     # v2.28: назначение номеров нейронам (SETID) — если платы без номера
     threading.Timer(30.0, _neuro_assign_async).start()
-    add_message("system", "Мозг-12 v%s запущен через Arduino App Lab. "
+    add_message("system", "Star Gate v%s запущен через Arduino App Lab. "
                 "Отвечаю САМ (зоны + навыки + память); LLM — только наставник: "
                 "советы, цели диктанта, оценки, речи через облако -> скетч. "
                 "Я и сам говорю фразами из словаря (команда «мысль <тема>»), "

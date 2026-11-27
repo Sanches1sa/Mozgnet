@@ -56,6 +56,8 @@ def model_dir():
 
 
 def have_vosk():
+    if os.environ.get("NEURO_SAFE") == "1":
+        return False
     try:
         import vosk  # noqa: F401
         return True

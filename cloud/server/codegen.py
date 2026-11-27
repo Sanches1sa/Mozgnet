@@ -270,11 +270,11 @@ task("reverse", "Разворот строки", ("разверн", "наобо�
          "code": ("def reverse_text(text):\n"
                   "    \"\"\"Строка задом наперёд.\"\"\"\n"
                   "    return text[::-1]\n"),
-         "demo": "\n\nif __name__ == '__main__':\n    print(reverse_text('мозг-12'))\n",
+         "demo": "\n\nif __name__ == '__main__':\n    print(reverse_text('Star Gate'))\n",
          "test": ("reverse_text('abc')", "cba")},
      js=lambda p: {"code": (
          "const reverseText = (text) => [...text].reverse().join('');\n"
-         "console.log(reverseText('мозг-12'));\n")})
+         "console.log(reverseText('Star Gate'));\n")})
 
 task("stats", "Сумма, среднее, минимум, максимум",
      ("среднее", "сумма чисел", "максимум", "минимум", "статистик", "average", "mean"),
@@ -433,7 +433,7 @@ task("cloudsandbox", "Плата → облако: выполнить код в 
      python=lambda p: {"code": (
          "import json\n"
          "import urllib.request\n\n"
-         "CLOUD = 'http://192.168.1.50:8077'   # адрес облака мозг-12\n"
+         "CLOUD = 'http://192.168.1.50:8077'   # адрес облака Star Gate\n"
          "TOKEN = 'ТОКЕН_ПЛАТЫ'                  # Настройки → Общие → токен платы\n\n\n"
          "def run_in_cloud(code, text=''):\n"
          "    \"\"\"Выполнить def run(text, ctx=None) в песочнице облака.\"\"\"\n"

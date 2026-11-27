@@ -35,7 +35,7 @@ def see(image_bytes=None, url=None, b64=None, filename="image.jpg", why="зре�
         raw = image_bytes
     elif b64:
         try:
-            raw = base64.b64decode(re.sub(r"^data:[^;,]*;base64,", "", str(b64)))
+            raw = base64.b64decode(re.sub(r"^data:[^;,]*;base64,", "", str(b64)), validate=True)
         except Exception:
             return {"ok": False, "error": "некорректный base64"}
     elif url:
@@ -50,31 +50,15 @@ def see(image_bytes=None, url=None, b64=None, filename="image.jpg", why="зре�
     else:
         return {"ok": False, "error": "нет изображения"}
 
-    if len(raw) < 100:
-        return {"ok": False, "error": "слишком маленький файл"}
-
+    if not raw or len(raw) > 8_000_000:
+        return {"ok": False, "error": "нужна картинка размером до 8 МБ", "saved": False}
     try:
         import imgsense
-        desc = imgsense.describe(raw, name=filename)
-    except Exception as e:
-        desc = {"error": str(e)[:200]}
-
-    # сохранить в KB
-    title = "Увидел: " + (filename or "изображение")[:60]
-    text = _format_desc(desc, why)
-    try:
-        import kb
-        kb.add_article(title, text, source="vision_agent")
-    except Exception:
-        pass
-
-    return {
-        "ok": True,
-        "description": desc,
-        "text": text,
-        "bytes": len(raw),
-        "saved": True,
-    }
+        result = imgsense.describe(raw, name=filename, question=why, structured=True)
+        result["bytes"] = len(raw)
+        return result
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)[:200], "saved": False}
 
 
 def _format_desc(desc, why):
@@ -110,6 +94,10 @@ def see_b64(b64, filename="upload.jpg", why="загрузка"):
 
 def status():
     st = enabled()
+    import shutil
+    st["ocr_engine"] = bool(shutil.which("tesseract"))
+    st["zone"] = "Камера"
+    st["architecture"] = "визуальный адаптер к текстовой LLM; зрительная модель подключается отдельно"
     st["pillow"] = False
     try:
         from PIL import Image

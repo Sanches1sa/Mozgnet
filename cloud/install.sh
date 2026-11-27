@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ============================================================================
-#  install.sh — neuro12-cloud v3.0 · ОБЛАЧНАЯ ПЛАТФОРМА «МОЗГ-12»
+#  install.sh — neuro12-cloud v3.0 · ОБЛАЧНАЯ ПЛАТФОРМА «STAR GATE»
 #  ОДИН СКРИПТ СТАВИТ ВСЁ. ЗАВИСИМОСТЕЙ НЕТ: сервер работает на чистом
 #  Python 3 (stdlib) — pip/venv НЕ НУЖНЫ, ставиться можно даже офлайн.
 #
@@ -197,7 +197,7 @@ if [ "$NO_SYSTEMD" -eq 0 ] && command -v systemctl >/dev/null 2>&1; then
   say "SYSTEMD-СЕРВИС neuro12-cloud"
   $SUDO tee /etc/systemd/system/neuro12-cloud.service >/dev/null <<EOF
 [Unit]
-Description=neuro12-cloud — облачная платформа «мозг-12» (без LLM)
+Description=neuro12-cloud — облачная платформа «Star Gate» (без LLM)
 After=network.target
 
 [Service]
@@ -279,7 +279,7 @@ IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
 
 printf '\n'
 printf '%s╔══════════════════════════════════════════════════════════════════╗%s\n' "$C_G" "$C_0"
-printf '%s║%s  neuro12-cloud v3.8 установлен — ОБЛАКО «МОЗГ-12» готово         %s║%s\n' "$C_G" "$C_0" "$C_G" "$C_0"
+printf '%s║%s  neuro12-cloud v3.8 установлен — ОБЛАКО «STAR GATE» готово         %s║%s\n' "$C_G" "$C_0" "$C_G" "$C_0"
 printf '%s╚══════════════════════════════════════════════════════════════════╝%s\n' "$C_G" "$C_0"
 printf '\n'
 printf '  %sВЕБ-ПАНЕЛЬ (в стиле ChatGPT):%s    %shttp://%s:%s%s\n' "$C_B" "$C_0" "$C_B" "$IP" "$PORT" "$C_0"

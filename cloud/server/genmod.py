@@ -57,11 +57,8 @@ def note(dev, gen):
 
 
 def strength():
-    try:
-        return max(0.0, min(3.0, float(store.settings().get(
-            "llm_gen_influence", 0.5))))
-    except (TypeError, ValueError):
-        return 0.5
+    """Frequency associations are retained for feelings, not lexical generation."""
+    return 0.0
 
 
 def signal():
@@ -175,11 +172,8 @@ _ALOCK = threading.RLock()
 
 
 def meaning_strength():
-    try:
-        return max(0.0, min(3.0, float(store.settings().get(
-            "llm_gen_meaning", 1.0))))
-    except (TypeError, ValueError):
-        return 1.0
+    """Frequency associations are retained for feelings, not lexical generation."""
+    return 0.0
 
 
 def band_of_hz(hz):
@@ -353,7 +347,7 @@ def learn_frame(dev, text, signed_hz, tn=None):
     уровень -> ассоциации и пара для дообучения. Дедуп — по фразе, уровню и
     минуте. Возврат: True, если пара принята."""
     tx = _tclean(str(text or "").strip())                   # v3.118
-    if len(tx) < 12 or meaning_strength() <= 0:
+    if len(tx) < 12:
         return False
     try:
         z = max(-1.0, min(1.0, float(signed_hz) / 2000.0))
@@ -395,59 +389,18 @@ def learn_frame(dev, text, signed_hz, tn=None):
 
 
 def word_bias(model):
-    """Вектор прибавок к логитам по текущему уровню сигнала | None."""
-    s = meaning_strength()
-    b = current_band()
-    if s <= 0 or b is None:
-        return None
-    import numpy as np
-    with _ALOCK:
-        _aload()
-        tot = [sum(x.values()) for x in _A["a"]]
-        T = sum(tot)
-        if tot[b] < 30 or T < 60:
-            return None                       # мало примеров — не гадаем
-        key = (b, len(_A["pairs"]), len(model.tok.vocab), s)
-        if _A["bias_key"] == key and _A["bias"] is not None:
-            return _A["bias"]
-        allc = {}
-        for x in _A["a"]:
-            for st, c in x.items():
-                allc[st] = allc.get(st, 0) + c
-        n = model.p["E"].shape[0]
-        vec = np.zeros(n, dtype=np.float64)
-        used = 0
-        for tk, i in model.tok.vocab.items():
-            if i >= n or not tk.startswith("▁") or len(tk) < 5:
-                continue
-            st = tk[1:6]
-            ca = allc.get(st, 0)
-            if ca < 2:
-                continue
-            exp = ca * tot[b] / float(T)
-            d = 1.5 * math.log((_A["a"][b].get(st, 0) + 0.5) / (exp + 0.5))
-            vec[i] = s * max(-1.5, min(3.0, d))
-            used += 1
-        _A["bias_key"], _A["bias"], _A["bias_n"] = key, vec, used
-        return vec
+    """No Hz-to-token bias; frequency remains available to feeling encoders."""
+    return None
 
 
 def corpus_texts(max_items=400):
-    """Реплики с пометкой уровня сигнала — в корпус LLM (в веса)."""
-    with _ALOCK:
-        _aload()
-        return ["%s %s" % (band_phrase(b), t) for b, t in
-                _A["pairs"][-max_items:]]
+    """Frequency associations are retained for feelings, not lexical generation."""
+    return []
 
 
 def prefix_for_prompt():
-    """«сигнал высокий.» для затравки, если обучение на парах уже есть."""
-    with _ALOCK:
-        _aload()
-        if len(_A["pairs"]) < 20 or meaning_strength() <= 0:
-            return ""
-    b = current_band()
-    return band_phrase(b) + " " if b is not None else ""
+    """No frequency-derived words are injected into a language-model prompt."""
+    return ""
 
 
 def maybe_finetune():

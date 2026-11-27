@@ -106,12 +106,12 @@
     const c = S.chat;
     const msgs = (c && c.messages) || [];
     if (!msgs.length) return toast('Чат пуст — экспортировать нечего', 'err');
-    const lines = ['# ' + ((c && c.title) || 'Чат мозг-12'), '',
+    const lines = ['# ' + ((c && c.title) || 'Чат Star Gate'), '',
       '_Экспорт: ' + new Date().toLocaleString('ru') +
       ' · neuro12-cloud_', ''];
     msgs.forEach(m => {
       const who = m.role === 'user' ? 'Вы' :
-        (m.role === 'system' ? 'Облако' : 'мозг-12' +
+        (m.role === 'system' ? 'Облако' : 'Star Gate' +
           (m.zone ? ' · ' + m.zone : ''));
       let t = String(m.text || '')
         .replace(/\[(ФОРМУЛА|КАРТИНКА)\][\s\S]*?\[\/\1\]/g,
@@ -320,11 +320,15 @@
     const ta = $('#input');
     if (ta) ta.placeholder = r === 'code'
       ? 'Опиши задачу для проекта или попроси написать код…'
-      : 'Спроси мозг-12…';
+      : r === 'admin'
+      ? 'Опиши задачу администрирования: серверы, платы или рабочий стол…'
+      : 'Спроси Star Gate…';
     const note = $('.cnote');
     if (note && !note.dataset.orig) note.dataset.orig = note.textContent;
     if (note) note.textContent = r === 'code'
       ? 'Контур: загрузите ZIP / RAR и отправьте задачу. Действия агента видны при раскрытии строки состояния.'
+      : r === 'admin'
+      ? 'Агент «Администрирование»: задача словами — шаги с разрешениями. Настройки агента — ⚙ под полем ввода.'
       : note.dataset.orig;
     renderLangBar();
     /* v3.57: оформление «Кода» не должно оставаться в других режимах */
@@ -361,6 +365,7 @@
   /* ---------------------------- слэш-команды ------------------------------ */
   const SLASH = [
     { c: '/код', h: 'режим «Код»: мозг пишет код', run: () => { N.setRoute('code'); fill(''); } },
+    { c: '/админ', h: 'режим «Администрирование»: агент ведёт серверы и рабочий стол', run: () => { N.setRoute('admin'); fill(''); } },
     { c: '/посчитай', h: 'калькулятор', run: () => fill('посчитай ') },
     { c: '/нарисуй', h: 'зона Воображения', run: () => fill('нарисуй ') },
     { c: '/график', h: 'график функции', run: () => fill('нарисуй график y=') },
@@ -723,10 +728,10 @@
     it.push({ g: 'Действия', ic: '◐', t: 'Сменить тему (тёмная / светлая / авто)', run: () => theme.cycle() });
     it.push({ g: 'Действия', ic: '🔊', t: 'Озвучка ответов: вкл / выкл', run: () => $('#btnTTS').click() });
     it.push({ g: 'Действия', ic: '↕', t: 'Длинные ответы: вкл / выкл', run: () => $('#chkLong').click() });
-    ['auto', 'cloud', 'talk', 'code', 'board'].forEach(r => it.push({ g: 'Кто отвечает', ic: r === 'code' ? '⌨' : r === 'talk' ? '💬' : '🎯',
-      t: 'Режим: ' + ({ auto: 'Авто', cloud: 'Облако', talk: 'Разговор (как в живом диалоге)', code: 'Код (ИИ-агент)', board: 'Плата (живая плата)' })[r], run: () => N.setRoute(r) }));
+    ['auto', 'cloud', 'talk', 'code', 'admin', 'board'].forEach(r => it.push({ g: 'Кто отвечает', ic: r === 'code' ? '⌨' : r === 'talk' ? '💬' : r === 'admin' ? '🗄' : '🎯',
+      t: 'Режим: ' + ({ auto: 'Авто', cloud: 'Облако', talk: 'Разговор (как в живом диалоге)', code: 'Код (ИИ-агент)', admin: 'Администрирование (агент: серверы и рабочий стол)', board: 'Плата (живая плата)' })[r], run: () => N.setRoute(r) }));
     [['pulse', '💗', 'Пульс мозга'], ['applab', '🧩', 'App Lab'], ['chronicle', '📜', 'Хроника плат'],
-      ['vision', '📷', 'Зрение']].forEach(v => it.push({ g: 'Разделы', ic: v[1], t: v[2], run: () => N.showView(v[0]) }));
+      ['vision', '📷', 'Зрение'], ['servers', '🗄', 'Серверы']].forEach(v => it.push({ g: 'Разделы', ic: v[1], t: v[2], run: () => N.showView(v[0]) }));
     it.push({ g: 'Разделы', ic: '💭', t: 'Мысли плат', run: () => N.openChat('thoughts') });
     [['common', 'Общие'], ['devices', 'Устройства'], ['memory', 'Облачная память'], ['kb', 'База знаний'],
       ['zones', 'Зоны мысли'], ['teacher', 'Учитель (LLM)'], ['voice', 'Голос'],

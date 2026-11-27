@@ -1,0 +1,674 @@
+[
+ {
+  "triggers": [],
+  "id": "fn.skeleton",
+  "title": "Как написать функцию App Lab (минимум)",
+  "ask": [
+   "как написать функцию app lab",
+   "минимальное приложение app lab",
+   "создать функцию в app lab",
+   "каркас функции run text ctx"
+  ],
+  "text": "Функция App Lab — это приложение: папка data/applab/<id>/ с app.json (имя, значок, описание, триггеры, примеры) и python/main.py.\nВ main.py ОБЯЗАТЕЛЬНА одна функция def run(text, ctx): — она получает фразу из чата и возвращает ответ СТРОКОЙ.\nПорядок: 1) одна фраза-задача; 2) триггеры; 3) run(); 4) проверка «Запустить»; 5) владелец включает приложение.",
+  "code": "def run(text, ctx):\n    \"\"\"App Lab: поздороваться\"\"\"\n    return \"Привет! Ты написал: %s\" % text\n",
+  "phrase": "привет функция",
+  "expect": "Привет",
+  "pre": [],
+  "verified": true
+ },
+ {
+  "triggers": [],
+  "id": "fn.triggers",
+  "title": "Как выбрать триггеры функции",
+  "ask": [
+   "триггеры функции app lab",
+   "по каким словам чат вызывает функцию",
+   "как выбрать слова для вызова приложения",
+   "регулярное выражение триггер re:"
+  ],
+  "text": "Триггер — слово или фраза в app.json (поле triggers). Чат зовёт включённое приложение, если триггер есть во фразе (по границам слов).\nРегулярное выражение — с префиксом «re:», например re:^курс\\s+\\w+ (оно весомее обычного слова).\nНЕ берите общие слова («что», «как», «можно») — приложение начнёт перехватывать чужие вопросы. Берите 2–4 точных слова: «погода», «курс валют».\nСовпадение должно быть не короче 3 букв (порог оценки 5). Даёте 1–2 примера фраз — они станут кнопками в окне чата.\nВсегда сработает и явная просьба: «запусти функцию <имя>» — триггеры тогда не нужны.",
+  "code": "",
+  "phrase": "",
+  "expect": "",
+  "pre": [],
+  "verified": false
+ },
+ {
+  "triggers": [],
+  "id": "fn.parse_number",
+  "title": "Как достать числа из фразы",
+  "ask": [
+   "достать числа из фразы",
+   "разобрать число в тексте функции",
+   "сумма чисел из фразы приложение"
+  ],
+  "text": "Фраза приходит одной строкой. Числа достают регулярным выражением: запятая — десятичный разделитель в русской речи.",
+  "code": "import re\n\n\ndef run(text, ctx):\n    \"\"\"App Lab: сложить числа из фразы\"\"\"\n    nums = [float(x.replace(\",\", \".\")) for x in re.findall(r\"-?\\d+(?:[.,]\\d+)?\", text)]\n    if not nums:\n        return \"Чисел во фразе не нашла.\"\n    return \"Сумма: %g\" % sum(nums)\n",
+  "phrase": "сложи 2 и 3,5",
+  "expect": "Сумма: 5.5",
+  "pre": [],
+  "verified": true
+ },
+ {
+  "triggers": [],
+  "id": "fn.after_word",
+  "title": "Как взять слово после ключевого слова",
+  "ask": [
+   "разобрать фразу после слова",
+   "параметр из фразы приложение",
+   "взять тему после слова курс"
+  ],
+  "text": "Часто нужно «что после слова»: «курс доллара» → «доллара». Используйте re.search с группой и обязательно проверяйте None.",
+  "code": "import re\n\n\ndef run(text, ctx):\n    \"\"\"App Lab: курс чего-то\"\"\"\n    m = re.search(r\"курс\\s+(\\w+)\", text.lower())\n    if not m:\n        return \"Уточните: курс чего?\"\n    return \"Ищу курс: %s\" % m.group(1)\n",
+  "phrase": "курс доллара",
+  "expect": "доллара",
+  "pre": [],
+  "verified": true
+ },
+ {
+  "triggers": [],
+  "id": "fn.say_log",
+  "title": "Как вернуть ответ: return, ctx.say, ctx.log",
+  "ask": [
+   "ответ функции app lab",
+   "ctx.say и return",
+   "журнал запуска функции ctx.log"
+  ],
+  "text": "Ответ = строки ctx.say(...) + то, что вернул return (всё склеивается через перенос). ctx.log(...) — строка в журнал запуска, видна в App Lab, в чат не идёт.\nИсключение в run() превращается в ответ «ошибка (строка N)» — но лучше ловить ожидаемые ошибки самим.",
+  "code": "def run(text, ctx):\n    \"\"\"App Lab: два ответа и журнал\"\"\"\n    ctx.log(\"получила фразу\", text)\n    ctx.say(\"Строка 1\")\n    ctx.say(\"Строка 2\")\n    return \"Итог\"\n",
+  "phrase": "проверка",
+  "expect": "Строка 2",
+  "pre": [],
+  "verified": true
+ },
+ {
+  "triggers": [],
+  "id": "fn.web_search",
+  "title": "Как искать в интернете в функции",
+  "ask": [
+   "поиск в интернете в функции app lab",
+   "ctx.web.search",
+   "найти в сети приложение",
+   "цена товар интернет функция"
+  ],
+  "text": "ctx.web.search(q, n) вернёт [{title, url, snippet}]. Всегда: try/except (сеть может упасть), проверка пустого списка, ссылки в ответе.\nНе выдумывайте цены и факты: показывайте только то, что вернул поиск. Страницу целиком — ctx.web.page(url) (только https).",
+  "code": "def run(text, ctx):\n    \"\"\"App Lab: найти в интернете\"\"\"\n    try:\n        hits = ctx.web.search(text, 3)\n    except Exception as e:\n        return \"Поиск не удался: %s\" % e\n    if not hits:\n        return \"Ничего не нашла.\"\n    return \"Нашла:\\n\" + \"\\n\".join(\"- %s — %s\" % (h[\"title\"], h[\"url\"]) for h in hits)\n",
+  "phrase": "найди кофемашину",
+  "expect": "https://example.org/1",
+  "pre": [],
+  "verified": true
+ },
+ {
+  "triggers": [],
+  "id": "fn.wiki",
+  "title": "Как взять статью Википедии в функции",
+  "ask": [
+   "википедия в функции app lab",
+   "ctx.web.wiki",
+   "статья из википедии приложение"
+  ],
+  "text": "ctx.web.wiki(тема) -> {title, text, src} или None. Берите первые 300–500 знаков и называйте источник.",
+  "code": "def run(text, ctx):\n    \"\"\"App Lab: что такое тема\"\"\"\n    art = ctx.web.wiki(text)\n    if not art:\n        return \"В Википедии не нашла.\"\n    return \"%s: %s (источник: %s)\" % (art[\"title\"], art[\"text\"][:400], art[\"src\"])\n",
+  "phrase": "марс",
+  "expect": "источник",
+  "pre": [],
+  "verified": true
+ },
+ {
+  "triggers": [],
+  "id": "fn.kb",
+  "title": "Как искать и класть в базу знаний",
+  "ask": [
+   "база знаний в функции app lab",
+   "ctx.kb.search",
+   "ctx.kb.add сохранить статью"
+  ],
+  "text": "ctx.kb.search(q, n) -> [{title, snippet, score}]; ctx.kb.add(title, text) кладёт статью (источник «App Lab: <id>»).",
+  "code": "def run(text, ctx):\n    \"\"\"App Lab: поискать в базе знаний\"\"\"\n    hits = ctx.kb.search(text, 3)\n    if not hits:\n        return \"В базе знаний пусто по этой теме.\"\n    return \"\\n\".join(\"%s: %s\" % (h[\"title\"], h[\"snippet\"]) for h in hits)\n",
+  "phrase": "что в базе про кофе",
+  "expect": "Статья БЗ",
+  "pre": [],
+  "verified": true
+ },
+ {
+  "triggers": [],
+  "id": "fn.memory",
+  "title": "Как запоминать и вспоминать в функции",
+  "ask": [
+   "память в функции app lab",
+   "ctx.memory.remember",
+   "запомни заметку приложение"
+  ],
+  "text": "ctx.memory.remember(текст) пишет заметку, ctx.memory.recall(слово) ищет по ним, ctx.memory.list(n) — последние.",
+  "code": "def run(text, ctx):\n    \"\"\"App Lab: запомнить и вспомнить\"\"\"\n    low = text.lower()\n    if low.startswith(\"запомни\"):\n        ctx.memory.remember(text[7:].strip())\n        return \"Запомнила.\"\n    found = ctx.memory.recall(low.replace(\"вспомни\", \"\").strip())\n    return \"\\n\".join(found) if found else \"Ничего не помню по этому.\"\n",
+  "phrase": "вспомни кофе",
+  "expect": "Ничего не помню",
+  "pre": [
+   "запомни пароль от сейфа"
+  ],
+  "verified": true
+ },
+ {
+  "triggers": [],
+  "id": "fn.state",
+  "title": "Как хранить состояние между запусками",
+  "ask": [
+   "состояние приложения app lab",
+   "ctx.state save_state",
+   "счётчик запусков функции"
+  ],
+  "text": "ctx.state — словарь, живущий в state.json приложения. Изменили — вызовите ctx.save_state(). Хранить только данные приложения, не секреты.",
+  "code": "def run(text, ctx):\n    \"\"\"App Lab: счётчик вызовов\"\"\"\n    n = int(ctx.state.get(\"n\", 0)) + 1\n    ctx.state[\"n\"] = n\n    ctx.save_state()\n    return \"Вызов номер %d\" % n\n",
+  "phrase": "счётчик",
+  "expect": "Вызов номер 2",
+  "pre": [
+   "счётчик"
+  ],
+  "verified": true
+ },
+ {
+  "triggers": [],
+  "id": "fn.brain",
+  "title": "Как позвать мозг облака из функции",
+  "ask": [
+   "мозг в функции app lab",
+   "ctx.brain.think",
+   "спросить мозг приложение"
+  ],
+  "text": "ctx.brain.think(q) — полный ответ мозга (долго, до минуты — укладывайтесь в таймаут 60 с); ctx.brain.thought() — его текущая мысль. Не зовите мозг из функции, которую зовёт сам мозг по тому же слову (зацикливание).",
+  "code": "def run(text, ctx):\n    \"\"\"App Lab: спросить мозг\"\"\"\n    ans = ctx.brain.think(text)\n    return ans or \"Мозг промолчал.\"\n",
+  "phrase": "что думаешь о кофе",
+  "expect": "мозг думает",
+  "pre": [],
+  "verified": true
+ },
+ {
+  "triggers": [],
+  "id": "fn.board",
+  "title": "Как спросить плату из функции",
+  "ask": [
+   "плата в функции app lab",
+   "ctx.boards.ask",
+   "спросить плату приложение"
+  ],
+  "text": "ctx.boards.state() — какие платы на связи; ctx.boards.ask(q) — вопрос плате (ждёт до минуты). Если плат нет — скажите об этом.",
+  "code": "def run(text, ctx):\n    \"\"\"App Lab: спросить плату\"\"\"\n    if not ctx.boards.state():\n        return \"Плат на связи нет.\"\n    return \"Плата: \" + ctx.boards.ask(text)\n",
+  "phrase": "что с платой",
+  "expect": "Плата: плата ответила",
+  "pre": [],
+  "verified": true
+ },
+ {
+  "triggers": [],
+  "id": "fn.llm",
+  "title": "Как попросить свою LLM написать по фактам",
+  "ask": [
+   "llm в функции app lab",
+   "ctx.llm.write",
+   "своя llm пишет по фактам приложение"
+  ],
+  "text": "ctx.llm.write(тема, facts) -> текст или \"\" (LLM не смогла). Всегда держите запасной ответ из самих фактов.",
+  "code": "def run(text, ctx):\n    \"\"\"App Lab: пересказ фактов\"\"\"\n    facts = \"кофе бодрит; чай мягче\"\n    out = ctx.llm.write(text, facts)\n    return out or facts\n",
+  "phrase": "расскажи про кофе",
+  "expect": "LLM",
+  "pre": [],
+  "verified": true
+ },
+ {
+  "triggers": [],
+  "id": "fn.calc",
+  "title": "Как считать в функции",
+  "ask": [
+   "калькулятор в функции app lab",
+   "ctx.calc",
+   "посчитать выражение приложение"
+  ],
+  "text": "ctx.calc(выражение) -> строка с ответом или None (не математика).",
+  "code": "def run(text, ctx):\n    \"\"\"App Lab: посчитать\"\"\"\n    r = ctx.calc(text)\n    return \"Получилось: %s\" % r if r is not None else \"Это не выражение.\"\n",
+  "phrase": "2+2",
+  "expect": "Получилось: 4",
+  "pre": [],
+  "verified": true
+ },
+ {
+  "triggers": [],
+  "id": "fn.docs",
+  "title": "Как искать по подключённым источникам (вики, Confluence)",
+  "ask": [
+   "источники в функции app lab",
+   "ctx.docs.search",
+   "confluence вики приложение"
+  ],
+  "text": "ctx.docs.search(q, n) ищет по источникам-ссылкам из настроек, ctx.docs.page(q) читает лучшую страницу.",
+  "code": "def run(text, ctx):\n    \"\"\"App Lab: найти в документации\"\"\"\n    page = ctx.docs.page(text)\n    if not page:\n        return \"В источниках не нашла.\"\n    return \"%s\\n%s\" % (page[\"title\"], page[\"text\"][:300])\n",
+  "phrase": "регламент отпуска",
+  "expect": "текст дока",
+  "pre": [],
+  "verified": true
+ },
+ {
+  "triggers": [],
+  "id": "fn.errors",
+  "title": "Как не выдумывать и честно отвечать при ошибке",
+  "ask": [
+   "ошибки в функции app lab",
+   "честный ответ приложение",
+   "try except функция не нашла",
+   "не выдумывать факты"
+  ],
+  "text": "Правила честности: нашла — показываю с источником; не нашла — «не нашла»; сеть упала — пишу почему, одной строкой.\nНе печатайте трассировку, не придумывайте цены и числа. Покупать, платить, вводить пароли и писать от имени владельца функция не должна — только искать, считать, показывать.",
+  "code": "def run(text, ctx):\n    \"\"\"App Lab: безопасный поиск\"\"\"\n    try:\n        hits = ctx.web.search(text, 1)\n    except Exception as e:\n        return \"Не получилось (%s). Попробуйте позже.\" % type(e).__name__\n    return hits[0][\"url\"] if hits else \"Ничего не нашла.\"\n",
+  "phrase": "найди что-нибудь",
+  "expect": "https://example.org/1",
+  "pre": [],
+  "verified": true
+ },
+ {
+  "triggers": [],
+  "id": "fn.commands",
+  "title": "Как сделать функцию с несколькими командами",
+  "ask": [
+   "несколько команд в функции app lab",
+   "диспетчер команд приложение",
+   "добавь покажи список приложение"
+  ],
+  "text": "Одно приложение может понимать несколько команд: разбирайте первое слово и держите данные в ctx.state.",
+  "code": "def run(text, ctx):\n    \"\"\"App Lab: список дел\"\"\"\n    items = ctx.state.setdefault(\"items\", [])\n    low = text.lower().strip()\n    if low.startswith(\"добавь\"):\n        items.append(text[6:].strip())\n        ctx.save_state()\n        return \"Добавила. Всего: %d\" % len(items)\n    if low.startswith(\"покажи\"):\n        return \"\\n\".join(\"%d. %s\" % (i + 1, t) for i, t in enumerate(items)) or \"Список пуст.\"\n    return \"Команды: добавь <дело>, покажи\"\n",
+  "phrase": "покажи",
+  "expect": "1. молоко",
+  "pre": [
+   "добавь молоко"
+  ],
+  "verified": true
+ },
+ {
+  "triggers": [],
+  "id": "fn.names",
+  "title": "Как назвать функцию и записать app.json",
+  "ask": [
+   "имя функции app lab",
+   "app.json поля приложения",
+   "id приложения app lab"
+  ],
+  "text": "id — латиница, цифры, _ и - (2–40 знаков); если не задан, берётся из имени (транслит). Поля app.json: name, icon, desc (одна фраза — она же задача «App Lab: …» для обучения LLM), triggers, examples, chat (кнопка в окне чата), enabled, origin.\nОписание пишите как задачу: «найти цену товара в интернете» — по нему своя LLM учится писать такие приложения.",
+  "code": "",
+  "phrase": "",
+  "expect": "",
+  "pre": [],
+  "verified": false
+ },
+ {
+  "triggers": [],
+  "id": "brick.what",
+  "title": "Что такое кирпичики App Lab",
+  "ask": [
+   "что такое кирпичики app lab",
+   "список кирпичиков",
+   "кирпичик это"
+  ],
+  "text": "Кирпичик — готовое действие облака с параметрами: board.ask (спросить плату), brain.think, know.kb/wiki/dict, math.formula/model, mem.remember/recall/list, logic.set/template/if/wait, out.result/note и др. (полный список: ctx.bricks()).\nРаньше приложение собиралось стопкой кирпичиков; теперь всё — Python, а кирпичик зовётся из кода: ctx.brick(\"тип\", параметр=значение). Старые приложения из кирпичиков при старте превращены в Python.",
+  "code": "def run(text, ctx):\n    \"\"\"App Lab: каталог кирпичиков\"\"\"\n    return \", \".join(b[\"id\"] for b in ctx.bricks())\n",
+  "phrase": "кирпичики",
+  "expect": "logic.if",
+  "pre": [],
+  "verified": true
+ },
+ {
+  "triggers": [],
+  "id": "brick.call",
+  "title": "Как вызвать кирпичик из функции",
+  "ask": [
+   "вызвать кирпичик в функции",
+   "ctx.brick",
+   "кирпичик logic.template"
+  ],
+  "text": "ctx.brick(тип, **параметры) возвращает вывод строкой; ошибка кирпичика — исключение RuntimeError (ловите try/except).\nПараметры — как в окне кирпичика: logic.template принимает template, logic.if — needle, then, else.",
+  "code": "def run(text, ctx):\n    \"\"\"App Lab: собрать текст кирпичиком\"\"\"\n    return ctx.brick(\"logic.template\", template=\"Вы сказали: \" + text)\n",
+  "phrase": "привет",
+  "expect": "Вы сказали: привет",
+  "pre": [],
+  "verified": true
+ },
+ {
+  "triggers": [],
+  "id": "brick.chain",
+  "title": "Как соединять кирпичики в цепочку",
+  "ask": [
+   "цепочка кирпичиков",
+   "last переменная кирпичик",
+   "соединить кирпичики app lab",
+   "var имя кирпичик"
+  ],
+  "text": "Вывод каждого кирпичика попадает в {last} следующего; ещё его можно сохранить под именем: ctx.brick(..., var=\"имя\") и брать как {имя}.\nctx.brick_reset() начинает цепочку с нуля. Это то же, что стопка кирпичиков, только в Python.",
+  "code": "def run(text, ctx):\n    \"\"\"App Lab: цепочка из двух кирпичиков\"\"\"\n    ctx.brick_reset()\n    ctx.brick(\"logic.template\", template=text.upper(), var=\"шум\")\n    return ctx.brick(\"logic.template\", template=\"Было: {last}! (ещё раз: {шум})\")\n",
+  "phrase": "тише",
+  "expect": "Было: ТИШЕ!",
+  "pre": [],
+  "verified": true
+ },
+ {
+  "triggers": [],
+  "id": "brick.if",
+  "title": "Как сделать «если… то… иначе» кирпичиком",
+  "ask": [
+   "условие кирпичик logic.if",
+   "если то иначе приложение",
+   "ветвление в функции app lab"
+  ],
+  "text": "logic.if смотрит в {last}: есть слово needle — вернёт then, иначе else. В обычном Python проще писать if, но кирпичик полезен, когда цепочку собирает мозг.",
+  "code": "def run(text, ctx):\n    \"\"\"App Lab: если слово есть\"\"\"\n    ctx.brick_reset()\n    ctx.brick(\"logic.template\", template=text)\n    return ctx.brick(\"logic.if\", needle=\"срочно\", then=\"Это срочно!\", **{\"else\": \"Не срочно.\"})\n",
+  "phrase": "это срочно",
+  "expect": "Это срочно!",
+  "pre": [],
+  "verified": true
+ },
+ {
+  "triggers": [],
+  "id": "brick.own",
+  "title": "Как написать свой кирпичик",
+  "ask": [
+   "свой кирпичик app lab",
+   "написать кирпичик функцию помощник",
+   "новый кирпичик python"
+  ],
+  "text": "Свой кирпичик — маленькая чистая функция внутри main.py: принимает параметры, возвращает строку, ничего не печатает и не меняет файлов. Назовите brick_<что-делает>, опишите в docstring один раз.\nТак её легко проверить отдельно, переиспользовать в run() и (когда дойдёт до кода облака) перенести в applab.BRICKS как настоящий кирпичик. Новый кирпичик облака (applab.py: запись в BRICKS + функция _run_… + строка в _RUNNERS) добавляет разработчик в код — приложение само в реестр кирпичиков не пишет.",
+  "code": "def brick_greet(name):\n    \"\"\"Кирпичик: приветствие по имени.\"\"\"\n    return \"Здравствуйте, %s!\" % (name.strip().title() or \"друг\")\n\n\ndef brick_shout(s):\n    \"\"\"Кирпичик: громко.\"\"\"\n    return s.upper()\n\n\ndef run(text, ctx):\n    \"\"\"App Lab: громкое приветствие\"\"\"\n    return brick_shout(brick_greet(text))\n",
+  "phrase": "анна",
+  "expect": "ЗДРАВСТВУЙТЕ, АННА!",
+  "pre": [],
+  "verified": true
+ },
+ {
+  "triggers": [
+   "график",
+   "графики",
+   "построй график",
+   "нарисуй график"
+  ],
+  "id": "fn.graph",
+  "title": "Как нарисовать график функции в приложении",
+  "ask": [
+   "рисовать графики функций",
+   "график функции приложение app lab",
+   "построить график y=x^2",
+   "нарисуй график навык",
+   "ctx.draw.graph"
+  ],
+  "text": "Рисует график сам облачный движок: ctx.draw.graph(выражение, x0, x1) возвращает строку с картинкой [КАРТИНКА]<svg>[/КАРТИНКА] — чат её показывает.\nВыражение считается безопасно (белый список: + - * / ^, скобки, sin cos tan sqrt log exp pi), exec и eval не используются.\nПриложению остаётся разобрать фразу: выражение после «y=» или слова «график» и границы «от a до b». Нечитаемое выражение — честная подсказка вместо трассировки.\nНе берите из интернета код на tkinter/matplotlib: в облаке нет окон, а сторонние библиотеки могут отсутствовать.",
+  "code": "import re\n\n\ndef run(text, ctx):\n    \"\"\"App Lab: рисовать графики функций\"\"\"\n    low = text.lower().replace(\",\", \".\").replace(\"²\", \"^2\").replace(\"π\", \"pi\")\n    m = re.search(r\"y\\s*=\\s*([^а-я]+?)(?:\\s+от\\s|$)\", low) or re.search(r\"график[а-я]*\\s+(?:функции\\s+)?([^а-я]+?)(?:\\s+от\\s|$)\", low)\n    if not m:\n        return \"Скажите, например: «график y=x^2 от -3 до 3» или «график sin(x)».\"\n    expr = m.group(1).strip().rstrip(\".!?\")\n    rng = re.search(r\"от\\s*(-?\\d+(?:\\.\\d+)?)\\s*до\\s*(-?\\d+(?:\\.\\d+)?)\", low)\n    x0, x1 = (float(rng.group(1)), float(rng.group(2))) if rng else (-6.0, 6.0)\n    try:\n        return ctx.draw.graph(expr, x0, x1)\n    except Exception as e:\n        return \"Не получилось построить график: %s\" % e\n",
+  "phrase": "график y=x^2 от -3 до 3",
+  "expect": "[КАРТИНКА]",
+  "pre": [],
+  "verified": true
+ },
+ {
+  "triggers": [],
+  "id": "bp.how",
+  "title": "Как Star Gate собирает приложение из кирпичиков",
+  "ask": [
+   "собрать приложение из кирпичиков",
+   "как мозг пишет приложение по задаче",
+   "планировщик кирпичиков",
+   "цепочка кирпичиков мозга"
+  ],
+  "text": "У мозга-12 есть библиотека проверенных кирпичиков: функции b_<имя>(x, ctx) с этапом (1 разбор, 2 извлечение, 3 фильтр, 4 подсчёт, 5 сравнение, 6 оформление, 7 сохранение), типом входа и выхода и словами задачи.\nПо задаче он выбирает кирпичики по словам (лучший на этап), ставит по этапам, сам вставляет переходники (текст → строки, записи → подсчёт, любое → отчёт), проверяет цепочку запуском на образце данных и сохраняет приложение ВЫКЛЮЧЕННЫМ.\nПример: «проверка инцидента: неудачные входы по ssh больше 3 раз, сверить со списком блокировок» → строки → неудачные входы → подсчёт по IP → порог → список блокировок → отчёт → чек-лист.\nЕсли в сообщении нет данных (журнала, письма), приложение показывает работу на образце. Честно: это сборка известных блоков по словам, не понимание смысла.",
+  "code": "",
+  "phrase": "",
+  "expect": "",
+  "pre": [],
+  "verified": false
+ },
+ {
+  "triggers": [],
+  "id": "bp.own",
+  "title": "Как написать свой кирпичик, который мозг возьмёт в библиотеку",
+  "ask": [
+   "свой кирпичик для мозга",
+   "добавить кирпичик в библиотеку мозга",
+   "формат кирпичика мозга",
+   "научить мозг новому кирпичику"
+  ],
+  "text": "Функция b_<имя>(x, ctx) в приложении App Lab с docstring ровно такого вида:\n«Кирпичик: название | этап: 3 | вход: lines | выход: lines | слова: слово1, слово2».\nТипы: text, lines, records, list, counts, report. Когда вы ВКЛЮЧИТЕ это приложение, Star Gate сам добавит кирпичик в библиотеку и начнёт ставить его в цепочки по этим словам.\nИмпорты модуля приложения переносятся вместе с кирпичиком. Кирпичик должен быть чистой функцией: без input(), окон и сети в обход ctx.",
+  "code": "def b_only_errors(x, ctx):\n    \"\"\"Кирпичик: Только строки с ошибками | этап: 3 | вход: lines | выход: lines | слова: ошибк, error, сбой\"\"\"\n    return [s for s in x if \"error\" in s.lower() or \"ошибк\" in s.lower()]\n\n\ndef run(text, ctx):\n    \"\"\"App Lab: только строки с ошибками\"\"\"\n    lines = [s for s in str(text).splitlines() if s.strip()]\n    return \"\\n\".join(b_only_errors(lines, ctx)) or \"Ошибок нет.\"\n",
+  "phrase": "ok 1\nERROR disk full\nok 2",
+  "expect": "ERROR disk full",
+  "pre": [],
+  "verified": true
+ },
+ {
+  "triggers": [],
+  "id": "sec.ssh",
+  "title": "ИБ: неудачные входы и подбор паролей по журналу",
+  "ask": [
+   "проверка инцидента: неудачные входы по ssh, больше 3 раз, сверить со списком блокировок",
+   "ИБ: неудачные входы и подбор паролей по журналу"
+  ],
+  "text": "Собрано мозгом-12 из кирпичиков: Разбить на строки → Неудачные входы → Посчитать по значениям → Оставить выше порога → Сверить со списком блокировок → Оформить отчёт → Чек-лист реагирования на инцидент. Пришлите данные (журнал, письмо, текст) вместе с просьбой; без данных приложение покажет работу на образце.",
+  "code": "# Собрано мозгом-12 из кирпичиков: Разбить на строки → Неудачные входы → Посчитать по значениям → Оставить выше порога → Сверить со списком блокировок → Оформить отчёт → Чек-лист реагирования на инцидент\n# Данные — текст сообщения (журнал, письмо, список). Во фразе данных нет — показывается пример на SAMPLE.\n\n# --- кирпичик «Разбить на строки» (встроенный)\ndef b_lines(x, ctx):\n    \"\"\"Текст -> непустые строки.\"\"\"\n    if isinstance(x, list):\n        return [str(s) for s in x if str(s).strip()]\n    return [s.rstrip() for s in str(x).splitlines() if s.strip()]\n\n\n# --- кирпичик «Неудачные входы» (встроенный)\nimport re as _re\n_FAIL = _re.compile(r\"(?:Failed password for (?:invalid user )?(?P<u>\\S+) from (?P<ip>[\\d.]+))\"\n                    r\"|(?:authentication failure.*?rhost=(?P<ip2>[\\d.]+)(?:.*?user=(?P<u2>\\S+))?)\"\n                    r\"|(?:Invalid user (?P<u3>\\S+) from (?P<ip3>[\\d.]+))\"\n                    r\"|(?:(?:4625|неудачн\\w* вход\\w*).*?(?P<ip4>\\d{1,3}(?:\\.\\d{1,3}){3}))\", _re.I)\n\n\ndef b_failed_logins(x, ctx):\n    \"\"\"Строки журнала -> [{user, ip, line}] неудачных входов (sshd, PAM, Windows 4625).\"\"\"\n    out = []\n    for s in x:\n        m = _FAIL.search(s)\n        if m:\n            ip = m.group(\"ip\") or m.group(\"ip2\") or m.group(\"ip3\") or m.group(\"ip4\")\n            user = m.group(\"u\") or m.group(\"u2\") or m.group(\"u3\") or \"?\"\n            out.append({\"user\": user, \"ip\": ip, \"line\": s[:200]})\n    return out\n\n\n# --- кирпичик «Посчитать по значениям» (встроенный)\nfrom collections import Counter as _C\n\n\ndef b_count(x, ctx):\n    \"\"\"Список или записи -> [(значение, сколько раз)] по убыванию. У записей берётся ip, иначе user/type/первое поле.\"\"\"\n    vals = []\n    for r in x:\n        if isinstance(r, dict):\n            key = next((k for k in (\"ip\", \"user\", \"type\", \"url\") if k in r), None) or (list(r)[0] if r else \"\")\n            vals.append(str(r.get(key)))\n        else:\n            vals.append(str(r))\n    return _C(vals).most_common()\n\n\n# --- кирпичик «Оставить выше порога» (встроенный)\nimport re as _re\n\n\ndef b_threshold(x, ctx):\n    \"\"\"[(значение, n)] -> только n >= порога. Порог из фразы («больше 5», «от 3 раз»), иначе 3.\"\"\"\n    m = _re.search(r\"(?:больше|чаще|свыше|от|>=?)\\s*(\\d+)\", str(getattr(ctx, \"text\", \"\") or \"\"))\n    n = int(m.group(1)) + (1 if m and m.group(0).startswith((\"больше\", \"чаще\", \"свыше\", \">\")) and not m.group(0).startswith(\">=\") else 0) if m else 3\n    return [(k, c) for k, c in x if c >= n]\n\n\n# --- кирпичик «Сверить со списком блокировок» (встроенный)\nimport re as _re\n\n\ndef b_blocklist(x, ctx):\n    \"\"\"Значения (или [(значение, n)]) -> [{value, n, listed}]. Список блокировок: ctx.state[\"blocklist\"]\n    + адреса из фразы после «блок:»/«список:». «запомни блок: ...» пополняет список приложения.\"\"\"\n    text = str(getattr(ctx, \"text\", \"\") or \"\")\n    st = getattr(ctx, \"state\", None)\n    bl = set((st or {}).get(\"blocklist\", []))\n    m = _re.search(r\"(?:блок|список)\\w*\\s*:\\s*(.+)\", text, _re.I)\n    if m:\n        extra = set(_re.findall(r\"[\\w.:-]+\", m.group(1)))\n        bl |= extra\n        if st is not None and _re.search(r\"запомни\", text, _re.I):\n            st[\"blocklist\"] = sorted(set(st.get(\"blocklist\", [])) | extra)\n            try:\n                ctx.save_state()\n            except Exception:\n                pass\n    out = []\n    for r in x:\n        if isinstance(r, tuple):\n            v, n = r\n        elif isinstance(r, dict):\n            v, n = r.get(\"ip\") or r.get(\"value\") or r.get(\"url\"), 1\n        else:\n            v, n = r, 1\n        out.append({\"value\": str(v), \"n\": n, \"listed\": str(v) in bl})\n    return out\n\n\n# --- кирпичик «Оформить отчёт» (встроенный)\ndef b_report(x, ctx):\n    \"\"\"Любой результат -> читаемый текст (таблица записей, топ значений, список).\"\"\"\n    if isinstance(x, str):\n        return x\n    if not x:\n        return \"Ничего не найдено.\"\n    lines = []\n    for r in list(x)[:50]:\n        if isinstance(r, dict):\n            lines.append(\"• \" + \"; \".join(\"%s: %s\" % (k, v) for k, v in r.items() if k != \"line\"))\n        elif isinstance(r, tuple):\n            lines.append(\"• %s — %s\" % r)\n        else:\n            lines.append(\"• %s\" % r)\n    more = \"\\n…и ещё %d\" % (len(x) - 50) if len(x) > 50 else \"\"\n    return \"Найдено: %d\\n%s%s\" % (len(x), \"\\n\".join(lines), more)\n\n\n# --- кирпичик «Чек-лист реагирования на инцидент» (встроенный)\ndef b_checklist(x, ctx):\n    \"\"\"Отчёт -> отчёт + порядок действий при инциденте (по этапам: выявить, сдержать, устранить, восстановить, выводы).\"\"\"\n    steps = (\"1. Выявить: зафиксируйте время, источники (IP, учётки), сохраните журналы до изменений.\",\n             \"2. Сдержать: заблокируйте адреса в файрволе/fail2ban, смените пароли затронутых учёток, отключите лишний доступ.\",\n             \"3. Устранить: найдите вход злоумышленника (ключи SSH, cron, новые пользователи), закройте уязвимость.\",\n             \"4. Восстановить: верните сервисы, проверьте целостность, усилите мониторинг.\",\n             \"5. Выводы: запишите хронологию и меры в базу знаний, обновите правила.\")\n    return str(x).rstrip() + \"\\n\\nЧто делать:\\n\" + \"\\n\".join(steps)\n\n\nSAMPLE = 'Nov 26 10:01:02 srv sshd[811]: Failed password for root from 203.0.113.7 port 50312 ssh2\\nNov 26 10:01:05 srv sshd[811]: Failed password for root from 203.0.113.7 port 50313 ssh2\\nNov 26 10:01:09 srv sshd[812]: Failed password for invalid user admin from 203.0.113.7 port 50320 ssh2\\nNov 26 10:02:11 srv sshd[815]: Failed password for ivan from 198.51.100.23 port 41022 ssh2\\nNov 26 10:03:40 srv sshd[820]: Accepted password for ivan from 192.168.1.15 port 52100 ssh2\\nNov 26 10:04:01 srv sshd[822]: Failed password for root from 203.0.113.7 port 50400 ssh2\\nNov 26 10:04:30 srv sshd[823]: Failed password for root from 203.0.113.7 port 50401 ssh2\\nNov 26 10:05:12 srv sshd[830]: Failed password for test from 198.51.100.23 port 41100 ssh2'\n\n\ndef _chain(x, ctx):\n    x = b_lines(x, ctx)\n    x = b_failed_logins(x, ctx)\n    x = b_count(x, ctx)\n    x = b_threshold(x, ctx)\n    x = b_blocklist(x, ctx)\n    x = b_report(x, ctx)\n    x = b_checklist(x, ctx)\n    return x\n\n\ndef _empty(r):\n    return not r or str(r).startswith((\"Ничего не найдено\", \"Чисел нет\", \"Пришлите\"))\n\n\ndef run(text, ctx):\n    \"\"\"App Lab: ИБ: неудачные входы и подбор паролей по журналу\"\"\"\n    r = _chain(text, ctx)\n    if SAMPLE and \"\\n\" not in str(text) and _empty(r):\n        return \"Во фразе нет данных — показываю на образце (пришлите журнал или текст целиком):\\n\" + str(_chain(SAMPLE, ctx))\n    return r\n",
+  "phrase": "Nov 26 10:01:02 srv sshd[811]: Failed password for root from 203.0.113.7 port 50312 ssh2\nNov 26 10:01:05 srv sshd[811]: Failed password for root from 203.0.113.7 port 50313 ssh2\nNov 26 10:01:09 srv sshd[812]: Failed password for invalid user admin from 203.0.113.7 port 50320 ssh2\nNov 26 10:02:11 srv sshd[815]: Failed password for ivan from 198.51.100.23 port 41022 ssh2\nNov 26 10:03:40 srv sshd[820]: Accepted password for ivan from 192.168.1.15 port 52100 ssh2\nNov 26 10:04:01 srv sshd[822]: Failed password for root from 203.0.113.7 port 50400 ssh2\nNov 26 10:04:30 srv sshd[823]: Failed password for root from 203.0.113.7 port 50401 ssh2\nNov 26 10:05:12 srv sshd[830]: Failed password for test from 198.51.100.23 port 41100 ssh2",
+  "expect": "203.0.113.7",
+  "pre": [],
+  "verified": true
+ },
+ {
+  "triggers": [],
+  "id": "sec.phish",
+  "title": "ИБ: проверка ссылок из письма на фишинг",
+  "ask": [
+   "проверить ссылки в письме на фишинг",
+   "ИБ: проверка ссылок из письма на фишинг"
+  ],
+  "text": "Собрано мозгом-12 из кирпичиков: Найти ссылки → Подозрительные ссылки → Оформить отчёт. Пришлите данные (журнал, письмо, текст) вместе с просьбой; без данных приложение покажет работу на образце.",
+  "code": "# Собрано мозгом-12 из кирпичиков: Найти ссылки → Подозрительные ссылки → Оформить отчёт\n# Данные — текст сообщения (журнал, письмо, список). Во фразе данных нет — показывается пример на SAMPLE.\n\n# --- кирпичик «Найти ссылки» (встроенный)\nimport re as _re\n_URL = _re.compile(r\"(?:https?://|www\\.)[^\\s<>\\\"'«»]+\", _re.I)\n\n\ndef b_urls(x, ctx):\n    \"\"\"Текст -> ссылки (http/https/www), без хвостовой пунктуации.\"\"\"\n    s = \"\\n\".join(x) if isinstance(x, list) else str(x)\n    return [u.rstrip(\".,;:!?)\") for u in _URL.findall(s)]\n\n\n# --- кирпичик «Подозрительные ссылки» (встроенный)\nimport re as _re\n\n\ndef b_suspicious_urls(x, ctx):\n    \"\"\"Ссылки -> [{url, score, why}] по признакам фишинга (IP вместо имени, punycode, http,\n    @ в адресе, слова login/verify/secure, много поддоменов, сокращатели, длина).\"\"\"\n    out = []\n    for u in x:\n        low, why = str(u).lower(), []\n        host = _re.sub(r\"^(?:https?://)?\", \"\", low).split(\"/\")[0].split(\"@\")[-1]\n        if _re.fullmatch(r\"[\\d.]+(?::\\d+)?\", host):\n            why.append(\"IP вместо имени\")\n        if \"xn--\" in host:\n            why.append(\"punycode (похожие буквы)\")\n        if low.startswith(\"http://\"):\n            why.append(\"без https\")\n        if \"@\" in low.split(\"?\")[0]:\n            why.append(\"@ в адресе\")\n        if _re.search(r\"login|verify|secure|account|update|confirm|bank|pay|подтверд\", low):\n            why.append(\"слова-приманки\")\n        if host.count(\".\") >= 3:\n            why.append(\"много поддоменов\")\n        if host in (\"bit.ly\", \"clck.ru\", \"tinyurl.com\", \"goo.su\", \"t.co\"):\n            why.append(\"сокращатель ссылок\")\n        if len(low) > 90:\n            why.append(\"очень длинная\")\n        out.append({\"url\": u, \"score\": len(why), \"why\": \", \".join(why) or \"признаков нет\"})\n    return sorted(out, key=lambda r: -r[\"score\"])\n\n\n# --- кирпичик «Оформить отчёт» (встроенный)\ndef b_report(x, ctx):\n    \"\"\"Любой результат -> читаемый текст (таблица записей, топ значений, список).\"\"\"\n    if isinstance(x, str):\n        return x\n    if not x:\n        return \"Ничего не найдено.\"\n    lines = []\n    for r in list(x)[:50]:\n        if isinstance(r, dict):\n            lines.append(\"• \" + \"; \".join(\"%s: %s\" % (k, v) for k, v in r.items() if k != \"line\"))\n        elif isinstance(r, tuple):\n            lines.append(\"• %s — %s\" % r)\n        else:\n            lines.append(\"• %s\" % r)\n    more = \"\\n…и ещё %d\" % (len(x) - 50) if len(x) > 50 else \"\"\n    return \"Найдено: %d\\n%s%s\" % (len(x), \"\\n\".join(lines), more)\n\n\nSAMPLE = 'Письмо: срочно подтвердите вход https://secure-login.example-bank.xn--p1ai/verify и http://203.0.113.9/acc'\n\n\ndef _chain(x, ctx):\n    x = b_urls(x, ctx)\n    x = b_suspicious_urls(x, ctx)\n    x = b_report(x, ctx)\n    return x\n\n\ndef _empty(r):\n    return not r or str(r).startswith((\"Ничего не найдено\", \"Чисел нет\", \"Пришлите\"))\n\n\ndef run(text, ctx):\n    \"\"\"App Lab: ИБ: проверка ссылок из письма на фишинг\"\"\"\n    r = _chain(text, ctx)\n    if SAMPLE and \"\\n\" not in str(text) and _empty(r):\n        return \"Во фразе нет данных — показываю на образце (пришлите журнал или текст целиком):\\n\" + str(_chain(SAMPLE, ctx))\n    return r\n",
+  "phrase": "письмо: войдите http://203.0.113.9/login и https://ya.ru",
+  "expect": "IP вместо имени",
+  "pre": [],
+  "verified": true
+ },
+ {
+  "triggers": [],
+  "id": "sec.ioc",
+  "title": "ИБ: индикаторы компрометации из отчёта",
+  "ask": [
+   "найди индикаторы компрометации ioc",
+   "ИБ: индикаторы компрометации из отчёта"
+  ],
+  "text": "Собрано мозгом-12 из кирпичиков: Индикаторы компрометации (IOC) → Оформить отчёт. Пришлите данные (журнал, письмо, текст) вместе с просьбой; без данных приложение покажет работу на образце.",
+  "code": "# Собрано мозгом-12 из кирпичиков: Индикаторы компрометации (IOC) → Оформить отчёт\n# Данные — текст сообщения (журнал, письмо, список). Во фразе данных нет — показывается пример на SAMPLE.\n\n# --- кирпичик «Индикаторы компрометации (IOC)» (встроенный)\nimport re as _re\n\n\ndef b_ioc(x, ctx):\n    \"\"\"Текст -> [{type, value}]: хеши MD5/SHA1/SHA256, IPv4, домены, почта.\"\"\"\n    s = \"\\n\".join(x) if isinstance(x, list) else str(x)\n    out, seen = [], set()\n    pats = ((\"sha256\", r\"\\b[a-fA-F0-9]{64}\\b\"), (\"sha1\", r\"\\b[a-fA-F0-9]{40}\\b\"), (\"md5\", r\"\\b[a-fA-F0-9]{32}\\b\"),\n            (\"email\", r\"\\b[\\w.+-]+@[\\w-]+(?:\\.[\\w-]+)+\\b\"), (\"ip\", r\"(?<![\\d.])(?:\\d{1,3}\\.){3}\\d{1,3}(?![\\d.])\"),\n            (\"domain\", r\"\\b(?:[a-z0-9-]+\\.)+(?:ru|com|net|org|io|info|xyz|top|рф|xn--p1ai)\\b\"))\n    for t, p in pats:\n        for v in _re.findall(p, s, _re.I):\n            if v.lower() not in seen:\n                seen.add(v.lower())\n                out.append({\"type\": t, \"value\": v})\n    return out\n\n\n# --- кирпичик «Оформить отчёт» (встроенный)\ndef b_report(x, ctx):\n    \"\"\"Любой результат -> читаемый текст (таблица записей, топ значений, список).\"\"\"\n    if isinstance(x, str):\n        return x\n    if not x:\n        return \"Ничего не найдено.\"\n    lines = []\n    for r in list(x)[:50]:\n        if isinstance(r, dict):\n            lines.append(\"• \" + \"; \".join(\"%s: %s\" % (k, v) for k, v in r.items() if k != \"line\"))\n        elif isinstance(r, tuple):\n            lines.append(\"• %s — %s\" % r)\n        else:\n            lines.append(\"• %s\" % r)\n    more = \"\\n…и ещё %d\" % (len(x) - 50) if len(x) > 50 else \"\"\n    return \"Найдено: %d\\n%s%s\" % (len(x), \"\\n\".join(lines), more)\n\n\nSAMPLE = 'Отчёт: файл 44d88612fea8a8f36de82e1278abb02f скачан с update-check.xyz (203.0.113.50), письмо от it-support@mail-secure.top'\n\n\ndef _chain(x, ctx):\n    x = b_ioc(x, ctx)\n    x = b_report(x, ctx)\n    return x\n\n\ndef _empty(r):\n    return not r or str(r).startswith((\"Ничего не найдено\", \"Чисел нет\", \"Пришлите\"))\n\n\ndef run(text, ctx):\n    \"\"\"App Lab: ИБ: индикаторы компрометации из отчёта\"\"\"\n    r = _chain(text, ctx)\n    if SAMPLE and \"\\n\" not in str(text) and _empty(r):\n        return \"Во фразе нет данных — показываю на образце (пришлите журнал или текст целиком):\\n\" + str(_chain(SAMPLE, ctx))\n    return r\n",
+  "phrase": "файл 44d88612fea8a8f36de82e1278abb02f с evil-update.xyz\nадрес 203.0.113.50",
+  "expect": "md5",
+  "pre": [],
+  "verified": true
+ },
+ {
+  "triggers": [],
+  "id": "sec.password",
+  "title": "ИБ: проверка надёжности пароля",
+  "ask": [
+   "проверь надёжность пароля",
+   "ИБ: проверка надёжности пароля"
+  ],
+  "text": "Собрано мозгом-12 из кирпичиков: Проверить надёжность пароля. Пришлите данные (журнал, письмо, текст) вместе с просьбой; без данных приложение покажет работу на образце.",
+  "code": "# Собрано мозгом-12 из кирпичиков: Проверить надёжность пароля\n# Данные — текст сообщения (журнал, письмо, список). Во фразе данных нет — показывается пример на SAMPLE.\n\n# --- кирпичик «Проверить надёжность пароля» (встроенный)\nimport math as _m\nimport re as _re\n\n\ndef b_password(x, ctx):\n    \"\"\"Фраза с паролем (после «пароль» или в кавычках) -> оценка: длина, наборы символов, энтропия, советы. Пароль не сохраняется.\"\"\"\n    s = str(x)\n    m = _re.search(r\"[«\\\"']([^»\\\"']+)[»\\\"']\", s) or _re.search(r\"парол\\w*\\s*[:\\-]?\\s*(\\S+)\\s*$\", s, _re.I)\n    if not m:\n        return \"Пришлите пароль в кавычках: проверь пароль «...». Я его не сохраняю.\"\n    p = m.group(1)\n    pools = [(r\"[a-z]\", 26), (r\"[A-Z]\", 26), (r\"\\d\", 10), (r\"[а-яё]\", 33), (r\"[А-ЯЁ]\", 33), (r\"[^\\w]\", 32)]\n    size = sum(n for rx, n in pools if _re.search(rx, p))\n    bits = len(p) * _m.log2(size or 1)\n    tips = []\n    if len(p) < 12:\n        tips.append(\"длина от 12 символов\")\n    if not _re.search(r\"\\d\", p):\n        tips.append(\"добавьте цифры\")\n    if not _re.search(r\"[^\\w]\", p):\n        tips.append(\"добавьте спецсимволы\")\n    if _re.search(r\"(.)\\1\\1\", p) or p.lower() in (\"password\", \"qwerty\", \"123456\", \"пароль\", \"admin\"):\n        tips.append(\"уберите повторы и словарные слова\")\n    level = \"слабый\" if bits < 40 else \"средний\" if bits < 70 else \"сильный\"\n    return \"Пароль: %s (длина %d, ~%d бит).%s\" % (level, len(p), bits, (\" Советы: \" + \"; \".join(tips) + \".\") if tips else \"\")\n\n\nSAMPLE = 'проверь пароль «Admin2024»'\n\n\ndef _chain(x, ctx):\n    x = b_password(x, ctx)\n    return x\n\n\ndef _empty(r):\n    return not r or str(r).startswith((\"Ничего не найдено\", \"Чисел нет\", \"Пришлите\"))\n\n\ndef run(text, ctx):\n    \"\"\"App Lab: ИБ: проверка надёжности пароля\"\"\"\n    r = _chain(text, ctx)\n    if SAMPLE and \"\\n\" not in str(text) and _empty(r):\n        return \"Во фразе нет данных — показываю на образце (пришлите журнал или текст целиком):\\n\" + str(_chain(SAMPLE, ctx))\n    return r\n",
+  "phrase": "проверь пароль «qwerty»",
+  "expect": "слабый",
+  "pre": [],
+  "verified": true
+ },
+ {
+  "triggers": [],
+  "id": "sec.ips",
+  "title": "Журнал: какие внешние IP и сколько раз",
+  "ask": [
+   "посчитай сколько раз каждый ip адрес, только внешние",
+   "Журнал: какие внешние IP и сколько раз"
+  ],
+  "text": "Собрано мозгом-12 из кирпичиков: Найти IP-адреса → Только внешние IP → Посчитать по значениям → Оформить отчёт. Пришлите данные (журнал, письмо, текст) вместе с просьбой; без данных приложение покажет работу на образце.",
+  "code": "# Собрано мозгом-12 из кирпичиков: Найти IP-адреса → Только внешние IP → Посчитать по значениям → Оформить отчёт\n# Данные — текст сообщения (журнал, письмо, список). Во фразе данных нет — показывается пример на SAMPLE.\n\n# --- кирпичик «Найти IP-адреса» (встроенный)\nimport re as _re\n_IP = _re.compile(r\"(?<![\\d.])(?:\\d{1,3}\\.){3}\\d{1,3}(?![\\d.])\")\n\n\ndef b_ips(x, ctx):\n    \"\"\"Текст или строки -> IPv4-адреса (каждый октет 0..255), по порядку появления.\"\"\"\n    s = \"\\n\".join(x) if isinstance(x, list) else str(x)\n    return [ip for ip in _IP.findall(s) if all(0 <= int(p) <= 255 for p in ip.split(\".\"))]\n\n\n# --- кирпичик «Только внешние IP» (встроенный)\nimport ipaddress as _ia\n\n\ndef b_public_only(x, ctx):\n    \"\"\"IP-адреса -> только публичные (без 10.x, 192.168.x, 127.x и т.п.).\"\"\"\n    out = []\n    for v in x:\n        try:\n            if _ia.ip_address(str(v)).is_global:\n                out.append(v)\n        except ValueError:\n            pass\n    return out\n\n\n# --- кирпичик «Посчитать по значениям» (встроенный)\nfrom collections import Counter as _C\n\n\ndef b_count(x, ctx):\n    \"\"\"Список или записи -> [(значение, сколько раз)] по убыванию. У записей берётся ip, иначе user/type/первое поле.\"\"\"\n    vals = []\n    for r in x:\n        if isinstance(r, dict):\n            key = next((k for k in (\"ip\", \"user\", \"type\", \"url\") if k in r), None) or (list(r)[0] if r else \"\")\n            vals.append(str(r.get(key)))\n        else:\n            vals.append(str(r))\n    return _C(vals).most_common()\n\n\n# --- кирпичик «Оформить отчёт» (встроенный)\ndef b_report(x, ctx):\n    \"\"\"Любой результат -> читаемый текст (таблица записей, топ значений, список).\"\"\"\n    if isinstance(x, str):\n        return x\n    if not x:\n        return \"Ничего не найдено.\"\n    lines = []\n    for r in list(x)[:50]:\n        if isinstance(r, dict):\n            lines.append(\"• \" + \"; \".join(\"%s: %s\" % (k, v) for k, v in r.items() if k != \"line\"))\n        elif isinstance(r, tuple):\n            lines.append(\"• %s — %s\" % r)\n        else:\n            lines.append(\"• %s\" % r)\n    more = \"\\n…и ещё %d\" % (len(x) - 50) if len(x) > 50 else \"\"\n    return \"Найдено: %d\\n%s%s\" % (len(x), \"\\n\".join(lines), more)\n\n\nSAMPLE = 'Подключения: 8.8.8.8, 10.0.0.5, 203.0.113.7, 8.8.8.8'\n\n\ndef _chain(x, ctx):\n    x = b_ips(x, ctx)\n    x = b_public_only(x, ctx)\n    x = b_count(x, ctx)\n    x = b_report(x, ctx)\n    return x\n\n\ndef _empty(r):\n    return not r or str(r).startswith((\"Ничего не найдено\", \"Чисел нет\", \"Пришлите\"))\n\n\ndef run(text, ctx):\n    \"\"\"App Lab: Журнал: какие внешние IP и сколько раз\"\"\"\n    r = _chain(text, ctx)\n    if SAMPLE and \"\\n\" not in str(text) and _empty(r):\n        return \"Во фразе нет данных — показываю на образце (пришлите журнал или текст целиком):\\n\" + str(_chain(SAMPLE, ctx))\n    return r\n",
+  "phrase": "8.8.8.8 ok\n10.0.0.1 ok\n8.8.8.8 again\n1.1.1.1 x",
+  "expect": "8.8.8.8 — 2",
+  "pre": [],
+  "verified": true
+ },
+ {
+  "triggers": [],
+  "id": "log.timeline",
+  "title": "Журнал: хронология событий",
+  "ask": [
+   "хронология событий в журнале",
+   "Журнал: хронология событий"
+  ],
+  "text": "Собрано мозгом-12 из кирпичиков: Разбить на строки → Хронология событий → Оформить отчёт. Пришлите данные (журнал, письмо, текст) вместе с просьбой; без данных приложение покажет работу на образце.",
+  "code": "# Собрано мозгом-12 из кирпичиков: Разбить на строки → Хронология событий → Оформить отчёт\n# Данные — текст сообщения (журнал, письмо, список). Во фразе данных нет — показывается пример на SAMPLE.\n\n# --- кирпичик «Разбить на строки» (встроенный)\ndef b_lines(x, ctx):\n    \"\"\"Текст -> непустые строки.\"\"\"\n    if isinstance(x, list):\n        return [str(s) for s in x if str(s).strip()]\n    return [s.rstrip() for s in str(x).splitlines() if s.strip()]\n\n\n# --- кирпичик «Хронология событий» (встроенный)\nimport re as _re\n_T = _re.compile(r\"(\\d{4}-\\d{2}-\\d{2}[ T]\\d{2}:\\d{2}(?::\\d{2})?|[A-Z][a-z]{2}\\s+\\d{1,2}\\s+\\d{2}:\\d{2}:\\d{2}|\\d{2}:\\d{2}:\\d{2})\")\n\n\ndef b_timeline(x, ctx):\n    \"\"\"Строки -> [{time, event}] по порядку времени (строки без времени отбрасываются).\"\"\"\n    out = []\n    for s in x:\n        m = _T.search(s)\n        if m:\n            out.append({\"time\": m.group(1), \"event\": s[m.end():].strip()[:160]})\n    return sorted(out, key=lambda r: r[\"time\"])\n\n\n# --- кирпичик «Оформить отчёт» (встроенный)\ndef b_report(x, ctx):\n    \"\"\"Любой результат -> читаемый текст (таблица записей, топ значений, список).\"\"\"\n    if isinstance(x, str):\n        return x\n    if not x:\n        return \"Ничего не найдено.\"\n    lines = []\n    for r in list(x)[:50]:\n        if isinstance(r, dict):\n            lines.append(\"• \" + \"; \".join(\"%s: %s\" % (k, v) for k, v in r.items() if k != \"line\"))\n        elif isinstance(r, tuple):\n            lines.append(\"• %s — %s\" % r)\n        else:\n            lines.append(\"• %s\" % r)\n    more = \"\\n…и ещё %d\" % (len(x) - 50) if len(x) > 50 else \"\"\n    return \"Найдено: %d\\n%s%s\" % (len(x), \"\\n\".join(lines), more)\n\n\nSAMPLE = 'Nov 26 10:01:02 srv sshd[811]: Failed password for root from 203.0.113.7 port 50312 ssh2\\nNov 26 10:01:05 srv sshd[811]: Failed password for root from 203.0.113.7 port 50313 ssh2\\nNov 26 10:01:09 srv sshd[812]: Failed password for invalid user admin from 203.0.113.7 port 50320 ssh2\\nNov 26 10:02:11 srv sshd[815]: Failed password for ivan from 198.51.100.23 port 41022 ssh2\\nNov 26 10:03:40 srv sshd[820]: Accepted password for ivan from 192.168.1.15 port 52100 ssh2\\nNov 26 10:04:01 srv sshd[822]: Failed password for root from 203.0.113.7 port 50400 ssh2\\nNov 26 10:04:30 srv sshd[823]: Failed password for root from 203.0.113.7 port 50401 ssh2\\nNov 26 10:05:12 srv sshd[830]: Failed password for test from 198.51.100.23 port 41100 ssh2'\n\n\ndef _chain(x, ctx):\n    x = b_lines(x, ctx)\n    x = b_timeline(x, ctx)\n    x = b_report(x, ctx)\n    return x\n\n\ndef _empty(r):\n    return not r or str(r).startswith((\"Ничего не найдено\", \"Чисел нет\", \"Пришлите\"))\n\n\ndef run(text, ctx):\n    \"\"\"App Lab: Журнал: хронология событий\"\"\"\n    r = _chain(text, ctx)\n    if SAMPLE and \"\\n\" not in str(text) and _empty(r):\n        return \"Во фразе нет данных — показываю на образце (пришлите журнал или текст целиком):\\n\" + str(_chain(SAMPLE, ctx))\n    return r\n",
+  "phrase": "10:05:00 вход\n09:00:01 старт",
+  "expect": "старт",
+  "pre": [],
+  "verified": true
+ },
+ {
+  "triggers": [],
+  "id": "data.stats",
+  "title": "Данные: статистика чисел из текста",
+  "ask": [
+   "статистика чисел, среднее",
+   "Данные: статистика чисел из текста"
+  ],
+  "text": "Собрано мозгом-12 из кирпичиков: Найти числа → Статистика чисел. Пришлите данные (журнал, письмо, текст) вместе с просьбой; без данных приложение покажет работу на образце.",
+  "code": "# Собрано мозгом-12 из кирпичиков: Найти числа → Статистика чисел\n# Данные — текст сообщения (журнал, письмо, список). Во фразе данных нет — показывается пример на SAMPLE.\n\n# --- кирпичик «Найти числа» (встроенный)\nimport re as _re\n\n\ndef b_numbers(x, ctx):\n    \"\"\"Текст -> числа (запятая — десятичный разделитель).\"\"\"\n    s = \"\\n\".join(x) if isinstance(x, list) else str(x)\n    return [float(v.replace(\",\", \".\")) for v in _re.findall(r\"-?\\d+(?:[.,]\\d+)?\", s)]\n\n\n# --- кирпичик «Статистика чисел» (встроенный)\ndef b_stats(x, ctx):\n    \"\"\"Числа -> строка: количество, минимум, максимум, среднее, сумма.\"\"\"\n    v = [float(a) for a in x]\n    if not v:\n        return \"Чисел нет.\"\n    return \"Чисел: %d; минимум %g; максимум %g; среднее %.4g; сумма %g\" % (len(v), min(v), max(v), sum(v) / len(v), sum(v))\n\n\nSAMPLE = 'Температура за день: 21,5 22 23,4 19 18,7'\n\n\ndef _chain(x, ctx):\n    x = b_numbers(x, ctx)\n    x = b_stats(x, ctx)\n    return x\n\n\ndef _empty(r):\n    return not r or str(r).startswith((\"Ничего не найдено\", \"Чисел нет\", \"Пришлите\"))\n\n\ndef run(text, ctx):\n    \"\"\"App Lab: Данные: статистика чисел из текста\"\"\"\n    r = _chain(text, ctx)\n    if SAMPLE and \"\\n\" not in str(text) and _empty(r):\n        return \"Во фразе нет данных — показываю на образце (пришлите журнал или текст целиком):\\n\" + str(_chain(SAMPLE, ctx))\n    return r\n",
+  "phrase": "замеры: 1 2 3",
+  "expect": "среднее 2",
+  "pre": [],
+  "verified": true
+ },
+ {
+  "triggers": [],
+  "id": "bp.tool",
+  "title": "Инструмент кирпичиков и автошаблоны",
+  "ask": [
+   "инструмент кирпичиков",
+   "написать кирпичик в библиотеку",
+   "автогенерация шаблонов",
+   "шаблоны цепочек кирпичиков"
+  ],
+  "text": "App Lab → «🧱 Кирпичики мозга-12 и шаблоны-цепочки»: «＋ Новый кирпичик» — id, название, этап (1–7), вход и выход, слова задачи, код b_<id>(x, ctx), тест (assert) и образец данных.\n«▶ Проверить» — синтаксис, запрещённое (subprocess, eval, open…) и тест в песочнице; «💾 Сохранить» — в библиотеку, и мозг сразу ставит его в цепочки.\n«⚙ Сгенерировать шаблоны» — мозг перебирает цепочки по этапам и типам (не смешивая ИБ, данные и железо), собирает каждую, запускает на образце и оставляет рабочие; «→ в App Lab» делает из шаблона приложение (выключенным).\nВ чате «Код»: «какие кирпичики», «шаблоны», «сгенерируй шаблоны», «напиши кирпичик …» (кирпичик по уроку попадает и в библиотеку). API: GET/POST /api/bricks.",
+  "code": "",
+  "phrase": "",
+  "expect": "",
+  "pre": [],
+  "verified": false
+ },
+ {
+  "triggers": [],
+  "id": "hw.how",
+  "title": "Аппаратный уровень: выводы платы из приложения",
+  "ask": [
+   "аппаратный уровень",
+   "управлять выводами платы",
+   "ctx.boards.hw",
+   "включить светодиод на плате",
+   "прочитать датчик платы",
+   "пин платы"
+  ],
+  "text": "ctx.boards.hw(\"w D7 1; a A5\") — команды микроконтроллеру платы через задание (плата 2.111+, настройка hw_on). Свободные выводы: D5 и D7 (цифровые) и A5 (АЦП 0..1023); остальные заняты мозгом (D9 — речь, D6 — слова; ШИМ поэтому недоступен) и отклоняются дважды — в Python платы и в скетче.\nКоманды: mode P in|out|pullup, w P 0|1, r P, a A5, pulse P мс (до 500), pins. Ответ: «команда → ok:значение».\nНа плате то же — команда чата «/пин w D7 1». Кирпичики: «Прочитать выводы платы», «Включить/выключить вывод», «Правило: порог → вывод».",
+  "code": "def run(text, ctx):\n    \"\"\"App Lab: прочитать датчик A5\"\"\"\n    out = ctx.boards.hw(\"a A5\")\n    return \"Датчик A5: \" + out.split(\"ok:\")[-1].strip() if \"ok:\" in out else \"Плата не ответила: \" + out\n",
+  "phrase": "прочитай датчик",
+  "expect": "Датчик A5: 512",
+  "pre": [],
+  "verified": true
+ },
+ {
+  "triggers": [],
+  "id": "hw.rule",
+  "title": "Железо: если датчик выше порога — включить вывод",
+  "ask": [
+   "если показания датчика больше 600 включи D7",
+   "Железо: если датчик выше порога — включить вывод"
+  ],
+  "text": "Собрано мозгом-12 из кирпичиков: Прочитать выводы платы → Правило: порог → вывод. Команды уходят на плату (ctx.boards.hw), только свободные выводы.",
+  "code": "# Собрано мозгом-12 из кирпичиков: Прочитать выводы платы → Правило: порог → вывод\n# Данные — текст сообщения (журнал, письмо, список). Во фразе данных нет — показывается пример на SAMPLE.\n\n# --- кирпичик «Прочитать выводы платы» (встроенный)\nimport re as _re\n\n\ndef b_hw_read(x, ctx):\n    \"\"\"Фраза -> показания платы: A5 (АЦП 0..1023) и цифровые D5/D7, если названы во фразе.\n    Аппаратный уровень: ctx.boards.hw (свободные выводы МК; плата 2.111+).\"\"\"\n    s = str(getattr(ctx, \"text\", \"\") or x)\n    pins = [p.upper() for p in _re.findall(r\"\\b[dD](5|7)\\b\", s)]\n    cmds = [\"a A5\"] + [\"r D%s\" % p for p in dict.fromkeys(pins)]\n    out = ctx.boards.hw(\";\".join(cmds))\n    vals = []\n    for line in str(out).splitlines():\n        m = _re.search(r\"ok:(-?\\d+)\", line)\n        if m:\n            vals.append(float(m.group(1)))\n    return vals\n\n\n# --- кирпичик «Правило: порог → вывод» (встроенный)\nimport re as _re\n\n\ndef b_hw_rule(x, ctx):\n    \"\"\"Числа (показания) -> правило из фразы «если больше 600 включи D7» (или «меньше …»):\n    условие выполнено — команда выводу, иначе — противоположная. Только D5/D7.\"\"\"\n    s = str(getattr(ctx, \"text\", \"\") or \"\").lower()\n    th = _re.search(r\"(больше|выше|меньше|ниже)\\s*(\\d+)\", s)\n    pin = _re.search(r\"\\b[dд](5|7)\\b\", s)\n    if not x:\n        return \"Показаний нет.\"\n    v = float(x[0])\n    if not th or not pin:\n        return \"Показание: %g. Правило не задано (пример: «если больше 600 включи D7»).\" % v\n    n = float(th.group(2))\n    hit = v > n if th.group(1) in (\"больше\", \"выше\") else v < n\n    on = 0 if _re.search(r\"выключи|погаси\", s) else 1\n    want = on if hit else 1 - on\n    r = ctx.boards.hw(\"w D%s %d\" % (pin.group(1), want))\n    return \"Показание %g %s %g → D%s = %d. %s\" % (v, \"≥\" if hit else \"не\", n, pin.group(1), want, r)\n\n\nSAMPLE = 'прочитай датчик A5; если больше 300 включи D7'\n\n\ndef _chain(x, ctx):\n    x = b_hw_read(x, ctx)\n    x = b_hw_rule(x, ctx)\n    return x\n\n\ndef _empty(r):\n    return not r or str(r).startswith((\"Ничего не найдено\", \"Чисел нет\", \"Пришлите\"))\n\n\ndef run(text, ctx):\n    \"\"\"App Lab: Железо: если датчик выше порога — включить вывод\"\"\"\n    r = _chain(text, ctx)\n    if SAMPLE and \"\\n\" not in str(text) and _empty(r):\n        return \"Во фразе нет данных — показываю на образце (пришлите журнал или текст целиком):\\n\" + str(_chain(SAMPLE, ctx))\n    return r\n",
+  "phrase": "если больше 300 включи D7",
+  "expect": "D7 = 1",
+  "pre": [],
+  "verified": true
+ },
+ {
+  "triggers": [],
+  "id": "hw.set",
+  "title": "Железо: включить/выключить/мигнуть выводом",
+  "ask": [
+   "включи светодиод на D7",
+   "Железо: включить/выключить/мигнуть выводом"
+  ],
+  "text": "Собрано мозгом-12 из кирпичиков: Включить/выключить вывод платы. Команды уходят на плату (ctx.boards.hw), только свободные выводы.",
+  "code": "# Собрано мозгом-12 из кирпичиков: Включить/выключить вывод платы\n# Данные — текст сообщения (журнал, письмо, список). Во фразе данных нет — показывается пример на SAMPLE.\n\n# --- кирпичик «Включить/выключить вывод платы» (встроенный)\nimport re as _re\n\n\ndef b_hw_set(x, ctx):\n    \"\"\"Фраза -> команда выводу: «включи D7», «выключи D7», «мигни D5».\n    Только свободные выводы D5 и D7 (плата проверяет ещё раз; ШИМ недоступен — таймеры заняты мозгом).\"\"\"\n    s = str(getattr(ctx, \"text\", \"\") or \"\").lower()\n    m = _re.search(r\"\\b[dд](5|7)\\b\", s)\n    if not m:\n        return str(x) + \"\\n(Вывод не назван: D5 или D7.)\"\n    pin = \"D\" + m.group(1)\n    if _re.search(r\"шим|pwm|яркост\", s):\n        return str(x) + \"\\n(ШИМ на свободных выводах недоступен: таймеры заняты словами D6 и речью D9.)\"\n    if _re.search(r\"мигни|импульс|pulse\", s):\n        cmd = \"pulse %s 200\" % pin\n    elif _re.search(r\"выключи|погаси|отключи\", s):\n        cmd = \"w %s 0\" % pin\n    else:\n        cmd = \"w %s 1\" % pin\n    r = ctx.boards.hw(cmd)\n    head = \"\" if isinstance(x, str) and x == getattr(ctx, \"text\", None) else str(x) + \"\\n\"\n    return head + \"🔌 \" + str(r)\n\n\nSAMPLE = ''\n\n\ndef _chain(x, ctx):\n    x = b_hw_set(x, ctx)\n    return x\n\n\ndef _empty(r):\n    return not r or str(r).startswith((\"Ничего не найдено\", \"Чисел нет\", \"Пришлите\"))\n\n\ndef run(text, ctx):\n    \"\"\"App Lab: Железо: включить/выключить/мигнуть выводом\"\"\"\n    r = _chain(text, ctx)\n    if SAMPLE and \"\\n\" not in str(text) and _empty(r):\n        return \"Во фразе нет данных — показываю на образце (пришлите журнал или текст целиком):\\n\" + str(_chain(SAMPLE, ctx))\n    return r\n",
+  "phrase": "выключи D7",
+  "expect": "w D7 0",
+  "pre": [],
+  "verified": true
+ },
+ {
+  "triggers": [],
+  "id": "chat.call",
+  "title": "Как функция вызывается из готового чата",
+  "ask": [
+   "как функция вызывается из чата",
+   "вызов функции app lab в чате",
+   "запусти функцию в чате",
+   "чат вызывает приложение"
+  ],
+  "text": "В чате облака фраза идёт по порядку: калькулятор/память/зоны мозга → «запусти функцию <имя>» → триггеры включённых приложений → остальные зоны.\n1) Явная просьба: «запусти функцию погода», «вызови приложение курс валют», «открой навык заметки» — по id или имени, триггеры не нужны.\n2) По триггерам: включённое приложение, чей триггер есть во фразе (побеждает более длинный/точный).\n3) Выключенное: чат ответит «приложение выключено — включите в App Lab», ничего не запуская.\nЕсли фраза начинается с арифметики, её раньше возьмёт калькулятор — выбирайте триггеры, не похожие на выражения. Ответ функции мозг запоминает как диалог.",
+  "code": "",
+  "phrase": "",
+  "expect": "",
+  "pre": [],
+  "verified": false
+ },
+ {
+  "triggers": [],
+  "id": "chat.test",
+  "title": "Как проверить функцию перед включением",
+  "ask": [
+   "проверить функцию app lab",
+   "запустить приложение для проверки",
+   "check_code проверка приложения"
+  ],
+  "text": "Проверка в три шага: 1) облако само делает check_code (синтаксис, есть def run) при сохранении; 2) кнопка «Запустить» в App Lab — запуск на вашей фразе, виден журнал ctx.log и время; 3) фраза в чате после включения.\nПриложение, написанное ИИ, облако ещё и запускает на примере — не прошло, не сохраняется. Но «запустилось» не значит «правильно»: читайте код сами.",
+  "code": "",
+  "phrase": "",
+  "expect": "",
+  "pre": [],
+  "verified": false
+ },
+ {
+  "triggers": [],
+  "id": "chat.enable",
+  "title": "Кто включает функцию и почему",
+  "ask": [
+   "включить функцию app lab",
+   "приложение выключено что делать",
+   "кто включает приложение"
+  ],
+  "text": "Функции, присланные платой или написанные не владельцем, сохраняются ВЫКЛЮЧЕННЫМИ. Включает только владелец в App Lab — после чтения кода. Это защита: приложение работает с сетью, памятью и мозгом облака.\nЧат по просьбе запустить выключенную функцию отвечает, что она выключена, и не запускает её.",
+  "code": "",
+  "phrase": "",
+  "expect": "",
+  "pre": [],
+  "verified": false
+ },
+ {
+  "triggers": [],
+  "id": "chat.create",
+  "title": "Как ИИ создаёт новую функцию App Lab",
+  "ask": [
+   "как ии пишет функцию app lab",
+   "ai_write написать приложение",
+   "мозг пишет приложение для себя"
+  ],
+  "text": "Порядок: своя LLM пишет кандидаты по задаче «App Lab: <описание>» → каждый проверяется запуском → первый рабочий сохраняется (автор «своя LLM», триггеров нет); если своя LLM не готова — настроенная модель кода (до 3 исправлений), потом заготовки. Кнопка в окне App Lab: «ИИ, напиши приложение».\nЧестно: свободно написать новое по незнакомой задаче может только обученная LLM; типовые приёмы — по этим инструкциям. Триггеры допишите сами и включите приложение.",
+  "code": "",
+  "phrase": "",
+  "expect": "",
+  "pre": [],
+  "verified": false
+ }
+]

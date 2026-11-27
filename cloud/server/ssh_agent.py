@@ -36,7 +36,7 @@ import servers
 
 MAX_STEPS = 12
 
-SYSTEM = '''Ты агент-администратор облака «Мозг-12» (окно «Серверы»). Ты управляешь
+SYSTEM = '''Ты агент-администратор облака «Star Gate» (окно «Серверы»). Ты управляешь
 серверами владельца и его платами Arduino UNO Q. Отвечай ТОЛЬКО одним JSON-объектом
 на строке, без пояснений вокруг. Инструменты:
 {"tool":"list"} — список целей;
@@ -123,7 +123,7 @@ def _ext_next(job, history):
     import codewrite
     msgs = [{"role": "system", "content": SYSTEM},
             {"role": "user", "content": "Цели: %s\nЗадача владельца: %s" % (
-                json.dumps([{k: t.get(k) for k in ("name", "host", "via", "kind")}
+                json.dumps([{k: t.get(k) for k in ("name", "host", "via", "kind", "os", "blocked")}
                             for t in servers.targets()], ensure_ascii=False)[:2500], job["task"])}]
     for act, res in history[-8:]:
         msgs.append({"role": "assistant", "content": json.dumps(act, ensure_ascii=False)})
@@ -151,11 +151,29 @@ def _pick_target(job):
         for key in (x.get("name"), x.get("host")):
             if key and str(key).lower() in t:
                 return x["target"]
+    loc = next((x["target"] for x in ts if x["via"] == "local"), "")
+    if loc and re.search(r"на облаке|локально|на этом (компьютере|пк)|в облаке|на (самом )?облаке", t):
+        return loc
     if re.search(r"\bплат[аеуы]|\bboard\b|uno\s*q", t):
         for x in ts:
             if x["via"] == "board":
+                if loc and x.get("blocked") and re.search(r"(напиши|создай|сделай)\b.*(скрипт|код|программ)", t):
+                    return loc                  # v3.216: плата не исполняет — код пишем и запускаем в облаке
                 return x["target"]
+    if loc and re.search(r"(напиши|создай|сделай)\b.*(скрипт|код|программ)", t) and len(ts) > 1:
+        return loc
     return ts[0]["target"] if len(ts) == 1 else ""
+
+
+def _is_win(tg):
+    """Цель — Windows? (компьютер облака на Windows или SSH-сервер с пометкой windows)."""
+    try:
+        if str(tg).startswith("local:"):
+            return servers.is_windows()
+        s = ssh_servers.get(tg) or {}
+        return "win" in str(s.get("kind") or s.get("note") or "").lower()
+    except Exception:
+        return False
 
 
 def _rule_plan(job):
@@ -222,12 +240,80 @@ def _rule_plan(job):
         acts.append({"tool": "run", "server": tg, "command": "arecord -l 2>&1 | head -20; aplay -l 2>&1 | head -10"})
     if re.search(r"приложени|app lab|arduino-app", lo):
         acts.append({"tool": "run", "server": tg, "command": "arduino-app-cli app list 2>&1 | head -20"})
-    if not acts:                         # «как дела», «проверь», «состояние» — обзор
-        acts = [{"tool": "check", "server": tg},
-                {"tool": "run", "server": tg, "command": "uptime; nproc; free -h; df -h / 2>/dev/null | tail -1"},
-                {"tool": "run", "server": tg, "command":
-                 "systemctl --failed --no-pager 2>/dev/null | head -15 || echo 'systemd нет (контейнер?)'"}]
+    win = _is_win(tg)
+    if not acts:                         # v3.216: каталог команд (admincmds) по смыслу задачи
+        try:
+            import admincmds
+            for _k, _c in admincmds.plan(lo, limit=3, win=win):
+                acts.append({"tool": "run", "server": tg, "command": _c})
+        except Exception:
+            pass
+    if not acts:                         # ничего не распознано — общий обзор, но честно
+        try:
+            import admincmds
+            cmds = admincmds.overview(win)
+        except Exception:
+            cmds = ["uptime; free -h; df -h / | tail -1"]
+        job["plan_note"] = ("Под запрос «%s» команд в справочнике не нашлось — выполнен общий обзор. "
+                            "Назови точнее (диск, память, порты, службы, камера, звук…) или напиши команду в "
+                            "обратных кавычках: `команда`." % t[:80])
+        acts = [{"tool": "check", "server": tg}] + [{"tool": "run", "server": tg, "command": c} for c in cmds]
     return acts
+
+
+def _next_rule_act(job, history, done):
+    """Следующий шаг по правилам, исходя из уже увиденных результатов.
+
+    Правиловый агент не заканчивает работу, когда кончился начальный план:
+    он смотрит на вывод выполненных шагов и продолжает, пока в выводе есть
+    за что зацепиться (занятый диск, упавшая служба, высокая нагрузка,
+    вышедший контейнер). Зацепок нет — возвращает None, агент завершается.
+    done — команды/инструменты, которые уже выполнялись (защита от повтора).
+    """
+    tg = _pick_target(job)
+    if not tg:
+        return None
+    for act, res in reversed(history):
+        res = res or {}
+        out, ok = str(res.get("out") or ""), bool(res.get("ok"))
+        cmd, tool = str(act.get("command") or ""), act.get("tool")
+        cand = None
+        if tool == "check" and not ok:
+            # цель недоступна: продолжать диагностику на ней бессмысленно;
+            # будим только если владелец прямо просил включить
+            if re.search(r"включи\b|разбуди|wake|подними", job["task"].lower()):
+                cand = {"tool": "wake", "server": tg}
+        elif tool == "run" and "df -h" in cmd:
+            best = None
+            for mm in re.finditer(r"(\d{1,3})%\s+(/\S*)", out):
+                if mm.group(2) in ("/dev", "/run", "/sys", "/proc", "/snap"):
+                    continue
+                if best is None or int(mm.group(1)) > int(best.group(1)):
+                    best = mm
+            if best and int(best.group(1)) >= 85:
+                cand = {"tool": "run", "server": tg,
+                        "command": "du -xh --max-depth=1 %s 2>/dev/null | sort -h | tail -12"
+                                   % best.group(2)}
+        elif tool == "run" and "--failed" in cmd and "0 loaded units" not in out:
+            m = re.search(r"([a-zA-Z0-9_.@-]+\.service)", out)
+            if m:
+                cand = {"tool": "run", "server": tg,
+                        "command": "systemctl status %s --no-pager -l 2>&1 | head -20; "
+                                   "journalctl -u %s -n 30 --no-pager 2>&1 | tail -30"
+                                   % (m.group(1), m.group(1))}
+        elif tool == "run" and "uptime" in cmd:
+            ml = re.search(r"load average:\s*(\d+(?:[.,]\d+)?)", out)
+            if ml and float(ml.group(1).replace(",", ".")) >= 2.0:
+                cand = {"tool": "run", "server": tg,
+                        "command": "ps aux --sort=-%cpu | head -12"}
+        elif tool == "run" and "docker ps" in cmd:
+            m = re.search(r"^(\S+)\t[^\n]*Exited", out, re.M)
+            if m:
+                cand = {"tool": "run", "server": tg,
+                        "command": "docker logs --tail 30 %s 2>&1 | tail -30" % m.group(1)}
+        if cand and str(cand.get("command") or cand.get("tool")) not in done:
+            return cand
+    return None
 
 
 # -------------------------------------------------------------- выполнение
@@ -261,11 +347,11 @@ def _ask(job, act, kind, why):
 def _exec(job, act):
     tool = act.get("tool")
     tg = act.get("server") or job.get("target") or ""
-    if tg and not (str(tg).startswith("board:") or ssh_servers.get(tg)):
+    if tg and not (str(tg).startswith(("board:", "local:")) or ssh_servers.get(tg)):
         tg = servers.resolve(tg) or tg
     if tool == "list":
         return {"ok": True, "out": "\n".join("%s — %s %s (%s)" % (t["name"], t.get("user") or "", t.get("host") or "",
-                                                                   "плата, связь" if t["via"] == "board" else "SSH")
+                                                                   "плата, связь" if t["via"] == "board" else ("это облако" if t["via"] == "local" else "SSH"))
                                              for t in servers.targets()) or "целей нет"}
     if tool == "check":
         return servers.check(tg)
@@ -306,6 +392,14 @@ def _code_actions(job, tg):
     name = "task_%s%s" % (time.strftime("%m%d_%H%M%S"), ext)
     path = "~/neuro12-agent/" + name
     run = ("timeout 60 bash %s" if ext == ".sh" else "timeout 60 python3 %s") % path
+    if str(tg).startswith("local:"):                 # v3.216: код пишется и запускается в самом облаке
+        import shutil
+        import sys
+        exe = sys.executable if not getattr(sys, "frozen", False) else (shutil.which("python") or "python")
+        if servers.is_windows():
+            run = '& "%s" "%s"' % (exe, path)
+        else:
+            run = ("bash %s" if ext == ".sh" else '"%s" %%s' % exe) % path
     return [{"tool": "write", "server": tg, "path": path, "content": code},
             {"tool": "run", "server": tg, "command": run}], txt[:300]
 
@@ -327,10 +421,12 @@ def _summary(job):
         if mm:
             notes.append("нагрузка %s" % mm.group(1).rstrip(","))
         if r.get("error"):
-            notes.append(str(r["error"])[:150])
+            notes.append(str(r["error"])[:420 if r.get("blocked") else 150])
     txt = "Сделано шагов: %d.\n%s" % (len(job["steps"]), "\n".join(lines))
     if notes:
         txt += "\nЗамечено: " + "; ".join(dict.fromkeys(notes))
+    if job.get("plan_note"):
+        txt += "\n" + job["plan_note"]
     return txt
 
 
@@ -351,9 +447,11 @@ def _own_note(job):
 
 def _run(job, use_own_llm):
     history = []
+    done = set()                     # уже выполненные команды/инструменты
     use_ext = _ext_ready()
     job["planner"] = "внешняя модель" if use_ext else "правила агента"
     queue = [] if use_ext else _rule_plan(job)
+    garbage = 0                      # подряд отвеченные «мусором» шаги модели
     try:
         for step in range(MAX_STEPS):
             if job.get("stop"):
@@ -363,15 +461,33 @@ def _run(job, use_own_llm):
             if use_ext:
                 try:
                     act = _ext_next(job, history)
+                    if act is None:
+                        garbage += 1
+                        if garbage >= 2:
+                            # модель не даёт действий — додумываем правилами,
+                            # а не завершаемся с пустым итогом
+                            job["planner"] += " → правила (модель отвечает без действий)"
+                            use_ext, garbage = False, 0
+                            queue = _rule_plan(job)
+                    else:
+                        garbage = 0
                 except Exception as e:
                     job["planner"] = "правила агента (модель: %s)" % str(e)[:80]
                     use_ext = False
                     queue = _rule_plan(job)
             if act is None:
-                if not queue:
-                    act = {"tool": "finish"}
-                else:
+                if use_ext and garbage < 2:
+                    continue             # модели даём ещё попытку (до двух пустых)
+                if queue:
                     act = queue.pop(0)
+                else:
+                    act = _next_rule_act(job, history, done)
+            if act is None:                      # правилам больше нечего продолжить
+                act = {"tool": "finish"}
+            if act.get("tool") == "finish":
+                job["result"] = (act.get("summary") or "").strip() or _summary(job)
+                job["status"] = "done"
+                break
             if act.get("tool") == "code":
                 acts, note = _code_actions(job, act.get("server"))
                 if not acts:
@@ -387,6 +503,7 @@ def _run(job, use_own_llm):
                 break
             res = _exec(job, act)
             history.append((act, res))
+            done.add(str(act.get("command") or act.get("tool")))
             job["steps"].append({"n": step, "tool": act.get("tool"), "act": act,
                                  "result": {k: (v[-6000:] if isinstance(v, str) else v)
                                             for k, v in (res or {}).items()}, "ts": time.time()})
@@ -413,9 +530,23 @@ def seed_admin_knowledge():
         import admincorpus
         import kb
         n = 0
-        for title, body in admincorpus.LESSONS:
-            kb.add_article("Администрирование: " + title, body, source="servers_seed")
+        import hashlib
+        for title, body in (list(admincorpus.LESSONS) + list(admincorpus.catalog_lessons()) +
+                            list(admincorpus.win_lessons()) + list(admincorpus.tool_lessons())):
+            did = "admin_" + hashlib.md5(title.encode("utf-8")).hexdigest()[:12]   # v3.218: без дублей
+            kb.add_article("Администрирование: " + title, body, source="servers_seed", did=did)
             n += 1
+        try:
+            import agent_instructions as instructions
+            n += instructions.seed_kb()                 # v3.219: библиотека инструкций
+            import codelessons
+            n += codelessons.seed_kb()                  # v3.220: уроки программирования
+            import applab_guide
+            n += applab_guide.seed_kb()                 # v3.225: инструкции App Lab
+            import project_brain
+            n += project_brain.seed_kb()                # v3.221: инструкции Контура
+        except Exception:
+            pass
         return {"ok": True, "added": n}
     except Exception as e:
         return {"ok": False, "error": str(e)[:200]}

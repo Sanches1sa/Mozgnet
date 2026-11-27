@@ -77,7 +77,10 @@ def online():
 
 _CODE_RE = re.compile(r"\b(код|кода|коде|скрипт\w*|функци\w*|python|питон\w*|"
                       r"javascript|c\+\+|arduino|скетч\w*|программ\w*|import|"
-                      r"def|class|библиотек\w*|github|исходник\w*)\b", re.I)
+                      r"def|class|библиотек\w*|github|исходник\w*|"
+                      r"команд\w*|терминал\w*|bash|shell|sudo|ssh|linux|линукс\w*|"
+                      r"администр\w*|сервер\w*|docker|докер\w*|systemctl|journalctl|"
+                      r"apt|dnf|git|cron|крон\w*|порт\w*|службы?|служб\w*|демон\w*)\b", re.I)
 
 
 def code_question(q):

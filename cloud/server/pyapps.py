@@ -93,12 +93,33 @@ def _all():
         return out
 
 
+def _replace(tmp, fn):
+    """v3.232: на Windows os.replace падает PermissionError, пока файл открыт на чтение
+    (другой поток читает app.json, антивирус проверяет новый файл) — повторяем, а не роняем запрос.
+    Раньше из-за этого переключатель «включено» у только что созданного приложения не срабатывал."""
+    for attempt in range(25):
+        try:
+            os.replace(tmp, fn)
+            return
+        except PermissionError:
+            time.sleep(0.04 * (attempt + 1))
+    try:
+        os.replace(tmp, fn)
+    finally:
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+
+
 def _write_meta(m):
     os.makedirs(os.path.join(_dir(m["id"]), "python"), exist_ok=True)
     fn = os.path.join(_dir(m["id"]), "app.json")
-    with open(fn + ".tmp", "w", encoding="utf-8") as f:
+    tmp = "%s.%d.%d.tmp" % (fn, os.getpid(), threading.get_ident())
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(m, f, ensure_ascii=False, indent=1)
-    os.replace(fn + ".tmp", fn)
+    _replace(tmp, fn)
     _CACHE["apps"] = None
 
 
@@ -151,6 +172,13 @@ def save(b, origin="владелец"):
                 n += 1
         exists = aid in _all()
         prev = _all().get(aid) or dict(_meta_default(aid), ver=0, origin=origin)
+        old_code = ""
+        if exists:
+            try:
+                with open(_code_path(aid), encoding="utf-8") as f_:
+                    old_code = f_.read()
+            except OSError:
+                pass
         trig = b.get("triggers")
         if isinstance(trig, str):
             trig = [t for t in re.split(r"[,\n;]", trig)]
@@ -169,11 +197,24 @@ def save(b, origin="владелец"):
             "enabled": bool(b.get("enabled", prev.get("enabled", True))),
             "origin": str(b.get("origin") or (prev.get("origin") if exists else origin) or origin)[:30],
             "ver": int(prev.get("ver") or 0) + 1, "ts": time.time()})
+        for k in ("context", "web_refs", "bricks", "written_by"):     # v3.226: след написания мозгом
+            if k in b:
+                m[k] = b[k]
         _write_meta(m)
-        with open(_code_path(aid), "w", encoding="utf-8") as f:
+        _ct = "%s.%d.%d.tmp" % (_code_path(aid), os.getpid(), threading.get_ident())
+        with open(_ct, "w", encoding="utf-8") as f:
             f.write(code.rstrip() + "\n")
+        _replace(_ct, _code_path(aid))
     store.log("APP LAB", "сохранено приложение «%s» (%s, v%d, автор: %s)" % (
         m["name"], aid, m["ver"], m["origin"]))
+    try:                                   # v3.230: Star Gate учится на ваших правках и включённых приложениях
+        import applab_brain
+        if exists and origin == "владелец" and prev.get("written_by") and old_code.strip() != code.strip():
+            applab_brain.learn_fix(aid, m.get("desc", ""), old_code, code)
+        if m.get("enabled") and origin == "владелец" and m.get("desc"):
+            applab_brain.learn_app(aid, "сохранено владельцем включённым")
+    except Exception:
+        pass
     _refresh_guide_later()
     return {"ok": True, "id": aid, "app": get(aid)}
 
@@ -190,6 +231,25 @@ def delete(aid):
     return {"ok": True}
 
 
+def rename(aid, name):
+    """v3.232: новое имя приложения (id и папка не меняются — ссылки и триггеры не ломаются)."""
+    name = " ".join(str(name or "").split())[:60]
+    if not name:
+        return {"ok": False, "error": "пустое имя"}
+    with _LOCK:
+        m = _all().get(str(aid))
+        if not m:
+            return {"ok": False, "error": "нет такого приложения"}
+        m = dict(m)
+        old = m.get("name")
+        m["name"] = name
+        m["ts"] = time.time()
+        _write_meta(m)
+    store.log("APP LAB", "переименовано приложение %s: «%s» → «%s»" % (aid, old, name))
+    _refresh_guide_later()
+    return {"ok": True, "app": get(aid), "old": old}
+
+
 def set_flags(aid, **kw):
     with _LOCK:
         m = _all().get(str(aid))
@@ -200,6 +260,12 @@ def set_flags(aid, **kw):
             if k in kw:
                 m[k] = bool(kw[k])
         _write_meta(m)
+    if kw.get("enabled"):
+        try:
+            import applab_brain
+            applab_brain.learn_app(str(aid), "включено владельцем")
+        except Exception:
+            pass
     _refresh_guide_later()
     return {"ok": True, "app": get(aid)}
 
@@ -246,7 +312,10 @@ class AppCtx:
         self.brain.thought = self._brain_thought
         self.boards.ask = self._board_ask
         self.boards.state = self._board_state
+        self.boards.hw = self._board_hw
         self.llm.write = self._llm_write
+        self.draw = _NS()
+        self.draw.graph = self._draw_graph
         self.docs.search = self._docs_search
         self.docs.page = self._docs_page
 
@@ -332,6 +401,30 @@ class AppCtx:
         r = brainctl.llm_from_thought(str(prompt), str(prompt), str(facts))
         return r.get("text") if r.get("ok") else ""
 
+    # --- аппаратный уровень (v3.234)
+    def _board_hw(self, cmds, board="", timeout=12):
+        """Команды свободным выводам МК платы (D5, D7, A5): «w D7 1; a A5; r D5; pulse D5 200».
+        Через задание платы (режим hw, плата 2.111+, настройка hw_on). -> строка «команда → ok:значение»."""
+        import boardcode
+        r = boardcode.run(str(cmds)[:400], mode="hw", board=board, timeout=timeout)
+        if not r.get("ok") and not r.get("out"):
+            raise RuntimeError(r.get("error") or "плата не выполнила")
+        self.log("железо:", cmds, "->", str(r.get("out"))[:120])
+        return str(r.get("out") or "")
+
+    # --- рисование
+    def _draw_graph(self, expr, x0=-6.0, x1=6.0):
+        """График функции y(x): строка-ответ с картинкой [КАРТИНКА]<svg>[/КАРТИНКА] (чат рисует её).
+        Выражение считается белым списком (mathmodels.safe_eval, без exec): + - * / ^, скобки,
+        sin cos tan sqrt log exp pi. Ошибка — RuntimeError с понятным текстом."""
+        import imagine
+        spec = {"expr": str(expr).strip()[:120], "x0": float(x0), "x1": float(x1)}
+        svg, _latex, err = imagine.render_graph(spec)
+        if err:
+            raise RuntimeError(err)
+        return "График y = %s на отрезке от %g до %g.\n[КАРТИНКА]%s[/КАРТИНКА]" % (
+            spec["expr"], spec["x0"], spec["x1"], svg)
+
     # --- прочее
     def calc(self, expr):
         import calc
@@ -349,16 +442,35 @@ class AppCtx:
         return str(r.get("result") or "")
 
     def brick(self, btype, **params):
-        """Кирпичик старого App Lab (board.ask, know.kb, math.model, …)."""
+        """Кирпичик старого App Lab (board.ask, know.kb, logic.if, …).
+        v3.225: кирпичики ЦЕПЛЯЮТСЯ — вывод каждого попадает в {last}
+        следующего (и в {имя}, если передать var="имя"); начать с нуля — ctx.brick_reset()."""
         import applab
         fn = applab._RUNNERS.get(str(btype))
         if not fn:
             raise RuntimeError("нет кирпичика %s" % btype)
-        pr = applab._param_defaults(str(btype), params, {"last": ""})
-        ok, out = fn(pr, {"vars": {"last": ""}, "final": None})
+        if not hasattr(self, "_bvars"):
+            self._bvars = {"last": ""}
+        var = str(params.pop("var", "") or "").strip()[:24]
+        pr = applab._param_defaults(str(btype), params, self._bvars)
+        ok, out = fn(pr, {"vars": self._bvars, "final": None})
         if not ok:
             raise RuntimeError(str(out))
-        return str(out or "")
+        out = str(out or "")
+        if out:
+            self._bvars["last"] = out
+        if var:
+            self._bvars[var] = out
+        return out
+
+    def brick_reset(self):
+        self._bvars = {"last": ""}
+
+    def bricks(self):
+        """Каталог кирпичиков: [{id, name, cat, params:[имена]}]."""
+        import applab
+        return [{"id": b["id"], "name": b["name"], "cat": b["cat"],
+                 "params": [p["name"] for p in b.get("params") or []]} for b in applab.BRICKS]
 
     @property
     def state(self):
@@ -424,9 +536,87 @@ def run(aid, text="", board="", code=None):
     return r
 
 
+_CALL_RE = re.compile(r"^\s*(?:пожалуйста[, ]+|мозг[, ]+|neuro-?12[, ]+)?(?:запусти|запускай|вызови|вызывай|открой|выполни|используй|включи)\s+"
+                      r"(?:мне\s+)?(?:(?:приложение|приложуху|функцию|функция|навык|кирпичик|app\s*lab)\s+)?(.+?)\s*$", re.I)
+
+
+def named(text):
+    """v3.225: явная просьба «запусти функцию <имя>» -> (id, meta) | None —
+    по id или имени приложения (с начала остатка фразы, длиннейшее имя),
+    независимо от триггеров и от того, включено ли оно."""
+    m = _CALL_RE.match(str(text or ""))
+    if not m:
+        return None
+    rest = re.sub(r"[«»\"'`]", "", m.group(1)).lower().strip()
+    best = None
+    for aid, mm in _all().items():
+        for nm in {aid, str(mm.get("name") or "").lower().strip()}:
+            if len(nm) >= 2 and (rest == nm or rest.startswith(nm + " ")):
+                if not best or len(nm) > best[0]:
+                    best = (len(nm), aid, mm)
+    return (best[1], best[2]) if best else None
+
+
+def disabled_reply(text):
+    """Просили запустить выключенное приложение — честный ответ вместо тишины."""
+    hit = named(text)
+    if hit and not hit[1].get("enabled"):
+        return ("Приложение «%s» выключено. Включите его в App Lab (владелец проверяет "
+                "код и включает сам) — потом я смогу его запустить." % hit[1].get("name", hit[0]))
+    return None
+
+
+_CTX_GEN = {"приложение", "функция", "функцию", "запусти", "вызови", "открой", "пожалуйста", "хочу", "нужно", "нужна", "можешь", "скажи"}
+
+
+def _ctx_stems(s):
+    import codelessons
+    return {w for w in codelessons._stems(s) if w not in _CTX_GEN}
+
+
+def app_context(m):
+    """Контекст приложения — корни слов, по которым Star Gate понимает, о чём оно:
+    поле context (его пишет мозг при создании) + имя, описание, примеры."""
+    base = " ".join([str(m.get("name") or ""), str(m.get("desc") or "")] + list(m.get("examples") or []) +
+                    [str(x) for x in (m.get("context") or [])])
+    return _ctx_stems(base)
+
+
+def match_context(text, history=None):
+    """v3.226: вызов ПО КОНТЕКСТУ: фраза (и тема последних реплик) по смыслу совпала
+    с контекстом включённого приложения — без триггеров и без имени. Строго: не меньше
+    двух общих корней и не меньше половины корней фразы, иначе приложение молчит
+    (чтобы не перехватывать чужие вопросы). -> (id, meta, оценка) | None."""
+    q = _ctx_stems(text)
+    if len(q) < 1:
+        return None
+    topic = set()
+    for h in (history or [])[-4:]:
+        if isinstance(h, dict) and h.get("role") == "user":
+            topic |= _ctx_stems(h.get("text"))
+    best = None
+    for aid, m in _all().items():
+        if not m.get("enabled") or not m.get("desc"):
+            continue
+        c = app_context(m)
+        if not c:
+            continue
+        hit = q & c
+        thit = (topic & c) - hit
+        if len(hit) + (1 if thit and hit else 0) < 2 and not (len(q) == 1 and len(hit) == 1 and len(c) <= 3):
+            continue
+        sc = len(hit) / float(len(q))
+        if sc >= 0.5 and (not best or sc > best[2]):
+            best = (aid, m, round(sc, 2))
+    return best
+
+
 def match(text):
     """Включённое приложение, чей триггер есть во фразе. -> (id, meta) | None.
     Триггер: слово/фраза (по границам слов) или «re:<регулярное>»."""
+    hit = named(text)
+    if hit and hit[1].get("enabled"):
+        return hit
     low = " " + str(text or "").lower().strip() + " "
     best, bs = None, 0
     for aid, m in _all().items():
@@ -568,7 +758,7 @@ def own_llm_write(desc, name=""):
 
 
 LLM_GUIDE = """Инструкция для своей LLM: как я пишу приложения App Lab.
-Я своя LLM облака мозг-12. Я учусь на коде приложений App Lab и пишу новые.
+Я своя LLM облака Star Gate. Я учусь на коде приложений App Lab и пишу новые.
 Задачу мне дают затравкой: # task: App Lab: описание приложения.
 После затравки я пишу функцию def run(text, ctx): и возвращаю ответ строкой.
 text — это фраза из чата. ctx — функции облака.
@@ -787,15 +977,19 @@ API_DOC = """API ctx (то, что получает run(text, ctx)):
   ctx.brain.thought()                  — текущая мысль мозга neuro-12 | ""
   ctx.boards.ask(q), ctx.boards.state() — спросить плату / какие платы на связи
   ctx.llm.write(тема, facts)           — своя LLM пишет по фактам | "" (не вышло)
+  ctx.boards.hw("w D7 1; a A5")         — АППАРАТНЫЙ УРОВЕНЬ: свободные выводы МК платы (D5, D7 — цифровые, A5 — АЦП)
+  ctx.draw.graph(expr, x0=-6, x1=6)    — график функции: строка с [КАРТИНКА]<svg>[/КАРТИНКА] (RuntimeError, если не считается)
   ctx.calc(выражение)                  — калькулятор облака | None
   ctx.builtin(имя, text=None)          — math, time, wiki, memory, status, llm_extend
-  ctx.brick(тип, **параметры)          — кирпичик старого App Lab (board.ask, know.kb, math.model…)
+  ctx.brick(тип, var=None, **параметры) — кирпичик App Lab (board.ask, know.kb, logic.if…);
+                                         вывод попадает в {last} следующего кирпичика
+  ctx.brick_reset(), ctx.bricks()      — начать цепочку заново / каталог кирпичиков
   ctx.state (dict) + ctx.save_state()  — память приложения между запусками
 Исключение в run() — ответ «ошибка» с номером строки; ответ дольше 60 с не ждём.
 Своя LLM тоже пишет приложения: она учится на коде включённых приложений (их
 описание — задача «App Lab: …» в docstring run()) и по своей инструкции LLM_GUIDE."""
 
-APP_GUIDE = """КАК НАПИСАТЬ ПРИЛОЖЕНИЕ APP LAB (Python) — инструкция для ИИ облака мозг-12.
+APP_GUIDE = """КАК НАПИСАТЬ ПРИЛОЖЕНИЕ APP LAB (Python) — инструкция для ИИ облака Star Gate.
 
 App Lab — это мои навыки. Каждое приложение — папка data/applab/<id>/ с описанием
 app.json и кодом python/main.py. В коде одна обязательная функция:

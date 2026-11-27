@@ -44,12 +44,35 @@ def h_chat_list(req):
     # старые чаты без владельца и лента «Мысли плат» — общие.
     ip = getattr(req, "client_ip", "")
     owner = ip if store.settings().get("chats_by_ip", True) else None
+    if not _is_owner(req):                    # v3.233: пользователь — только свои чаты
+        return 200, {"ok": True, "chats": [c for c in store.chat_list(ip)
+                                           if c.get("owner") == ip[:45] or c.get("kind") == "thoughts"]}
+    for k in store.SPECIAL_CHATS:              # v3.226: чаты админа и кода всегда на месте
+        store.chat_special(k)
     return 200, {"ok": True, "chats": store.chat_list(owner)}
+
+
+def h_chat_special(req):
+    """POST/GET {kind: admin|code} -> id постоянного чата (создаёт, если нет)."""
+    k = str((req.body or {}).get("kind") or req.query.get("kind") or "")
+    if k not in store.SPECIAL_CHATS:
+        return 400, {"ok": False, "error": "kind: admin | code"}
+    c = store.chat_special(k)
+    return 200, {"ok": True, "id": c["id"], "title": c["title"], "kind": k, "count": len(c.get("messages") or [])}
+
+
+def _chat_denied(req, chat):
+    """v3.233: пользователю (не владельцу) — только свои чаты и лента мыслей."""
+    if _is_owner(req) or not chat:
+        return False
+    return not (chat.get("kind") == "thoughts" or str(chat.get("owner") or "") == str(getattr(req, "client_ip", ""))[:45])
 
 
 def h_chat_get(req):
     cid = req.query.get("id", "")[:40]
     chat = store.chat_load(cid)
+    if _chat_denied(req, chat):
+        return 403, {"ok": False, "error": "это чужой чат"}
     if not chat and cid == "thoughts":     # v3.172: «Мысли плат» ещё пусты —
         chat = store.chat_new("thoughts", title="Мысли плат", kind="thoughts")  # не «чат не найден»
     if not chat:
@@ -67,7 +90,7 @@ def h_chat_poll(req):
     chat = store.chat_load(cid)
     if not chat:
         return 404, {"ok": False, "error": "чат не найден"}
-    if not store.chat_allowed(chat, getattr(req, "client_ip", "")):
+    if not store.chat_allowed(chat, getattr(req, "client_ip", "")) or _chat_denied(req, chat):
         return 403, {"ok": False,
                      "error": "это чат другого адреса (IP)"}
     msgs = [m for m in (chat.get("messages") or [])
@@ -77,11 +100,15 @@ def h_chat_poll(req):
 
 def h_chat_rename(req):
     b = req.body or {}
+    attachment = b.get("attach")
+    if isinstance(attachment, dict) and attachment.get("visual_context"):
+        # User-supplied evidence, scoped to this message/chat, never a system instruction.
+        text += "\n\n[Данные приложенной фотографии, могут содержать ошибки распознавания]\n" + str(attachment["visual_context"])[:6500]
     cid = str(b.get("id") or "")[:40]
     chat = store.chat_load(cid)
     if not chat:
         return 404, {"ok": False, "error": "чат не найден"}
-    if not store.chat_allowed(chat, getattr(req, "client_ip", "")):
+    if not store.chat_allowed(chat, getattr(req, "client_ip", "")) or _chat_denied(req, chat):
         return 403, {"ok": False,
                      "error": "это чат другого адреса (IP)"}
     chat["title"] = str(b.get("title") or chat["title"])[:80]
@@ -93,8 +120,10 @@ def h_chat_delete(req):
     cid = str((req.body or {}).get("id") or "")[:40]
     if cid == "thoughts":
         return 200, {"ok": False, "error": "сессию «Мысли плат» удалить нельзя"}
+    if cid in [v[0] for v in store.SPECIAL_CHATS.values()]:
+        return 200, {"ok": False, "error": "этот чат постоянный — история хранится; удалить нельзя"}
     chat = store.chat_load(cid)
-    if chat and not store.chat_allowed(chat, getattr(req, "client_ip", "")):
+    if chat and (not store.chat_allowed(chat, getattr(req, "client_ip", "")) or _chat_denied(req, chat)):
         return 403, {"ok": False,
                      "error": "это чат другого адреса (IP)"}
     return 200, {"ok": store.chat_delete(cid)}
@@ -113,13 +142,21 @@ def h_chat_send(req):
         return 400, {"ok": False, "error": "пустое сообщение"}
     cid = str(b.get("id") or "")[:40]
     long_mode = bool(b.get("long", store.settings().get("long_default")))
+    import crashguard                      # v3.228: память контекста после падения
     with store.LOCK:
         chat = store.chat_load(cid) if cid else None
+        if _chat_denied(req, chat):
+            return 403, {"ok": False, "error": "это чужой чат"}
+        if chat:
+            _t2 = crashguard.resume_text(chat, text)      # «повтори» после падения -> потерянный вопрос
+            if _t2 != text:
+                text = _t2
+            crashguard.clear_lost(chat)
         if chat and not store.chat_allowed(chat,
                                            getattr(req, "client_ip", "")):
             return 403, {"ok": False,
                          "error": "это чат другого адреса (IP)"}
-        if not chat or chat.get("kind") not in ("chat", "thoughts", None):
+        if not chat or chat.get("kind") not in ("chat", "thoughts", "admin", "code", None):
             # v3.24.2: новый чат получает владельца — адрес отправителя
             chat = store.chat_new(title=text[:60],
                                   owner=getattr(req, "client_ip", ""))
@@ -127,6 +164,15 @@ def h_chat_send(req):
         if chat.get("kind") == "thoughts":
             route = "cloud"          # в ленте мыслей отвечает только облако
         chat["messages"].append({"role": "user", "text": text, "ts": time.time()})
+        crashguard.annotate(chat=cid, text=text)       # журнал «что обрабатывалось»
+        if crashguard.is_poison(text):                 # дважды уронило облако — не выполняем
+            chat["messages"].append({"role": "bot", "zone": "Система", "ts": time.time() + 0.01,
+                                     "text": "⛔ Это сообщение уже дважды роняло облако, поэтому я его не выполняю. "
+                                             "Переформулируйте или сбросьте блокировку в панели (POST /api/crash/report {clear:true})."})
+            chat["ts"] = time.time()
+            store.chat_save(cid, chat)
+            return 200, {"ok": True, "id": cid, "title": chat.get("title"), "zone": "Система", "blocked": True,
+                         "reply": chat["messages"][-1]["text"], "ms": 0, "ts": chat["messages"][-1]["ts"]}
         # авто-заголовок чата по первому сообщению
         if chat["title"] in ("Новый чат", "чат"):
             chat["title"] = text[:60]
@@ -152,6 +198,15 @@ def h_chat_send(req):
         activity.finish()
 
 
+def h_crash_report(req):
+    """GET — отчёт о падениях (crashes.json, прерванные запросы, блокировки, безопасный режим);
+    POST {clear:true} — снять блокировки запросов."""
+    import crashguard
+    if req.method == "POST" and (req.body or {}).get("clear"):
+        crashguard.clear_blocked()
+    return 200, dict(ok=True, **crashguard.report())
+
+
 def h_chat_activity(req):
     status = activity.get(req.query.get("id", ""), getattr(req, "client_ip", ""))
     if status is None:
@@ -170,13 +225,30 @@ def _chat_process(req, chat, cid, text, route, long_mode, t0):
     # v3.150: команды компьютера (терминал, рабочий стол) — владелец в панели,
     # в любом режиме чата (раньше «Авто»/«Разговор» их не пропускали)
     talk_parts = None
+    _owner = _is_owner(req)
     try:
         import desktop
-        pcr = desktop.panel_command(text)
+        pcr = desktop.panel_command(text) if _owner else None    # v3.233: терминал/стол — только владелец
     except Exception as e:
         pcr = "Рабочий стол: %s" % e
+    if not _owner and (route in ("admin", "code") or chat.get("kind") in ("admin", "code")):
+        route = "cloud"                                          # агенты — только владелец
+    kind = chat.get("kind")
+    _ag = b.get("agent") if isinstance(b.get("agent"), dict) else {}
+    _cr = None
+    if pcr is None and (route == "code" or kind == "code") and chat.get("project"):
+        import chat_agents                 # v3.231: агент «Контур» из чата (проект — ZIP, присланный в чат)
+        _cr = chat_agents.code_reply(chat, text, cid, getattr(req, "client_ip", ""), _ag)
+    elif pcr is None and (route == "admin" or kind == "admin"):
+        import chat_agents                 # v3.231: агент администрирования из чата
+        _cr = chat_agents.admin_reply(chat, text, cid, getattr(req, "client_ip", ""), _ag)
     if pcr is not None:
         reply, zone, info = pcr, brain.Z["sys"], {"terminal": True}
+    elif _cr:
+        reply, zone, info = _cr
+    elif kind in ("admin", "code"):
+        import chat_special
+        reply, zone, info = chat_special.reply(kind, text, ctx, cid, getattr(req, "client_ip", ""))
     elif route == "board":
         activity.update("Передаю вопрос плате и ожидаю ответ…")
         r = brain.ask_board(text, chat_id=cid, frm="чат облака",
@@ -228,9 +300,18 @@ def _chat_process(req, chat, cid, text, route, long_mode, t0):
         # проверка -> запуск -> дальше), с памятью прошлой задачи
         activity.update("Обрабатываю задачу кодинг-агентом…")
         import agent
+        _ab = None
         try:
-            reply, matched, cinfo = agent.code_agent(
-                text, lang=str(b.get("lang") or ""), ctx=ctx)
+            import applab_brain                      # v3.226: «напиши приложение/кирпичик…», «проверь …»
+            _ab = applab_brain.handle(text)
+        except Exception:
+            _ab = None
+        try:
+            if _ab:
+                reply, matched, cinfo = _ab[0], True, _ab[1]
+            else:
+                reply, matched, cinfo = agent.code_agent(
+                    text, lang=str(b.get("lang") or ""), ctx=ctx)
         except Exception as e:
             reply, matched, cinfo = ("Режим «Код» споткнулся: %s. Попробуй "
                                      "переформулировать просьбу." % e), True, {}
@@ -248,13 +329,13 @@ def _chat_process(req, chat, cid, text, route, long_mode, t0):
         # v3.132: «Авто» и «Облако» — ТОТ ЖЕ ИИ, что в боте МАКС (dialog.py):
         # те же зоны, тот же шаблон ответа, тот же честный режим
         activity.update("Обрабатываю вопрос движком облака…")
-        import dialog
+        import aiapi
         ctx12 = [{"role": m.get("role"), "text": m.get("text")}
                  for m in (chat.get("messages") or [])[-12:]
                  if "💭" not in str(m.get("text") or "")[:60]]
-        talk_parts, zone, info = dialog.respond(
+        talk_parts, zone, info = aiapi.cloud_reply(
             text, ctx=ctx12, chat_key="chat:%s" % cid, name="",
-            sender="владелец", deliver=None, long_mode=long_mode,
+            sender="владелец", long_mode=long_mode,
             limit=int(store.settings().get("tpl_chat_limit") or 4000),
             template=True)
         reply = "\n\n".join(talk_parts)
@@ -306,6 +387,8 @@ def _chat_process(req, chat, cid, text, route, long_mode, t0):
             out["parts"] = sent
         if info.get("net"):
             out["net"] = info["net"]          # v3.9: рост сети за ответ
+        if info.get("agent_job") or info.get("admin_job"):
+            out["agent"] = True               # v3.231: дальше сообщения агента придут в чат сами
         if info.get("pending_mid"):
             out["pending"] = True
             out["mid"] = info["pending_mid"]
@@ -540,7 +623,7 @@ def h_speech_post(req):
                  "speech": wordmind.status()}
 
 
-_SECRET_KEYS = ("google_api_key", "yandex_api_key", "conf_password", "conf_token")
+_SECRET_KEYS = ("support_max_bot_token", "google_api_key", "yandex_api_key", "conf_password", "conf_token")
 
 
 def _mask_secrets(s):
@@ -583,7 +666,21 @@ def h_settings_post(req):
     for k in ("google_cx", "yandex_folder"):
         if k in patch:
             patch[k] = str(patch[k] or "").strip()[:120]
-    s = _mask_secrets(store.update_settings(patch))
+    if 'conversation_style' in patch and patch['conversation_style'] not in ('short','normal','detailed'):
+        patch.pop('conversation_style')
+    if 'coupling_zone_mix' in patch:
+        try: patch['coupling_zone_mix']=max(0,min(100,int(patch['coupling_zone_mix'])))
+        except (ValueError,TypeError): patch.pop('coupling_zone_mix')
+    if any(k in patch for k in ('llm_loop_on','llm_loop_passes','llm_loop_mix')):
+        import loop_transformer
+        clean=loop_transformer.config(dict(store.settings(),**patch))
+        patch.update(llm_loop_on=clean['enabled'],llm_loop_passes=clean['passes'],llm_loop_mix=clean['mix'])
+    previous = store.settings()
+    updated = store.update_settings(patch)
+    if any(updated.get(k) != previous.get(k) for k in ("yandex_api_key", "yandex_folder")):
+        import webfetch
+        webfetch.reset_yandex_state()
+    s = _mask_secrets(updated)
     return 200, {"ok": True, "settings": s}
 
 
@@ -1007,8 +1104,8 @@ def h_seed_kb(req):
         return 200, {"ok": True, "added": 0}
     import textutils as _t
     arts = [
-        ("Что такое нейросеть «мозг-12»",
-         "«Мозг-12» — небольшая нейросеть на плате Arduino UNO Q и двенадцати "
+        ("Что такое нейросеть «Star Gate»",
+         "«Star Gate» — небольшая нейросеть на плате Arduino UNO Q и двенадцати "
          "платах-нейронах. Она умеет думать без больших языковых моделей: "
          "зонная сеть выбирает тему ответа, буквогенератор собирает буквы в "
          "слова, словарь частотных слов подсказывает лексику, а нейросеть "
@@ -1029,8 +1126,8 @@ def h_seed_kb(req):
          "tf-idf. Запрос зажигает узлы (разрядка активации по связям), "
          "активные нейроны выбирают материалы и предложения, из которых "
          "собирается связный длинный текст."),
-        ("Формулы и математические модели — как мозг-12 считает",
-         "Мозг-12 сам пишет формулы и строит математические модели — без "
+        ("Формулы и математические модели — как Star Gate считает",
+         "Star Gate сам пишет формулы и строит математические модели — без "
          "LLM (v3.8). База формул: GET /api/math/formulas (полная — "
          "?full=1: id, имя, ключи-темы, переменные с vkeys и ВЫРАЖЕНИЕ). "
          "Вопрос -> формула -> числа из вопроса -> расчёт с формулой и "
@@ -1239,11 +1336,57 @@ def seed_platform_guide():
 
 
 # ------------------------- авторизация панели -------------------------------
+def _is_owner(req):
+    return ((getattr(req, "params", None) or {}).get("_user") or {}).get("role", "owner") == "owner"
+
+
 def h_auth_check(req):
-    """Публично: есть ли пароль и авторизован ли этот браузер."""
-    return 200, {"ok": True,
-                 "has_password": auth.has_password(),
-                 "authed": auth.session_ok(req.params.get("_sid", ""))}
+    """Публично: есть ли пароль/учётки и авторизован ли этот браузер (и кто)."""
+    import accounts
+    accounts.ensure_owner()
+    sid = req.params.get("_sid", "")
+    out = {"ok": True, "has_password": auth.has_password() or accounts.exists_any(),
+           "authed": auth.session_ok(sid), "email_login": True, "register": True}
+    if out["authed"]:
+        who = auth.session_info(sid)
+        out["user"] = who
+        if who.get("role") == "owner":
+            out["pending"] = accounts.pending_count()
+            u = accounts.get(who.get("email")) if who.get("email") else None
+            out["seed_password"] = bool(u and u.get("seed"))
+    return 200, out
+
+
+def h_auth_register(req):
+    """Заявка на регистрацию: {email, name, password, note}. Войти — после одобрения владельцем."""
+    import accounts
+    if auth.too_many_fails(req.client_ip):
+        return 429, {"ok": False, "error": "слишком много попыток — подожди 15 минут"}
+    b = req.body or {}
+    auth.register_fail(req.client_ip)              # и заявки считаются: не больше 8 за 15 минут с адреса
+    r = accounts.register(b.get("email"), b.get("name"), b.get("password"), b.get("note"), req.client_ip)
+    return (200 if r.get("ok") else 400), r
+
+
+def h_auth_users(req):
+    """Владелец: GET — пользователи и заявки; POST {email, action: approve|reject|delete|owner|user}."""
+    import accounts
+    if not _is_owner(req):
+        return 403, {"ok": False, "error": "только владелец"}
+    if req.method == "POST":
+        b = req.body or {}
+        me = ((getattr(req, "params", None) or {}).get("_user") or {}).get("email", "")
+        if accounts.norm(b.get("email")) == me and b.get("action") in ("reject", "delete", "user"):
+            return 400, {"ok": False, "error": "себя так изменить нельзя"}
+        r = accounts.decide(b.get("email"), str(b.get("action") or ""), by=me or "владелец")
+        if r.get("ok") and b.get("action") in ("reject", "delete", "user"):
+            auth.drop_sessions_of(accounts.norm(b.get("email")))
+        return (200 if r.get("ok") else 400), dict(r, users=accounts.users())
+    return 200, {"ok": True, "users": accounts.users()}
+
+
+def h_auth_me(req):
+    return 200, {"ok": True, "user": (getattr(req, "params", None) or {}).get("_user") or {}}
 
 
 def h_auth_setup(req):
@@ -1265,10 +1408,29 @@ def h_auth_login(req):
     if auth.too_many_fails(req.client_ip):
         return 429, {"ok": False,
                      "error": "слишком много попыток — подожди 15 минут"}
-    if not auth.has_password():
+    if not auth.has_password() and not str((req.body or {}).get("email") or "").strip():
         return 403, {"ok": False,
-                     "error": "сначала создай пароль (форма настройки)"}
+                     "error": "пароля панели нет — войдите по почте или создайте пароль (форма настройки)"}
     pw = str((req.body or {}).get("password") or "")
+    email = str((req.body or {}).get("email") or "").strip()
+    if email:                                      # v3.233: вход по почте
+        import accounts
+        accounts.ensure_owner()
+        u = accounts.check(email, pw)
+        if not u:
+            auth.register_fail(req.client_ip)
+            time.sleep(0.7)
+            store.log("АВТОРИЗАЦИЯ", "НЕВЕРНЫЙ вход по почте %s с %s" % (accounts.norm(email)[:60], req.client_ip))
+            return 401, {"ok": False, "error": "неверная почта или пароль"}
+        if u["status"] == "pending":
+            return 403, {"ok": False, "error": "заявка ещё не одобрена владельцем"}
+        if u["status"] != "active":
+            return 403, {"ok": False, "error": "доступ закрыт владельцем"}
+        auth.clear_fails(req.client_ip)
+        sid = auth.create_session(ip=req.client_ip, ua=req.headers.get("User-Agent") or "",
+                                  email=u["email"], role=u["role"])
+        store.log("АВТОРИЗАЦИЯ", "вход %s (%s) с %s" % (u["email"], u["role"], req.client_ip))
+        return 200, {"ok": True, "user": {"email": u["email"], "role": u["role"]}}, {"Set-Cookie": auth.cookie_header(sid)}
     if not auth.verify(pw):
         auth.register_fail(req.client_ip)
         time.sleep(0.7)                  # слегка замедлить подбор
@@ -1293,8 +1455,13 @@ def h_auth_logout_all(req):
 
 
 def h_auth_password(req):
-    """Смена пароля панели: {old, new}."""
+    """Смена пароля: вошли по почте — пароль учётки; иначе — пароль панели. {old, new}."""
     b = req.body or {}
+    me = ((getattr(req, "params", None) or {}).get("_user") or {}).get("email")
+    if me:
+        import accounts
+        r = accounts.set_password(me, str(b.get("old") or ""), str(b.get("new") or ""))
+        return (200 if r.get("ok") else 400), r
     if not auth.verify(str(b.get("old") or "")):
         return 401, {"ok": False, "error": "старый пароль неверен"}
     new = str(b.get("new") or "")
@@ -1440,8 +1607,19 @@ def h_applab_run(req):
 def h_applab_flags(req):
     import pyapps
     b = req.body or {}
-    kw = {k: b[k] for k in ("enabled", "chat") if k in b}
-    return 200, pyapps.set_flags(str(b.get("id") or "")[:40], **kw)
+    kw = {k: bool(b[k]) for k in ("enabled", "chat") if k in b}
+    try:
+        r = pyapps.set_flags(str(b.get("id") or "")[:40], **kw)
+    except OSError as e:                 # v3.232: честная ошибка вместо «ничего не произошло»
+        return 200, {"ok": False, "error": "не записалось на диск: %s" % e}
+    return 200, r
+
+
+def h_applab_rename(req):
+    import pyapps
+    b = req.body or {}
+    r = pyapps.rename(str(b.get("id") or "")[:40], b.get("name"))
+    return (200 if r.get("ok") else 400), r
 
 
 def h_applab_ai(req):
@@ -1731,7 +1909,7 @@ def h_v1_ask(req):
     b = req.body or {}
     q = b.get("question") or b.get("text") or b.get("message") or ""
     mode = str(b.get("mode") or "auto")
-    if mode not in ("auto", "talk", "code"):
+    if mode not in ("auto", "cloud", "talk", "code"):
         mode = "auto"
     r = aiapi.answer(q, _ai_key(req), session=str(b.get("session") or ""),
                      mode=mode, long_mode=bool(b.get("long")),
@@ -1827,6 +2005,37 @@ def h_brain_train(req):
     return 200, {"ok": True, "train": brain.brain_train_status()}
 
 
+_LLM_RT = {"busy": False, "since": 0.0, "done": 0.0, "error": "", "why": ""}
+
+
+def _llm_retrain_bg(why):
+    """v3.235: переобучение в фоне. Раньше запрос «Применить размеры и переобучить» ждал,
+    пока остановится прежнее обучение (до 3 минут на большой модели), — страница висела,
+    а при одинаковых числах переобучение вовсе не запускалось."""
+    import threading
+    if _LLM_RT["busy"]:
+        return False
+
+    def go():
+        _LLM_RT.update(busy=True, since=time.time(), error="", why=why)
+        try:
+            import tinyllm
+            tinyllm.retrain_now()
+            try:
+                import syncpoint
+                syncpoint.mark("train", "переобучение LLM", llm=False)
+            except Exception:
+                pass
+            store.log("ОБУЧЕНИЕ LLM", "переобучение запущено (%s)" % why)
+        except Exception as e:
+            _LLM_RT["error"] = "%s: %s" % (type(e).__name__, e)
+            store.log("ОБУЧЕНИЕ LLM", "переобучение не запустилось: %s" % _LLM_RT["error"])
+        finally:
+            _LLM_RT.update(busy=False, done=time.time())
+    threading.Thread(target=go, daemon=True, name="llm-retrain").start()
+    return True
+
+
 def h_tinyllm(req):
     """v3.31/33: своя LLM облака: GET — статус, настройки, оценка нагрузки,
     нагрузка компьютера, состояние связи с мозгом; POST {llm_d, llm_layers,
@@ -1893,17 +2102,13 @@ def h_tinyllm(req):
                 syncpoint.mark("train", "кнопка «Обучить»", llm=False)
             except Exception:
                 pass
+        started = None
         if b.get("retrain") or changed or (unblock and err):
-            try:
-                tinyllm.retrain_now()
-            except Exception as e:
-                return 200, {"ok": False, "error": str(e)}
-            try:
-                import syncpoint
-                syncpoint.mark("train", "переобучение LLM", llm=False)
-            except Exception:
-                pass
+            started = _llm_retrain_bg("новые размеры" if changed else "кнопка «Переобучить»")
     out = {"ok": True}
+    if str(getattr(req, "method", "")).upper() == "POST" and started is not None:
+        out["retrain_started"] = bool(started)
+    out["retrain"] = dict(_LLM_RT)
     try:
         out["llm"] = tinyllm.status()
     except Exception as e:
@@ -2179,12 +2384,16 @@ def _r(method, pattern, fn, mode="panel"):
 
 
 _r("POST", "api/chat/new", h_chat_new)
+_r("GET", "api/chat/special", h_chat_special)
+_r("POST", "api/chat/special", h_chat_special)
 _r("GET", "api/chat/list", h_chat_list)
 _r("GET", "api/chat/get", h_chat_get)
 _r("GET", "api/chat/poll", h_chat_poll)
 _r("POST", "api/chat/rename", h_chat_rename)
 _r("POST", "api/chat/delete", h_chat_delete)
 _r("POST", "api/chat/send", h_chat_send)
+_r("GET", "api/crash/report", h_crash_report)
+_r("POST", "api/crash/report", h_crash_report)
 _r("GET", "api/chat/activity", h_chat_activity)
 _r("POST", "api/chat/gen", h_chat_gen)
 _r("POST", "api/chat/rate", h_chat_rate)       # v3.28: 👍/👎 — обучение
@@ -2194,14 +2403,15 @@ _r("GET", "api/status", h_status)
 _r("POST", "api/teacher/tour", h_teacher_tour)
 _r("GET", "api/teacher/thoughts", h_teacher_thoughts)
 def h_web_engines(req):
-    """v3.167: проверка поисковиков (кнопка в настройках): Поиск Mail.ru,
-    Mojeek, Google/Яндекс по ключу, Википедия и Рувики."""
+    """v3.167: проверка поисковиков (кнопка в настройках): Яндекс (выдача),
+    Поиск Mail.ru, Mojeek, Google/Яндекс по ключу, Википедия и Рувики."""
     import webfetch
     q = str((req.body or {}).get("q") or "фотосинтез")[:80]
-    tests = [("Поиск Mail.ru", webfetch.mailru_search, "mailru", ""),
+    tests = [("Яндекс (выдача)", webfetch.yandex_html, "yandex-html", ""),
+             ("Поиск Mail.ru", webfetch.mailru_search, "mailru", ""),
              ("Mojeek", webfetch.mojeek_search, "mojeek", ""),
              ("Google (ключ API)", webfetch.google_api, "google-api", "google_api_key"),
-             ("Яндекс (ключ API)", webfetch.yandex_api, "yandex-api", "yandex_api_key"),
+             ("Яндекс (ключ API)", webfetch.yandex_api, "yandex", "yandex_api_key"),
              ("Википедия", lambda q_, n: webfetch._wiki_lang("ru", q_, n, []), "", ""),
              ("Рувики", webfetch.ruwiki_search, "", "")]
     try:                                    # v3.168: документация Confluence
@@ -2226,14 +2436,17 @@ def h_web_engines(req):
             import sources
             err = "; ".join("%s: %s" % (x.get("name") or x["url"], x.get("state_err"))
                             for x in sources.sources() if x.get("state_err")) or err
+        successful_empty = False
         if not res and st_key:
-            err = (webfetch.engines_state().get(st_key) or {}).get("err") or err
-        if not res and not err:
+            engine_status = webfetch.engines_state().get(st_key) or {}
+            err = engine_status.get("err") or err
+            successful_empty = not err and engine_status.get("ok_ago") is not None
+        if not res and not err and not successful_empty:
             try:
                 err = "пусто: " + "; ".join(str(x) for x in (webfetch.diag_tail() or [])[-2:])
             except Exception:
                 err = "пусто"
-        out[name] = {"found": len(res), "via": "", "err": "" if res else err}
+        out[name] = {"ok": bool(res) or successful_empty, "found": len(res), "via": "Search API v2" if st_key == "yandex" else "", "err": "" if res or successful_empty else err}
     store.log("ПОИСК", "проверка поисковиков: " + ", ".join(
         "%s=%s" % (k, v["found"]) for k, v in out.items()))
     return 200, {"ok": True, "engines": out}
@@ -2249,6 +2462,15 @@ def h_brainctl(req):
 
 
 _r("GET", "api/brainctl", h_brainctl)
+
+
+def h_coupling(req):
+    """v3.193: страница «Сопряжение» — воля платы и воля LLM в одном ответе."""
+    import coupling
+    return 200, coupling.status()
+
+
+_r("GET", "api/coupling", h_coupling)
 
 
 def h_sources(req):
@@ -2605,6 +2827,10 @@ _r("POST", "api/auth/login", h_auth_login, mode="login")
 _r("POST", "api/auth/logout", h_auth_logout)
 _r("POST", "api/auth/logout-all", h_auth_logout_all)
 _r("POST", "api/auth/password", h_auth_password)
+_r("POST", "api/auth/register", h_auth_register, mode="login")
+_r("GET", "api/auth/users", h_auth_users)
+_r("POST", "api/auth/users", h_auth_users)
+_r("GET", "api/auth/me", h_auth_me)
 
 # --- мост к плате (127.0.0.1:7000) ---
 _r("GET", "api/bridge/status", h_bridge_status)
@@ -2673,6 +2899,7 @@ _r("POST", "api/applab/save", h_applab_save)
 _r("POST", "api/applab/delete", h_applab_delete)
 _r("POST", "api/applab/run", h_applab_run)
 _r("POST", "api/applab/flags", h_applab_flags)
+_r("POST", "api/applab/rename", h_applab_rename)
 _r("POST", "api/applab/ai", h_applab_ai)
 _r("GET", "api/applab/guide", h_applab_guide)
 _r("GET", "api/applab/chat", h_applab_chat)
@@ -2773,6 +3000,14 @@ def h_maxbot_config(req):
         patch["maxbot_on"] = bool(b.get("maxbot_on"))
     if "maxbot_memory" in b:
         patch["maxbot_memory"] = bool(b.get("maxbot_memory"))
+    if "maxbot_mode" in b:                         # v3.212: talk | web
+        patch["maxbot_mode"] = "web" if str(b.get("maxbot_mode")) == "web" else "talk"
+    if "maxbot_talk_chars" in b:
+        try:
+            v = int(b.get("maxbot_talk_chars"))
+        except (TypeError, ValueError):
+            v = 3500
+        patch["maxbot_talk_chars"] = max(500, min(7000, v))
     for k in ("max_cloud_reply", "max_brain_reply"):      # v3.30: галочки
         if k in b:
             patch[k] = bool(b.get(k))
@@ -2807,7 +3042,7 @@ def h_maxbot_config(req):
             probe["ok"] = False
             probe["error"] = "%s: %s" % (type(e).__name__, e)
     maxbot.wake()                          # polling не ждёт таймаута
-    return 200, {"ok": True, "settings": s, "probe": probe}
+    return 200, {"ok": True, "settings": _mask_secrets(s), "probe": probe}
 
 
 def h_maxbot_probe(req):
@@ -3110,9 +3345,21 @@ def _project_error(fn):
 
 def h_project_upload(req):
     import project_agent
-    return _project_error(lambda: (200, dict(ok=True, project=project_agent.upload(
-        req.files_data.get('file') or b'', req.files_data.get('filename') or '',
-        getattr(req, 'client_ip', '')))))
+
+    def go():
+        project = project_agent.upload(req.files_data.get('file') or b'', req.files_data.get('filename') or '',
+                                       getattr(req, 'client_ip', ''))
+        out = dict(ok=True, project=project)
+        cid = str(req.query.get('chat') or '')[:40]
+        if cid:                                        # v3.231: ZIP из чата — проект этого чата
+            chat = store.chat_load(cid)
+            if not chat or not store.chat_allowed(chat, getattr(req, 'client_ip', '')):
+                raise ValueError('чат не найден')
+            import chat_agents
+            chat_agents.bind_project(cid, project)
+            out['chat'] = cid
+        return 200, out
+    return _project_error(go)
 
 
 def h_project_run(req):
@@ -3121,7 +3368,8 @@ def h_project_run(req):
     return _project_error(lambda: (200, dict(ok=True, id=project_agent.start(
         str(b.get('project_id') or ''), str(b.get('task') or ''),
         getattr(req, 'client_ip', ''), internet=b.get('internet', True) is True,
-        model=str(b.get('model') or 'auto'), base_job=str(b.get('base_job') or '')))))
+        model=str(b.get('model') or 'auto'), base_job=str(b.get('base_job') or ''),
+        effort=b.get('effort'), use_will=b.get('will', True)))))
 
 
 def h_project_status(req):
@@ -3134,7 +3382,7 @@ def h_project_download(req):
     import project_agent
     return _project_error(lambda: (200, 'file', (
         str(project_agent.download(req.query.get('id', ''), getattr(req, 'client_ip', ''))),
-        'application/zip', 'project-result.zip')))
+        'application/zip', project_agent.download_name(req.query.get('id', ''), getattr(req, 'client_ip', '')))))
 
 
 _r('POST', 'api/code/project/upload', h_project_upload)
@@ -3166,6 +3414,38 @@ def h_code_boot(req):
 
 _r('GET', 'api/code/course', h_code_boot)
 _r('POST', 'api/code/course', h_code_boot)
+
+
+# v3.191: учитель кода (ЯндексGPT / внешний учитель) для своей LLM.
+def h_code_teach(req):
+    import codeteach
+    b = req.body or {}
+    if getattr(req, 'method', 'GET') == 'POST':
+        action = str(b.get('action') or ('stop' if b.get('stop') else 'status'))
+        try:
+            if action == 'start':
+                r = codeteach.start()
+            elif action == 'stop':
+                r = {"ok": True, "teach": codeteach.stop()}
+            elif action == 'configure':
+                r = {"ok": True,
+                     "teach": codeteach.configure(engine=b.get('engine'),
+                                                  endpoint=b.get('endpoint'),
+                                                  model=b.get('model'),
+                                                  lessons=b.get('lessons'),
+                                                  topics=b.get('topics'))}
+            elif action == 'check':
+                r = codeteach.check_teacher()
+            else:
+                r = {"ok": True, "teach": codeteach.status()}
+        except ValueError as e:
+            return 200, dict(ok=False, error=str(e)[:200])
+        return 200, r
+    return 200, dict(ok=True, teach=codeteach.status())
+
+
+_r('GET', 'api/code/teach', h_code_teach)
+_r('POST', 'api/code/teach', h_code_teach)
 
 
 def h_code_will(req):
@@ -3331,6 +3611,145 @@ _r("GET", "api/servers", h_servers)                        # v3.178: окно «
 _r("POST", "api/servers", h_servers)
 
 
+# ===== v3.189: режим «Администрирование» — агент с ядром мозга-12 и своей LLM =====
+def h_admin_agent(req):
+    """GET ?id= — задание; без id — список заданий и настройки по умолчанию.
+    POST {action: start|approve|stop, task, mode: both|brain|llm, target,
+    auto_ok, id, yes}."""
+    import admin_agent
+    if req.method == "GET":
+        jid = req.query.get("id", "")
+        if jid:
+            return 200, {"ok": True, "job": admin_agent.get_job(jid)}
+        s = store.settings()
+        return 200, {"ok": True, "jobs": admin_agent.list_jobs(),
+                     "mode": str(s.get("admin_mode") or "both"),
+                     "auto_ok": bool(s.get("agent_auto_ok"))}
+    b = req.body or {}
+    action = b.get("action", "start")
+    if action == "start":
+        mode = str(b.get("mode") or "both")
+        if mode in ("both", "brain", "llm"):
+            store.update_settings({"admin_mode": mode})   # запомнить выбор режима
+        if b.get("auto_ok") is not None:
+            store.update_settings({"agent_auto_ok": bool(b.get("auto_ok"))})
+        return 200, admin_agent.start_job(b.get("task", ""), owner=getattr(req, "client_ip", ""),
+                                          mode=mode, auto_ok=b.get("auto_ok"),
+                                          target=b.get("target") or "")
+    if action == "approve":                 # «Разрешить» / «Отклонить»
+        return 200, admin_agent.approve(b.get("id"), bool(b.get("yes")))
+    if action == "stop":
+        return 200, admin_agent.stop(b.get("id"))
+    if action == "feedback":                # v3.237: «помогло / не помогло»
+        import admin_selfwrite
+        return 200, admin_selfwrite.feedback(b.get("id"), bool(b.get("helped")))
+    if action == "selfwrite":               # v3.237: сводка записанных из интернета инструкций
+        import admin_selfwrite
+        return 200, dict(admin_selfwrite.status(), ok=True)
+    return 400, {"ok": False, "error": "неизвестное действие"}
+
+
+def h_llm_download(req):
+    """v3.237: скачать свою LLM (zip: веса, словарь, запуск board_llm.py)."""
+    import llm_export
+    r = llm_export.build(force=req.query.get("fresh") == "1")
+    if not r.get("ok"):
+        return 404, {"ok": False, "error": r.get("error")}
+    return 200, "file", (r["path"], "application/zip", "mozg12_llm_%s.zip" % r.get("sig", ""))
+
+
+def h_llm_export(req):
+    """v3.237: GET — состояние пакета и плат; POST {action: push, boards: '*'|[id]} — загрузить на плату."""
+    import llm_export
+    if req.method == "GET":
+        return 200, llm_export.status()
+    b = req.body or {}
+    if b.get("action") == "push":
+        return 200, llm_export.push(b.get("boards") or "*")
+    if b.get("action") == "build":
+        return 200, {k: v for k, v in llm_export.build(force=True).items() if k != "path"}
+    if b.get("action") == "cancel":
+        store.update_settings({"llm_push": {}})
+        return 200, {"ok": True}
+    return 400, {"ok": False, "error": "неизвестное действие"}
+
+
+def h_netbus(req):
+    """v3.237: «дружба нейросетей». GET — доверие, пакеты; POST {on, d6, period} | {action: round}."""
+    import netbus
+    if req.method == "GET":
+        return 200, netbus.status()
+    b = req.body or {}
+    if b.get("action") == "round":
+        return 200, netbus.round_once()
+    upd = {}
+    if "on" in b:
+        upd["netbus_on"] = bool(b["on"])
+    if "d6" in b:
+        upd["netbus_d6"] = bool(b["d6"])
+    if "period" in b:
+        try:
+            upd["netbus_period"] = max(30, min(3600, int(b["period"])))
+        except (TypeError, ValueError):
+            pass
+    if upd:
+        store.update_settings(upd)
+    return 200, netbus.status()
+
+
+def _admin_caps():
+    """Что сейчас доступно агенту: настроенная модель, своя LLM, рабочий стол."""
+    caps = {"ext_model": False, "own_llm": False, "desktop": False}
+    try:
+        import codewrite
+        caps["ext_model"] = codewrite.available()
+        caps["own_llm"] = codewrite.own_ready()
+    except Exception:
+        pass
+    try:
+        import desktop
+        caps["desktop"] = desktop.enabled()
+    except Exception:
+        pass
+    return caps
+
+
+def h_admin_settings(req):
+    """v3.189: настройки агентов режима «Администрирование» и «Контур»,
+    живущих внизу чата. GET — значения и возможности; POST — сохранить."""
+    if req.method == "GET":
+        s = store.settings()
+        return 200, {"ok": True,
+                     "mode": str(s.get("admin_mode") or "both"),
+                     "auto_ok": bool(s.get("agent_auto_ok")),
+                     "caps": _admin_caps()}
+    b = req.body or {}
+    patch = {}
+    if "mode" in b:
+        mode = str(b.get("mode") or "both")
+        if mode not in ("both", "brain", "llm"):
+            return 400, {"ok": False, "error": "режим может быть both, brain или llm"}
+        patch["admin_mode"] = mode
+    if "auto_ok" in b:
+        patch["agent_auto_ok"] = bool(b.get("auto_ok"))
+    if patch:
+        store.update_settings(patch)
+    s = store.settings()
+    return 200, {"ok": True, "mode": str(s.get("admin_mode") or "both"),
+                 "auto_ok": bool(s.get("agent_auto_ok")), "caps": _admin_caps()}
+
+
+_r("GET", "api/admin/agent", h_admin_agent)
+_r("GET", "api/llm/download", h_llm_download)          # v3.237
+_r("GET", "api/llm/export", h_llm_export)
+_r("POST", "api/llm/export", h_llm_export)
+_r("GET", "api/netbus", h_netbus)
+_r("POST", "api/netbus", h_netbus)
+_r("POST", "api/admin/agent", h_admin_agent)
+_r("GET", "api/admin/settings", h_admin_settings)
+_r("POST", "api/admin/settings", h_admin_settings)
+
+
 # ===== Память облака и LLM (JSON) =====
 def h_memory(req):
     import memory_save
@@ -3473,3 +3892,154 @@ def h_install_pillow(req):
 
 
 _r("POST", "api/install/pillow", h_install_pillow)
+
+
+def h_yandex_probe(req):
+    """Test current form values without storing them or exposing credentials."""
+    import webfetch
+    b = req.body or {}
+    saved = store.settings()
+    key = str(b.get('yandex_api_key', saved.get('yandex_api_key') or '')).strip()
+    if key.startswith('…'):
+        key = str(saved.get('yandex_api_key') or '').strip()
+    folder = str(b.get('yandex_folder', saved.get('yandex_folder') or '')).strip()
+    if not key or not folder:
+        return 200, dict(ok=False, error='Укажите API-ключ и Folder ID каталога Yandex Cloud')
+    results = webfetch.yandex_api(str(b.get('q') or 'фотосинтез'), 3, credentials=(key,folder)) or []
+    state = webfetch.engines_state().get('yandex') or {}
+    error = state.get('err') or ''
+    return 200, dict(ok=not bool(error), error=error, found=len(results), results=results,
+                     message='Search API v2 отвечает' if results else 'API отвечает; по запросу нет результатов' if not error else error)
+
+
+_r('POST', 'api/web/yandex/test', h_yandex_probe)
+
+
+# Own supervised pixel OCR, panel authentication inherited from _r.
+def h_photo_ocr(req):
+    import photo_ocr
+    import base64
+    if req.method == 'GET':
+        import ocr_dataset
+        import printed_dataset
+        return 200, dict(ok=True, printed=printed_dataset.status(), dataset=ocr_dataset.status(), **photo_ocr.status())
+    body=req.body or {}
+    try:
+        action=body.get('action')
+        if action=='import_printed':
+            import printed_dataset
+            return 200,printed_dataset.start(body.get('limit',20))
+        if action=='printed_crop':
+            import printed_dataset
+            return 200,printed_dataset.add_crop(body.get('page_id'),body.get('box'),body.get('text',''),single=bool(body.get('single')))
+        if action=='import_comnist':
+            import ocr_dataset
+            return 200,ocr_dataset.start(body.get('limit',200))
+        if action=='train':return 200,photo_ocr.train(body.get('epochs',80))
+        encoded=str(body.get('image') or '')
+        if len(encoded)>11_000_000:raise ValueError('Фото больше 8 МБ')
+        raw=base64.b64decode(encoded.split(',',1)[-1],validate=True)
+        if action=='add':return 200,photo_ocr.add(raw,body.get('text',''),single=bool(body.get('single')))
+        if action=='read':
+            result=photo_ocr.read(raw,single=bool(body.get('single')))
+            return 200, dict(ok=bool(result),result=result,error='' if result else 'Сначала обучите собственную OCR-голову')
+        raise ValueError('Неизвестное действие')
+    except (ValueError, ImportError, OSError) as exc:
+        return 400,dict(ok=False,error=str(exc)[:500])
+
+_r('GET','api/llm/photo-ocr',h_photo_ocr)
+_r('POST','api/llm/photo-ocr',h_photo_ocr)
+
+
+def h_loop_status(req):
+    import loop_transformer
+    return 200,dict(ok=True,**loop_transformer.status())
+_r('GET','api/llm/loop',h_loop_status)
+
+
+def h_printed_image(req):
+    import printed_dataset
+    try:
+        raw=printed_dataset.image_bytes(req.query.get('id',''))
+        return 200,'raw',(raw,'image/png' if raw.startswith(b'\x89PNG') else 'image/jpeg',None)
+    except (ValueError,OSError) as exc:
+        return 404,dict(ok=False,error=str(exc)[:200])
+_r('GET','api/llm/printed/image',h_printed_image)
+
+
+# Support mini-app and connector API share the same host/port.
+def _support_actor(req):
+    import support_app
+    actor=req.params.get('_support_actor')
+    if actor:return actor
+    return support_app.platform_actor(_ai_key(req),str((req.body or {}).get('user_id') or req.query.get('user_id') or ''))
+
+
+def h_support_login(req):
+    import support_app,aiapi
+    if not aiapi.rate_ok('support-login:'+getattr(req,'client_ip','')):
+        return 429,dict(ok=False,error='Слишком много попыток входа')
+    try:return 200,support_app.login((req.body or {}).get('init_data','')),{'Cache-Control':'no-store'}
+    except (ValueError,TypeError,KeyError):return 401,dict(ok=False,error='Не удалось проверить запуск MAX. Проверьте токен мини-приложения и откройте его заново.')
+
+
+def h_support_me(req):
+    actor=_support_actor(req)
+    return 200,dict(ok=True,user={'id':actor.get('user_id',''),'name':actor.get('name',''),'admin':bool(actor.get('admin'))}),{'Cache-Control':'no-store'}
+
+
+def h_support_tickets(req):
+    import support_app
+    actor=_support_actor(req);b=req.body or {}
+    try:
+        if req.method=='GET':return 200,dict(ok=True,tickets=support_app.tickets(actor)),{'Cache-Control':'no-store'}
+        action=b.get('action','create')
+        if action=='create':result=support_app.create(actor,b)
+        elif action=='reveal':result=support_app.reveal(actor,str(b.get('id') or ''))
+        elif action=='update':result=support_app.update(actor,str(b.get('id') or ''),b)
+        else:raise ValueError('Неизвестное действие')
+        return 200,result,{'Cache-Control':'no-store'}
+    except PermissionError as exc:return 403,dict(ok=False,error=str(exc)),{'Cache-Control':'no-store'}
+    except (ValueError,TypeError) as exc:return 400,dict(ok=False,error=str(exc)),{'Cache-Control':'no-store'}
+
+
+def h_support_ask(req):
+    import support_app
+    try:return 200,support_app.ask(_support_actor(req),req.body or {}),{'Cache-Control':'no-store'}
+    except (ValueError,TypeError) as exc:return 400,dict(ok=False,error=str(exc))
+
+
+def h_support_config(req):
+    import aiapi,urllib.parse
+    b=req.body or {}
+    if req.method=='POST':
+        patch={}
+        if 'support_public_url' in b:
+            url=str(b['support_public_url'] or '').strip().rstrip('/')
+            parsed=urllib.parse.urlsplit(url)
+            if url and (parsed.scheme not in ('http','https') or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment or parsed.path not in ('','/')):
+                return 400,dict(ok=False,error='Нужен основной адрес облака: https://домен или http://IP:порт, без пароля и пути')
+            patch['support_public_url']=url
+        if 'support_max_bot_token' in b:
+            value=str(b.get('support_max_bot_token') or '').strip()
+            if value and '…' not in value:patch['support_max_bot_token']=value[:300]
+        if b.get('clear_token'):patch['support_max_bot_token']=''
+        if 'support_connector_key_id' in b:
+            kid=str(b.get('support_connector_key_id') or '')
+            if kid and kid not in {r['id'] for r in aiapi.keys_list() if r.get('on')}:
+                return 400,dict(ok=False,error='Выберите действующий ключ платформы')
+            patch['support_connector_key_id']=kid
+        store.update_settings(patch)
+    settings=store.settings()
+    return 200,dict(ok=True,public_url=settings.get('support_public_url',''),bot_token_set=bool(settings.get('support_max_bot_token')),connector_key_id=settings.get('support_connector_key_id',''),keys=aiapi.keys_list())
+
+_r('POST','api/support/session',h_support_login,mode='open')
+_r('GET','api/support/me',h_support_me,mode='miniapp')
+_r('GET','api/support/tickets',h_support_tickets,mode='miniapp')
+_r('POST','api/support/tickets',h_support_tickets,mode='miniapp')
+_r('POST','api/support/ask',h_support_ask,mode='miniapp')
+_r('GET','api/support/config',h_support_config)
+_r('POST','api/support/config',h_support_config)
+_r('GET','api/v1/support/tickets',h_support_tickets,mode='ai')
+_r('POST','api/v1/support/tickets',h_support_tickets,mode='ai')
+_r('POST','api/v1/support/ask',h_support_ask,mode='ai')

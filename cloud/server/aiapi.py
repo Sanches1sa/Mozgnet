@@ -150,8 +150,19 @@ def _sess(kid, sid):
 
 
 # --------------------------------- ответ ------------------------------------
+def cloud_reply(question, *, ctx=None, chat_key='', name='', sender='API', long_mode=False, template=True, limit=None):
+    """One application service for panel, builtin MAX and HTTP API.
+    No loopback HTTP, service token or messenger-specific answer alterations.
+    """
+    import dialog
+    if limit is None:
+        limit=int(store.settings().get('tpl_chat_limit') or 4000)
+    return dialog.respond(question,ctx=ctx,chat_key=chat_key,name=name,sender=sender,
+                          deliver=None,long_mode=long_mode,limit=limit,template=template)
+
+
 def answer(question, key, session="", mode="auto", long_mode=False,
-           ctx=None, template=False, name=""):
+           ctx=None, template=False, name="", chat_key=None, sender=None):
     """Общий вход: вопрос -> dict ответа. ctx — история (если приложение
     шлёт её само, как в Chat Completions), иначе — память сессии."""
     import brain
@@ -159,14 +170,23 @@ def answer(question, key, session="", mode="auto", long_mode=False,
     q = str(question or "").strip()[:20000 if mode == "code" else 4000]
     if not q:
         return {"ok": False, "error": "пустой вопрос"}
-    who = "API: %s" % (key or {}).get("name", "?")
+    who = sender or "API: %s" % (key or {}).get("name", "?")
     s = _sess((key or {}).get("id", "?"), session)
-    hist = list(ctx) if ctx is not None else list(s["ctx"])
-    hist.append({"role": "user", "text": q})
+    incoming=list(ctx) if isinstance(ctx,list) else list(s['ctx'])
+    hist=[]
+    for item in incoming[-_CTX_MAX:]:
+        if not isinstance(item,dict) or item.get('role') not in ('user','bot','assistant'):continue
+        hist.append({'role':'bot' if item['role']=='assistant' else item['role'],
+                     'text':str(item.get('text') or item.get('content') or '')[:4000]})
+    if not hist or hist[-1].get('role')!='user' or hist[-1].get('text')!=q:
+        hist.append({'role':'user','text':q})
     info = {}
-    if mode == "talk":
-        import agent
-        reply, zone, info = agent.talk(q, ctx=hist, long_mode=long_mode)
+    response_parts=None
+    if mode == 'talk':
+        import talkmind
+        response_parts,info=talkmind.respond_parts(q,hist)
+        reply='\n\n'.join(response_parts)
+        zone=brain.Z['talk']
     elif mode == "code":
         import agent
         reply, matched, cinfo = agent.code_agent(q, ctx=hist)
@@ -174,14 +194,13 @@ def answer(question, key, session="", mode="auto", long_mode=False,
             zone = brain.Z["code"]
             info = {k: v for k, v in (cinfo or {}).items() if k != "code"}
         else:
-            reply, zone, info = brain.think(q, long_mode, route="cloud",
-                                            sender=who, ctx=hist)
+            response_parts,zone,info=cloud_reply(q,ctx=hist,chat_key=chat_key or 'api:%s:%s'%((key or {}).get('id','?'),session),name=name,sender=who,long_mode=long_mode,template=template)
+            reply='\n\n'.join(response_parts)
     else:
-        # v3.29: единый мозг — слабый ответ облака дополняет плата
-        reply, zone, info = brain.think(
-            q, long_mode, route="cloud", sender=who, ctx=hist,
-            deliver={"kind": "api", "key": (key or {}).get("id", "?"),
-                     "session": str(session or "default")[:64]})
+        response_parts,zone,info=cloud_reply(q,ctx=hist,
+            chat_key=chat_key or 'api:%s:%s'%((key or {}).get('id','?'),str(session or 'default')[:64]),
+            name=name,sender=who,long_mode=long_mode,template=template)
+        reply='\n\n'.join(response_parts)
     reply = str(reply or "")
     _raw_reply = reply                     # v3.99.1: с меткой — для шаблона
     reply = reply.replace("\u2063", "")
@@ -198,7 +217,16 @@ def answer(question, key, session="", mode="auto", long_mode=False,
                   "pending"):
             if info.get(k):
                 out[k] = info[k]
-    if template:
+    if response_parts is not None:
+        out['parts']=[str(part).replace('\u2063','') for part in response_parts]
+        out['engine']='talkmind' if mode=='talk' else 'cloud-dialog'
+    if isinstance(info,dict):
+        out['sources']=info.get('sources') or []
+        out['focus_rejected']=bool(info.get('focus_rejected'))
+        out['clarification']=bool(info.get('clarification'))
+        if info.get('missing_fields'):out['missing_fields']=info['missing_fields']
+        out['unanswered']=bool(info.get('focus_no_answer') or (not info.get('sources') and re.search(r'^Не знаю|нет.{0,50}подтвержд[её]нной памяти',reply,re.I)))
+    if template and response_parts is None:
         try:
             import replytpl
             out["parts"] = replytpl.build(_raw_reply, name=name,
@@ -265,7 +293,7 @@ def chat_completions(body, key):
         ctx = ctx[:-1]
     mode = str(body.get("mode") or "auto")
     r = answer(last, key, session=str(body.get("user") or "chat")[:64],
-               mode=mode if mode in ("auto", "talk", "code") else "auto",
+               mode=mode if mode in ("auto", "cloud", "talk", "code") else "auto",
                long_mode=bool(body.get("long")), ctx=ctx[-_CTX_MAX:])
     if not r.get("ok"):
         return 400, {"error": {"message": r.get("error"),
@@ -287,7 +315,7 @@ def chat_completions(body, key):
 
 def info():
     import brain
-    return {"ok": True, "name": "мозг-12 (neuro12-cloud)",
+    return {"ok": True, "name": "Star Gate (neuro12-cloud)",
             "version": store.version(), "model": MODEL,
             "llm": False,
             "zones": [brain.Z.get(z, z) for z, _d, _e in brain.ZONES],

@@ -914,6 +914,36 @@ def clean_text(text, limit=MAX_REPLY):
 
 
 # ------------------------------- интеллект ----------------------------------
+def _web_only(text):
+    """v3.212: режим «Интернет» — страницы выдачи -> связный ответ + источники.
+    -> (текст, зона) | None, если сеть ничего не дала."""
+    try:
+        import webfetch
+        reply, meta = webfetch.alice(str(text or ""), long_mode=True)
+    except Exception as e:
+        _err("интернет-режим: %s" % e)
+        return None
+    reply = str(reply or "").strip()
+    if not reply or reply.startswith("Именно про"):
+        return None
+    srcs = []
+    for x in (meta or {}).get("sources") or []:
+        u = x.get("url") if isinstance(x, dict) else str(x)
+        if u and u not in srcs:
+            srcs.append(str(u))
+    try:                                          # v3.212: формулы статьи (LaTeX) по запросу
+        import articles
+        if articles.is_formula_q(text) and "$" not in reply:
+            fb = articles.formula_block(text)
+            if fb:
+                reply += "\n\n" + fb
+    except Exception as e:
+        _err("формулы: %s" % e)
+    if srcs:
+        reply += "\n\nИсточники:\n" + "\n".join(srcs[:5])
+    return reply, "Интернет"
+
+
 def _think(text, sender, chat_id=None):
     """Вопрос -> ответ мозга (все зоны облака). v3.26: у бота ЕСТЬ память
     диалога — в brain.think уходит ctx (последние реплики этого чата):
@@ -921,20 +951,51 @@ def _think(text, sender, chat_id=None):
     «о чём мы говорили?» — пересказ недавнего. chat_id — чат, чью память
     брать. v3.142: к ответу добавляется ПАМЯТЬ ИНСТРУКЦИЙ (chatmem).
     Отдельная функция — чтобы тест мог подменить."""
-    import brain
-    src = _src_answer(text, chat_id)              # v3.188: чаты-источники
+    import aiapi
+    mode = str(store.settings().get("maxbot_mode") or "talk")
+    if mode == "web":                             # v3.212: «Интернет» — только ответ из сети
+        r = _web_only(text)
+        if r:
+            return r
+    else:                                         # v3.212: «Разговор» — мысли мозга
+        try:
+            import thoughtbank
+            last_user = ""
+            for m in reversed(_mem_get(chat_id)):
+                if m.get("role") == "user":
+                    last_user = str(m.get("text") or "")
+                    break
+            lim = int(store.settings().get("maxbot_talk_chars") or 3500)
+            r = thoughtbank.compose(text, chat="max:%s" % chat_id,
+                                    limit=max(500, min(7000, lim)),
+                                    ctx_text=last_user)
+            code = ""
+            try:                                  # v3.212: латиница — КОД, по запросу
+                import articles
+                if articles.is_code_q(text):
+                    import agent
+                    cr, matched, _ci = agent.code_agent(text, ctx=_mem_ctx(chat_id))
+                    if matched and "```" in str(cr):
+                        code = str(cr).strip()
+                form = articles.formula_block(text) if articles.is_formula_q(text) else ""
+            except Exception as e:
+                form = ""
+                _err("код/формулы: %s" % e)
+            if r or code or form:
+                parts = [p for p in ((r or {}).get("text", ""), code, form) if p]
+                return "\n\n".join(parts), ("Мысли мозга + код" if code else "Мысли мозга")
+        except Exception as e:
+            _err("банк мыслей: %s" % e)
+    src = _src_for(text, chat_id)                 # v3.188: чаты-источники
     if src and src.get("level") == "high":
         return src["text"], "чаты-источники"
-    # v3.29: ЕДИНЫЙ МОЗГ — слабый ответ облака дополняет плата: успела за
-    # unify_wait — в этот же ответ, позже — отдельным сообщением (только
-    # знание с опорой; заготовки зон в мессенджер не идут)
-    reply, zone, info = brain.think(
-        text, sender=sender, ctx=_mem_ctx(chat_id),
-        deliver=({"kind": "max", "chat_id": chat_id} if chat_id else None))
-    reply = _with_instructions(reply, text)
+    result=aiapi.answer(text,{'id':'builtin-max','name':'встроенный МАКС'},
+        session='max:%s'%chat_id,mode='cloud',ctx=_mem_ctx(chat_id),template=True,
+        chat_key='max:%s'%chat_id,sender=sender)
+    reply=result.get('answer','')
     if src:
         reply = str(reply or "").rstrip() + "\n\n" + src["text"]
-    return reply, zone
+    return reply,result.get('zone','Облако')
 
 
 def _with_instructions(reply, question):
@@ -943,6 +1004,9 @@ def _with_instructions(reply, question):
     дописываем раздел «📋 Из инструкций чата». Ничего не выдумываем —
     только текст из памяти чата."""
     reply = str(reply or "")
+    import answer_focus
+    if answer_focus.practical(question) and answer_focus.usable(question,reply,grounded=True):
+        return reply
     try:
         import chatmem
         line = chatmem.memory_line(question)
@@ -954,7 +1018,7 @@ def _with_instructions(reply, question):
 
 
 def _help_text():
-    return ("Я — бот облака «мозг-12» (без внешнего LLM, только честные "
+    return ("Я — бот облака «Star Gate» (без внешнего LLM, только честные "
             "зоны: база знаний, материалы, интернет с источниками, "
             "математика, воображение).\n\n"
             "Я ПОМНЮ наш недавний диалог: спрашивай продолжения — «а почему?», "
@@ -2326,43 +2390,51 @@ def _src_answer(text, chat_id):
         return None
 
 
+def _src_for(text, chat_id):
+    """v3.209: ответ из чатов-источников — только на НЕпрактические вопросы: на практические
+    («как перезагрузить…») отвечает фокус ответа без посторонних приписок (3.201)."""
+    try:
+        import maxsrc
+        if not maxsrc.chats():          # чаты-источники не выбраны — движок ответа не трогаем
+            return None
+    except Exception:
+        return None
+    try:
+        import answer_focus
+        if answer_focus.practical(text):
+            return None
+    except Exception:
+        pass
+    return _src_answer(text, chat_id)
+
+
 def _deliver_answer(chat_id, text, name, pre=None):
-    """v3.30: ответ на реплику через общий движок (dialog.respond):
-    [документы] -> [💭 мысли мозга] -> [ответ облака, 1–2 сообщения].
-    Контекст диалога — память чата (_mem_ctx); приветствие — только в
-    начале диалога; всё отправленное попадает в память диалога."""
-    import dialog
+    """Receive ready AI messages from the same application API as the panel.
+    Local commands were already handled by _on_message before this call.
+    """
+    import aiapi
     _st_mid = _status_begin(chat_id)
-    src = _src_answer(text, chat_id)              # v3.188: чаты-источники
+    src = _src_for(text, chat_id)                 # v3.188: чаты-источники
     try:
         if src and src.get("level") == "high":
             # уверенный ответ из истории выбранного чата — он и есть ответ
             msgs, zone, d_info = [src["text"]], "чаты-источники", {}
         else:
-            msgs, zone, d_info = dialog.respond(
-                text, ctx=_mem_ctx(chat_id), chat_key="max:%s" % chat_id,
-                name=name, sender="МАКС: " + name,
-                deliver={"kind": "max", "chat_id": chat_id},
-                limit=MAX_REPLY, template=bool(_tpl_on()))
+            result=aiapi.answer(text,{'id':'builtin-max','name':'встроенный МАКС'},
+                session='max:%s'%chat_id,mode='cloud',ctx=_mem_ctx(chat_id),template=True,
+                name=name,chat_key='max:%s'%chat_id,sender='МАКС: '+name)
+            if not result.get('ok'):
+                raise RuntimeError(str(result.get('error') or 'нет ответа сервиса облака'))
+            msgs=result.get('parts') or [result.get('answer') or 'Облако вернуло пустой ответ.']
+            zone=result.get('zone','Облако')
+            d_info={}
             if src and msgs:                  # средняя уверенность — дописать
                 msgs[-1] = msgs[-1].rstrip() + "\n\n" + src["text"]
-    except Exception as e:
-        store.log("МАКС", "движок диалога: %s" % e)
-        reply, zone = _think(text, "МАКС: " + name, chat_id=chat_id)
-        msgs = [reply or "Пока не знаю, что ответить."]
-        d_info = {}
-    # v3.142: ПАМЯТЬ ИНСТРУКЦИЙ — если в JSON-памяти (chatmem) есть
-    # инструкция по теме вопроса, а мозг сам её не привёл — дописываем
-    # раздел «📋 Из инструкций чата» к ответу (в память диалога он тоже
-    # попадёт — это часть ответа бота). В fallback-пути _think уже вставил.
-    try:
-        if not any("Из инструкций чата" in str(m) for m in msgs):
-            import chatmem
-            line = chatmem.memory_line(text)
-            if line and msgs and line[:60] not in msgs[-1]:
-                msgs[-1] = msgs[-1].rstrip() + "\n\n" + line
-    except Exception:
-        pass
+    except Exception as exc:
+        store.log('МАКС','сервис ответа облака: %s'%exc)
+        # Keep service failures visible; don't silently switch to another answer engine.
+        msgs=['Не удалось получить ответ облака. Повторите вопрос позже.']
+        zone='Облако';d_info={}
     _status_end(_st_mid)                      # ответ готов — статус долой
     try:
         _zone_log(zone)
@@ -2707,6 +2779,7 @@ def status():
         "enabled": enabled(),
         "token_set": bool(token()),
         "base": _base_url(),
+        "ai_engine": "cloud-dialog", "ai_transport": "internal-api", "ai_mode": "cloud",
         "thread": th_alive,
         "bot": {k: bot.get(k) for k in ("user_id", "name", "username")}
                if bot else {},
@@ -2732,7 +2805,18 @@ def status():
         "last_ok": st.get("last_ok") or 0.0,
         "last_error": st.get("last_error") or "",
         "sources": _src_status(),                    # v3.188
+        "mode": str(store.settings().get("maxbot_mode") or "talk"),   # v3.212
+        "talk_chars": int(store.settings().get("maxbot_talk_chars") or 3500),
+        "bank": _bank_status(),
     }
+
+
+def _bank_status():
+    try:
+        import thoughtbank
+        return thoughtbank.stats()
+    except Exception as e:
+        return {"err": str(e)[:120]}
 
 
 def _src_status():

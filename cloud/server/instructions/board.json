@@ -1,0 +1,828 @@
+[
+ {
+  "id": "bd.status",
+  "title": "Состояние платы Arduino UNO Q",
+  "ask": [
+   "состояние платы",
+   "как плата",
+   "проверь плату",
+   "плата жива",
+   "обзор платы"
+  ],
+  "target": "board",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "check"
+   },
+   {
+    "tool": "run",
+    "command": "uptime; free -h; df -h / | tail -1"
+   },
+   {
+    "tool": "run",
+    "command": "cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null || echo 'датчика нет'"
+   },
+   {
+    "tool": "run",
+    "command": "arduino-app-cli app list 2>&1 | head -20"
+   }
+  ],
+  "verify": [
+   "плата отвечает, видно нагрузку, память, диск и список приложений"
+  ],
+  "notes": "Температура в тысячных градуса (65000 = 65 °C). Выше 80 °C — охлаждение.",
+  "verified": false
+ },
+ {
+  "id": "bd.app.status",
+  "title": "Статус приложения neuro_12 на плате",
+  "ask": [
+   "статус приложения платы",
+   "запущено ли приложение",
+   "работает ли neuro_12",
+   "приложение мозга работает"
+  ],
+  "target": "board",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "arduino-app-cli app list 2>&1 | head -20"
+   },
+   {
+    "tool": "run",
+    "command": "systemctl is-active neuro12 2>&1; systemctl is-enabled neuro12 2>&1"
+   },
+   {
+    "tool": "run",
+    "command": "ps aux | grep -iE 'neuro|main.py' | grep -v grep | head -5"
+   }
+  ],
+  "verify": [
+   "видно, запущено ли приложение, включён ли автозапуск службы neuro12"
+  ],
+  "notes": "Службы neuro12 может не быть, если автозапуск не ставили: тогда после перезагрузки приложение стартует только вручную.",
+  "verified": false
+ },
+ {
+  "id": "bd.app.logs",
+  "title": "Логи приложения neuro_12",
+  "ask": [
+   "логи приложения платы",
+   "покажи лог платы",
+   "что пишет плата",
+   "журнал приложения мозга",
+   "ошибки приложения платы"
+  ],
+  "target": "board",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "arduino-app-cli app logs ~/ArduinoApps/neuro_12 2>&1 | tail -80"
+   }
+  ],
+  "verify": [
+   "последние 80 строк журнала приложения"
+  ],
+  "verified": false
+ },
+ {
+  "id": "bd.app.restart",
+  "title": "Перезапустить приложение neuro_12 на плате",
+  "ask": [
+   "перезапусти приложение на плате",
+   "рестарт приложения платы",
+   "перезапусти neuro_12",
+   "перезапусти мозг на плате",
+   "перезапусти скетч и python"
+  ],
+  "target": "board",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "arduino-app-cli app restart ~/ArduinoApps/neuro_12 2>&1 | tail -5"
+   },
+   {
+    "tool": "wait",
+    "seconds": 25
+   },
+   {
+    "tool": "run",
+    "command": "arduino-app-cli app list 2>&1 | head -10",
+    "expect": "neuro_12"
+   },
+   {
+    "tool": "run",
+    "command": "arduino-app-cli app logs ~/ArduinoApps/neuro_12 2>&1 | tail -30"
+   }
+  ],
+  "verify": [
+   "приложение в списке, в журнале нет ошибок запуска"
+  ],
+  "rollback": "если не поднялось: arduino-app-cli app start ~/ArduinoApps/neuro_12, затем смотри логи",
+  "notes": "Перезапуск грузит и скетч, и Python. Если мост пишет «ждёт скетч» — инструкция bd.bridge.waiting.",
+  "verified": false
+ },
+ {
+  "id": "bd.app.stop",
+  "title": "Остановить приложение neuro_12 на плате",
+  "ask": [
+   "останови приложение на плате",
+   "выключи приложение платы",
+   "стоп neuro_12"
+  ],
+  "target": "board",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "arduino-app-cli app stop ~/ArduinoApps/neuro_12 2>&1 | tail -5"
+   },
+   {
+    "tool": "run",
+    "command": "arduino-app-cli app list 2>&1 | head -10"
+   }
+  ],
+  "verify": [
+   "приложения нет среди запущенных"
+  ],
+  "verified": false
+ },
+ {
+  "id": "bd.app.start",
+  "title": "Запустить приложение neuro_12 на плате",
+  "ask": [
+   "запусти приложение на плате",
+   "включи приложение платы",
+   "старт neuro_12",
+   "запусти мозг на плате"
+  ],
+  "target": "board",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "arduino-app-cli app start ~/ArduinoApps/neuro_12 2>&1 | tail -5"
+   },
+   {
+    "tool": "wait",
+    "seconds": 20
+   },
+   {
+    "tool": "run",
+    "command": "arduino-app-cli app list 2>&1 | head -10",
+    "expect": "neuro_12"
+   }
+  ],
+  "verify": [
+   "приложение запущено"
+  ],
+  "notes": "`app start` сам не переживает перезагрузку — для автозапуска bd.autostart.install.",
+  "verified": false
+ },
+ {
+  "id": "bd.reboot",
+  "title": "Перезагрузить плату Arduino UNO Q",
+  "ask": [
+   "перезагрузи плату",
+   "перезагрузка платы",
+   "рестарт платы",
+   "reboot платы",
+   "перезапусти плату",
+   "перезагрузи uno q"
+  ],
+  "target": "board",
+  "risk": "danger",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "arduino-app-cli app stop ~/ArduinoApps/neuro_12 2>&1 | tail -3",
+    "note": "штатно остановить приложение перед перезагрузкой"
+   },
+   {
+    "tool": "run",
+    "command": "sudo -n reboot",
+    "note": "нужен sudo без пароля; если пишет «password is required» — остановись и скажи владельцу"
+   },
+   {
+    "tool": "wait",
+    "seconds": 90
+   },
+   {
+    "tool": "check"
+   },
+   {
+    "tool": "wait",
+    "seconds": 30
+   },
+   {
+    "tool": "check"
+   },
+   {
+    "tool": "run",
+    "command": "uptime -p; arduino-app-cli app list 2>&1 | head -10",
+    "note": "после загрузки смотрим, поднялось ли приложение"
+   },
+   {
+    "tool": "note",
+    "text": "Если приложения нет в списке: выполни инструкцию «Запустить приложение на плате» (arduino-app-cli app start). Чтобы приложение стартовало само после перезагрузки — «Установить автозапуск neuro_12» (systemd-служба neuro12)."
+   }
+  ],
+  "verify": [
+   "плата снова отвечает по SSH, uptime маленький, приложение запущено"
+  ],
+  "rollback": "если плата не вернулась за 3–4 минуты: отключи питание на 10 секунд и включи снова",
+  "notes": "Связь по SSH оборвётся сразу после reboot — это нормально. Агент ждёт и проверяет порт 22.",
+  "verified": false
+ },
+ {
+  "id": "bd.power.cycle",
+  "title": "Плата зависла и не отвечает",
+  "ask": [
+   "плата не отвечает",
+   "плата зависла",
+   "плата не на связи",
+   "не могу подключиться к плате",
+   "плата пропала из сети"
+  ],
+  "target": "board",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "check"
+   },
+   {
+    "tool": "note",
+    "text": "1) Проверь питание (кабель, блок питания не слабее 5 В / 3 А). 2) Посмотри индикаторы на плате. 3) Проверь Wi-Fi/кабель и IP платы в роутере. 4) Если пинга нет: отключи питание на 10 секунд и включи. 5) Подожди 2–3 минуты (первая загрузка медленнее) и повтори проверку."
+   }
+  ],
+  "verify": [
+   "понятно, что делать владельцу: питание, сеть, перезапуск по питанию"
+  ],
+  "notes": "Дистанционно плату без сети не перезагрузить — только питанием.",
+  "verified": false
+ },
+ {
+  "id": "bd.autostart.status",
+  "title": "Автозапуск neuro_12 при загрузке платы",
+  "ask": [
+   "автозапуск платы",
+   "стартует ли приложение само",
+   "включён ли автозапуск",
+   "служба neuro12"
+  ],
+  "target": "board",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "systemctl status neuro12 --no-pager 2>&1 | head -15"
+   },
+   {
+    "tool": "run",
+    "command": "systemctl is-enabled neuro12 2>&1"
+   },
+   {
+    "tool": "run",
+    "command": "loginctl show-user $(id -un) 2>/dev/null | grep -i linger"
+   }
+  ],
+  "verify": [
+   "видно, есть ли служба neuro12 и включена ли она"
+  ],
+  "verified": false
+ },
+ {
+  "id": "bd.autostart.install",
+  "title": "Установить автозапуск neuro_12 (служба neuro12 + сторож)",
+  "ask": [
+   "установи автозапуск на плате",
+   "сделай автозапуск приложения",
+   "чтобы после перезагрузки приложение стартовало",
+   "установи сторож neuro12"
+  ],
+  "target": "board",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "ls ~/ArduinoApps/neuro_12/deploy_cli/install_autostart.sh 2>&1",
+    "note": "скрипт должен лежать в приложении",
+    "stop_on_fail": true
+   },
+   {
+    "tool": "run",
+    "command": "sudo -n bash ~/ArduinoApps/neuro_12/deploy_cli/install_autostart.sh watchdog 2>&1 | tail -15",
+    "note": "нужен sudo без пароля"
+   },
+   {
+    "tool": "run",
+    "command": "systemctl is-enabled neuro12 2>&1; systemctl is-active neuro12 2>&1"
+   }
+  ],
+  "verify": [
+   "служба neuro12 включена"
+  ],
+  "rollback": "sudo systemctl disable --now neuro12",
+  "notes": "Скрипт и поведение описаны в README платы (deploy_cli). Нужен интернет не обязательно.",
+  "verified": false
+ },
+ {
+  "id": "bd.service.restart",
+  "title": "Перезапустить службу neuro12",
+  "ask": [
+   "перезапусти службу neuro12",
+   "перезапусти сторож платы",
+   "restart neuro12"
+  ],
+  "target": "board",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "sudo -n systemctl restart neuro12 2>&1",
+    "note": "нужен sudo без пароля"
+   },
+   {
+    "tool": "wait",
+    "seconds": 20
+   },
+   {
+    "tool": "run",
+    "command": "systemctl is-active neuro12 2>&1",
+    "expect": "^active"
+   },
+   {
+    "tool": "run",
+    "command": "journalctl -u neuro12 -n 20 --no-pager 2>&1 | tail -20"
+   }
+  ],
+  "verify": [
+   "служба active"
+  ],
+  "verified": false
+ },
+ {
+  "id": "bd.bridge.waiting",
+  "title": "Мост ждёт скетч",
+  "ask": [
+   "мост ждёт скетч",
+   "bridge ждёт скетч",
+   "скетч не грузится",
+   "плата не видит скетч",
+   "ждёт скетч"
+  ],
+  "target": "board",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "arduino-app-cli app logs ~/ArduinoApps/neuro_12 2>&1 | grep -iE 'sketch|скетч|llext|undefined|bridge|мост|rpc' | tail -30"
+   },
+   {
+    "tool": "run",
+    "command": "arduino-app-cli app restart ~/ArduinoApps/neuro_12 2>&1 | tail -5",
+    "note": "часто достаточно перезапуска"
+   },
+   {
+    "tool": "wait",
+    "seconds": 30
+   },
+   {
+    "tool": "run",
+    "command": "arduino-app-cli app logs ~/ArduinoApps/neuro_12 2>&1 | grep -iE 'sketch|скетч|мост|bridge' | tail -15"
+   },
+   {
+    "tool": "note",
+    "text": "Если «ждёт скетч» повторяется после обновления скетча: скетч не загрузился в MCU (в App Lab смотри лог загрузки: undefined reference / llext). В sketch.ino поставь NEURO_PCM_MODE 0 (программный PCM без драйверов Zephyr), пересобери и пришли лог загрузки — по нему найдётся точный символ."
+   }
+  ],
+  "verify": [
+   "в журнале нет «ждёт скетч»"
+  ],
+  "notes": "Известная причина: драйверы Zephyr (PWM/counter) в скетче-llext могут тихо не загрузиться.",
+  "verified": false
+ },
+ {
+  "id": "bd.net",
+  "title": "Сеть платы",
+  "ask": [
+   "сеть платы",
+   "ip платы",
+   "wifi платы",
+   "плата не подключается к wi-fi",
+   "интернет на плате"
+  ],
+  "target": "board",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "ip -br a 2>/dev/null || hostname -I"
+   },
+   {
+    "tool": "run",
+    "command": "nmcli dev status 2>&1 | head"
+   },
+   {
+    "tool": "run",
+    "command": "nmcli -f IN-USE,SSID,SIGNAL dev wifi 2>&1 | head -8"
+   },
+   {
+    "tool": "run",
+    "command": "ip route | head -3"
+   },
+   {
+    "tool": "run",
+    "command": "ping -c 3 -W 2 1.1.1.1 2>&1 | tail -3"
+   }
+  ],
+  "verify": [
+   "видно IP, Wi-Fi, шлюз и выход в интернет"
+  ],
+  "notes": "Первый старт после перезагрузки требует Wi-Fi.",
+  "verified": false
+ },
+ {
+  "id": "bd.ping.cloud",
+  "title": "Достаёт ли плата до облака",
+  "ask": [
+   "плата видит облако",
+   "связь платы с облаком",
+   "ping облака с платы",
+   "облако недоступно с платы"
+  ],
+  "target": "board",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "ping -c 3 -W 2 {host} 2>&1 | tail -4",
+    "note": "адрес облака — в задаче"
+   },
+   {
+    "tool": "run",
+    "command": "arduino-app-cli app logs ~/ArduinoApps/neuro_12 2>&1 | grep -iE 'облак|cloud|link|https|ssl' | tail -15"
+   }
+  ],
+  "slots": {
+   "host": "(?:на|до|к|host|хост\\w*)\\s+([\\w.-]+\\.[\\w.-]+|\\d+\\.\\d+\\.\\d+\\.\\d+)"
+  },
+  "verify": [
+   "пинг проходит; в логах нет ошибок связи с облаком"
+  ],
+  "notes": "Если облако на HTTPS с самоподписанным сертификатом, плата закрепляет отпечаток SHA-256 (см. /api/tls).",
+  "verified": false
+ },
+ {
+  "id": "bd.resources",
+  "title": "Память и нагрузка на плате",
+  "ask": [
+   "память платы",
+   "нагрузка на плате",
+   "плата тормозит",
+   "что ест память на плате",
+   "плата перегружена"
+  ],
+  "target": "board",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "free -h; uptime"
+   },
+   {
+    "tool": "run",
+    "command": "ps aux --sort=-%mem | head -8"
+   },
+   {
+    "tool": "run",
+    "command": "ps aux --sort=-%cpu | head -8"
+   },
+   {
+    "tool": "run",
+    "command": "dmesg 2>/dev/null | grep -i 'out of memory' | tail -3"
+   }
+  ],
+  "verify": [
+   "видно, кто занимает память и процессор"
+  ],
+  "notes": "Если память на пределе — перезапуск приложения (bd.app.restart) освобождает её.",
+  "verified": false
+ },
+ {
+  "id": "bd.disk",
+  "title": "Диск платы",
+  "ask": [
+   "место на плате",
+   "диск платы",
+   "плата заполнена",
+   "не хватает места на плате"
+  ],
+  "target": "board",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "df -h / /home 2>/dev/null"
+   },
+   {
+    "tool": "run",
+    "command": "du -xh --max-depth=1 ~ 2>/dev/null | sort -h | tail -10"
+   },
+   {
+    "tool": "run",
+    "command": "docker system df 2>/dev/null || echo 'docker не отвечает'"
+   },
+   {
+    "tool": "run",
+    "command": "journalctl --disk-usage 2>&1"
+   }
+  ],
+  "verify": [
+   "видно, что занимает место"
+  ],
+  "verified": false
+ },
+ {
+  "id": "bd.clean",
+  "title": "Освободить место на плате",
+  "ask": [
+   "освободи место на плате",
+   "почисти плату",
+   "очисти журналы платы"
+  ],
+  "target": "board",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "journalctl --disk-usage 2>&1"
+   },
+   {
+    "tool": "run",
+    "command": "sudo -n journalctl --vacuum-size=100M 2>&1 | tail -3",
+    "note": "журнал до 100 МБ"
+   },
+   {
+    "tool": "run",
+    "command": "sudo -n apt-get clean 2>&1 | tail -2"
+   },
+   {
+    "tool": "run",
+    "command": "df -h / | tail -1"
+   }
+  ],
+  "verify": [
+   "места стало больше"
+  ],
+  "notes": "docker prune здесь не делаем: App Lab может заново скачивать образы.",
+  "verified": false
+ },
+ {
+  "id": "bd.temp",
+  "title": "Температура платы",
+  "ask": [
+   "температура платы",
+   "плата греется",
+   "перегрев платы"
+  ],
+  "target": "board",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "cat /sys/class/thermal/thermal_zone*/temp 2>/dev/null"
+   },
+   {
+    "tool": "run",
+    "command": "uptime"
+   }
+  ],
+  "verify": [
+   "значения в тысячных долях градуса; выше 80000 — перегрев"
+  ],
+  "verified": false
+ },
+ {
+  "id": "bd.time",
+  "title": "Время на плате",
+  "ask": [
+   "время на плате",
+   "дата на плате",
+   "часы платы сбились"
+  ],
+  "target": "board",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "date; timedatectl 2>&1 | head -8"
+   }
+  ],
+  "verify": [
+   "System clock synchronized: yes"
+  ],
+  "notes": "Сбитое время ломает HTTPS-сертификаты: плата не примет облако.",
+  "verified": false
+ },
+ {
+  "id": "bd.usb",
+  "title": "USB, камера, микрофон, последовательные порты платы",
+  "ask": [
+   "камера на плате",
+   "usb платы",
+   "микрофон платы",
+   "звук на плате",
+   "порты платы",
+   "ttyACM"
+  ],
+  "target": "board",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "lsusb 2>&1"
+   },
+   {
+    "tool": "run",
+    "command": "ls -l /dev/video* /dev/ttyACM* /dev/ttyUSB* 2>&1"
+   },
+   {
+    "tool": "run",
+    "command": "arecord -l 2>&1 | head -8; aplay -l 2>&1 | head -8"
+   },
+   {
+    "tool": "run",
+    "command": "dmesg 2>/dev/null | grep -iE 'uvc|usb|video' | tail -10"
+   }
+  ],
+  "verify": [
+   "видно устройства USB/звук/камеры"
+  ],
+  "verified": false
+ },
+ {
+  "id": "bd.update.system",
+  "title": "Обновить систему платы",
+  "ask": [
+   "обнови систему платы",
+   "обновления платы",
+   "apt upgrade на плате"
+  ],
+  "target": "board",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "sudo -n apt-get update 2>&1 | tail -3",
+    "note": "нужны интернет и sudo без пароля"
+   },
+   {
+    "tool": "run",
+    "command": "apt list --upgradable 2>/dev/null | head -20"
+   },
+   {
+    "tool": "note",
+    "text": "Системные пакеты платы безопаснее обновлять через App Lab. Если решил обновлять здесь — подтверди отдельно: sudo apt-get -y upgrade (может перезагрузить службы и потребовать перезагрузку платы)."
+   }
+  ],
+  "verify": [
+   "список доступных обновлений"
+  ],
+  "verified": false
+ },
+ {
+  "id": "bd.backup.app",
+  "title": "Резервная копия приложения neuro_12",
+  "ask": [
+   "бэкап приложения платы",
+   "резервная копия приложения",
+   "сохрани приложение платы"
+  ],
+  "target": "board",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "ls -la ~/ArduinoApps/neuro_12 2>&1 | head -20"
+   },
+   {
+    "tool": "run",
+    "command": "tar czf ~/n12_backup_$(date +%F_%H%M).tgz -C ~/ArduinoApps neuro_12 2>&1 && ls -la ~/n12_backup_*.tgz | tail -3"
+   }
+  ],
+  "verify": [
+   "архив ~/n12_backup_*.tgz создан"
+  ],
+  "notes": "Память мозга платы и облака сохраняются отдельно (облако — «сейф памяти плат»).",
+  "verified": false
+ },
+ {
+  "id": "bd.update.app",
+  "title": "Обновить приложение neuro_12 на плате (из zip)",
+  "ask": [
+   "обнови приложение на плате",
+   "установи новую версию приложения платы",
+   "залей новую версию neuro_12"
+  ],
+  "target": "board",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "ls -la ~/ArduinoApps/neuro_12 2>&1 | head -10"
+   },
+   {
+    "tool": "run",
+    "command": "tar czf ~/n12_backup_$(date +%F_%H%M).tgz -C ~/ArduinoApps neuro_12 2>&1 | tail -2",
+    "note": "сначала копия"
+   },
+   {
+    "tool": "note",
+    "text": "С компьютера: scp -r neuro_12 arduino@<IP платы>:ArduinoApps/ (или через App Lab: «Загрузить приложение»). Архив — из релиза."
+   },
+   {
+    "tool": "run",
+    "command": "arduino-app-cli app stop ~/ArduinoApps/neuro_12 2>&1 | tail -3"
+   },
+   {
+    "tool": "note",
+    "text": "Файлы приложения заменены новой версией (app.yaml, python/, sketch/)."
+   },
+   {
+    "tool": "run",
+    "command": "arduino-app-cli app start ~/ArduinoApps/neuro_12 2>&1 | tail -5"
+   },
+   {
+    "tool": "wait",
+    "seconds": 25
+   },
+   {
+    "tool": "run",
+    "command": "arduino-app-cli app logs ~/ArduinoApps/neuro_12 2>&1 | tail -30"
+   }
+  ],
+  "verify": [
+   "в логе новая версия, нет ошибок"
+  ],
+  "rollback": "распаковать ~/n12_backup_*.tgz в ~/ArduinoApps и запустить приложение",
+  "notes": "Агент сам не может копировать файлы с вашего компьютера — этот шаг вручную.",
+  "verified": false
+ },
+ {
+  "id": "bd.brain.link",
+  "title": "Связь платы с облаком в логах",
+  "ask": [
+   "почему плата не шлёт мысли",
+   "плата не связана с облаком",
+   "связь мозгов",
+   "плата не видна в облаке"
+  ],
+  "target": "board",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "arduino-app-cli app logs ~/ArduinoApps/neuro_12 2>&1 | grep -iE 'облак|link|связь|cloud|https|ssl|401|403|timeout' | tail -25"
+   },
+   {
+    "tool": "run",
+    "command": "ping -c 2 -W 2 1.1.1.1 2>&1 | tail -2"
+   },
+   {
+    "tool": "cloud",
+    "op": "boards"
+   }
+  ],
+  "verify": [
+   "понятно, где обрывается связь: сеть платы, адрес/токен облака или сертификат"
+  ],
+  "notes": "Проверь адрес и токен облака в панели платы. 127.0.0.1 в качестве адреса облака на плате не работает.",
+  "verified": false
+ },
+ {
+  "id": "bd.hostname",
+  "title": "Имя и адрес платы",
+  "ask": [
+   "как называется плата",
+   "имя платы",
+   "hostname платы"
+  ],
+  "target": "board",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "hostnamectl 2>&1 | head -6; hostname -I"
+   }
+  ],
+  "verify": [
+   "видно имя и IP"
+  ],
+  "verified": false
+ }
+]

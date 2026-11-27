@@ -1,0 +1,2234 @@
+[
+ {
+  "method": "POST",
+  "path": "/api/chat/new",
+  "handler": "h_chat_new",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/chat/list",
+  "handler": "h_chat_list",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/chat/get",
+  "handler": "h_chat_get",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/chat/poll",
+  "handler": "h_chat_poll",
+  "doc": "Новые сообщения чата после ts (ожидание ответа платы без перезагрузки).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/chat/rename",
+  "handler": "h_chat_rename",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/chat/delete",
+  "handler": "h_chat_delete",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/chat/send",
+  "handler": "h_chat_send",
+  "doc": "Сообщение в чат. Отвечает МОЗГ ОБЛАКА (без LLM). Маршруты:",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/chat/activity",
+  "handler": "h_chat_activity",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/chat/gen",
+  "handler": "h_chat_gen",
+  "doc": "Длинный текст по теме (генератор облака) или по заданию от плат.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/chat/rate",
+  "handler": "h_chat_rate",
+  "doc": "v3.28: 👍/👎 под ответом — обучение на ответах (qalearn).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/qa/stats",
+  "handler": "h_qa_stats",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/qa/suggest",
+  "handler": "h_qa_suggest",
+  "doc": "Владелец принимает/отклоняет исправление собеседника (МАКС/API).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/status",
+  "handler": "h_status",
+  "doc": "v3.155: сводка отдаётся СРАЗУ из памяти; свежая собирается фоном",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/teacher/tour",
+  "handler": "h_teacher_tour",
+  "doc": "Управление экскурсией учителя: start|stop|reset|status.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/teacher/thoughts",
+  "handler": "h_teacher_thoughts",
+  "doc": "v3.35: лента «Мысли учителя» (своя LLM + платы + облако).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/web/engines",
+  "handler": "h_web_engines",
+  "doc": "v3.167: проверка поисковиков (кнопка в настройках): Яндекс (выдача),",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/brainctl",
+  "handler": "h_brainctl",
+  "doc": "v3.166: строгая связь с мозгом — ворота процессов, ведущая мысль.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/coupling",
+  "handler": "h_coupling",
+  "doc": "v3.193: страница «Сопряжение» — воля платы и воля LLM в одном ответе.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/sources",
+  "handler": "h_sources",
+  "doc": "v3.174: источники для поиска по ссылкам (Confluence, вики, сайты, документы).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/sources",
+  "handler": "h_sources_act",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/llm/web",
+  "handler": "h_llm_web",
+  "doc": "v3.169: что своя LLM прочитала в интернете сама; POST — прочитать сейчас.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/llm/web",
+  "handler": "h_llm_web",
+  "doc": "v3.169: что своя LLM прочитала в интернете сама; POST — прочитать сейчас.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/settings",
+  "handler": "h_settings_get",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/settings",
+  "handler": "h_settings_post",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/teacher/instruction",
+  "handler": "h_teacher_instruction",
+  "doc": "POST /api/teacher/instruction {text} (v3.59): инструкция учителя.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/chronicle",
+  "handler": "h_chronicle",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/zones",
+  "handler": "h_zones",
+  "doc": "Статус ВСЕХ зон мысли мозга облака: описание, как вызвать,",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/zones/check",
+  "handler": "h_zones_check",
+  "doc": "Щупы зон: каждая зона получает пробное задание. Щупы вызывают",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/seed/kb",
+  "handler": "h_seed_kb",
+  "doc": "Первичные статьи KB (только если база пуста).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/skills/save",
+  "handler": "h_skill_save",
+  "doc": "Создать/изменить навык из панели (сессия владельца). Для кода —",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/skills/remove",
+  "handler": "h_skill_remove",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/skills/try",
+  "handler": "h_skill_try",
+  "doc": "Проверить навык: сохранённый (id) или ещё не сохранённый код.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/skills/autocode",
+  "handler": "h_skill_autocode",
+  "doc": "«Мозг, напиши навык сам»: самокод по описанию (заготовки + тесты).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/agent/rules",
+  "handler": "h_agent_rules",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/kb/stats",
+  "handler": "h_kb_stats",
+  "doc": "v3.28: панель «Загрузка в базу»: прочитано страниц по ссылкам,",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/info",
+  "handler": "h_v1_info",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/models",
+  "handler": "h_v1_models",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/v1/ask",
+  "handler": "h_v1_ask",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/v1/chat/completions",
+  "handler": "h_v1_chat",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/v1/kb/search",
+  "handler": "h_v1_kb_search",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/v1/rate",
+  "handler": "h_v1_rate",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/v1/result",
+  "handler": "h_v1_result",
+  "doc": "v3.29: поздний ответ платы (единый мозг) на вопрос API:",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/llm/chat",
+  "handler": "h_llm_chat",
+  "doc": "v3.32: своя LLM + весь мозг: POST {text, ctx?, long?} -> {reply, zone,",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/llm/think",
+  "handler": "h_llm_think",
+  "doc": "v3.33: «подумать сейчас» — LLM сочиняет мысль и отправляет её в",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/tinyllm/numpy",
+  "handler": "h_llm_numpy",
+  "doc": "v3.33: поставить numpy в тот же Python (кнопка панели).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/worddict",
+  "handler": "h_worddict",
+  "doc": "v3.133: общий словарь мозга (плата + облако) — для панели.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/senses",
+  "handler": "h_senses",
+  "doc": "v3.128: глаза и уши: состояние, «что видишь», «что слышишь».",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/senses",
+  "handler": "h_senses",
+  "doc": "v3.128: глаза и уши: состояние, «что видишь», «что слышишь».",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/doom/state",
+  "handler": "h_doom_state",
+  "doc": "v3.127: мир игры «РОК-12» для страницы /doom.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/doom/input",
+  "handler": "h_doom_input",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/doom/control",
+  "handler": "h_doom_control",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/gubble/state",
+  "handler": "h_gubble_state",
+  "doc": "v3.181: мир игры «Gubble 2» для страницы /gubble.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/gubble/input",
+  "handler": "h_gubble_input",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/gubble/control",
+  "handler": "h_gubble_control",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/gamechat",
+  "handler": "h_gamechat",
+  "doc": "v3.181: общий чат плата↔облако↔боты↔LLM (страницы игр и панель).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/gamechat",
+  "handler": "h_gamechat",
+  "doc": "v3.181: общий чат плата↔облако↔боты↔LLM (страницы игр и панель).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/games",
+  "handler": "h_games",
+  "doc": "v3.181: арбитр игр — где своя LLM, доступность игр.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/hearing",
+  "handler": "h_hearing",
+  "doc": "v3.39: слух облака — статус; POST {install: true} ставит Vosk+модель.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/hearing",
+  "handler": "h_hearing",
+  "doc": "v3.39: слух облака — статус; POST {install: true} ставит Vosk+модель.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/brain/train",
+  "handler": "h_brain_train",
+  "doc": "v3.71: GET — ход обучения мозга (сети материалов) на базе знаний;",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/brain/train",
+  "handler": "h_brain_train",
+  "doc": "v3.71: GET — ход обучения мозга (сети материалов) на базе знаний;",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/tinyllm",
+  "handler": "h_tinyllm",
+  "doc": "v3.31/33: своя LLM облака: GET — статус, настройки, оценка нагрузки,",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/tinyllm",
+  "handler": "h_tinyllm",
+  "doc": "v3.31/33: своя LLM облака: GET — статус, настройки, оценка нагрузки,",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/llm",
+  "handler": "h_llm",
+  "doc": "v3.30: локальная LLM и модель со зрением (подключает владелец).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/llm",
+  "handler": "h_llm",
+  "doc": "v3.30: локальная LLM и модель со зрением (подключает владелец).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/export",
+  "handler": "h_export",
+  "doc": "v3.30: «Скачать облако целиком» (код + данные + обученная сеть).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/export",
+  "handler": "h_export",
+  "doc": "v3.30: «Скачать облако целиком» (код + данные + обученная сеть).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/export/download",
+  "handler": "h_export_download",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/unify",
+  "handler": "h_unify",
+  "doc": "v3.29: панель «Единый мозг»: состояние, счётчики, настройки.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/link/status",
+  "handler": "h_link_status",
+  "doc": "v3.102: панель «Связь мозгов: частота и мысли».",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/kbimg",
+  "handler": "h_kbimg",
+  "doc": "v3.124: иллюстрация статьи базы знаний (kbimg/<файл>).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/link/status",
+  "handler": "h_link_status",
+  "doc": "v3.102: панель «Связь мозгов: частота и мысли».",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/unify",
+  "handler": "h_unify",
+  "doc": "v3.29: панель «Единый мозг»: состояние, счётчики, настройки.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/board/src",
+  "handler": "h_board_src",
+  "doc": "GET — список файлов. POST {op, name, text} — read/write/restore.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/board/src",
+  "handler": "h_board_src",
+  "doc": "GET — список файлов. POST {op, name, text} — read/write/restore.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/desktop",
+  "handler": "h_desktop",
+  "doc": "v3.150: РАБОЧИЙ СТОЛ компьютера облака.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/desktop",
+  "handler": "h_desktop",
+  "doc": "v3.150: РАБОЧИЙ СТОЛ компьютера облака.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/terminal",
+  "handler": "h_terminal",
+  "doc": "POST {cmd} — выполнить команду. GET — история.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/terminal",
+  "handler": "h_terminal",
+  "doc": "POST {cmd} — выполнить команду. GET — история.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/learn/teacher",
+  "handler": "h_teacher_push",
+  "doc": "POST {articles: [{title, text}, ...], train: true}",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/learn/curriculum",
+  "handler": "h_curriculum",
+  "doc": "POST — загрузить программу обучения и запустить учёбу.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/learn/all",
+  "handler": "h_learn_all",
+  "doc": "POST — запустить обучение всех нейросетей на материалах;",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/learn/all",
+  "handler": "h_learn_all",
+  "doc": "POST — запустить обучение всех нейросетей на материалах;",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/materials/delete_all",
+  "handler": "h_materials_delete_all",
+  "doc": "POST {confirm: true} — удалить все материалы (KB + сеть материалов).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/ai/keys",
+  "handler": "h_ai_keys",
+  "doc": "Панель: ключи API. GET — список; POST {action: create, name} —",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/ai/keys",
+  "handler": "h_ai_keys",
+  "doc": "Панель: ключи API. GET — список; POST {action: create, name} —",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/boards/ping",
+  "handler": "api_board.h_boards_ping",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/study/links",
+  "handler": "h_study_links",
+  "doc": "v3.30: обёртка — панель ссылок не «недоступна» ни при какой ошибке:",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/study/links",
+  "handler": "h_study_links",
+  "doc": "v3.30: обёртка — панель ссылок не «недоступна» ни при какой ошибке:",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/study/check",
+  "handler": "h_study_check",
+  "doc": "POST /api/study/check {urls:[…]} (v3.61): какие ссылки ЗАГРУЗЯТСЯ из",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/auth/check",
+  "handler": "h_auth_check",
+  "doc": "Публично: есть ли пароль и авторизован ли этот браузер.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/auth/setup",
+  "handler": "h_auth_setup",
+  "doc": "Первичная настройка: создаём пароль панели (если его ещё нет).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/auth/login",
+  "handler": "h_auth_login",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/auth/logout",
+  "handler": "h_auth_logout",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/auth/logout-all",
+  "handler": "h_auth_logout_all",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/auth/password",
+  "handler": "h_auth_password",
+  "doc": "Смена пароля панели: {old, new}.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/bridge/status",
+  "handler": "h_bridge_status",
+  "doc": "Живой статус моста к плате (127.0.0.1:7000 по умолчанию).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/bridge/config",
+  "handler": "h_bridge_config",
+  "doc": "Настройка моста: {url, on}. Пустой url = 127.0.0.1:7000.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/bridge/send",
+  "handler": "h_bridge_send",
+  "doc": "Написать плате напрямую через мост (плата думает сама, без LLM).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/bridge/messages",
+  "handler": "h_bridge_messages",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/bridge/probe",
+  "handler": "h_bridge_probe",
+  "doc": "v3.23.1: проверить связь с платой СЕЙЧАС — не ждать цикла моста",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/bridge/probe",
+  "handler": "h_bridge_probe",
+  "doc": "v3.23.1: проверить связь с платой СЕЙЧАС — не ждать цикла моста",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/bridge/find",
+  "handler": "h_bridge_find",
+  "doc": "v3.23.1: найти плату в сети — когда «облако не подключается к плате»,",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/bridge/find",
+  "handler": "h_bridge_find",
+  "doc": "v3.23.1: найти плату в сети — когда «облако не подключается к плате»,",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/code/gen",
+  "handler": "h_codegen",
+  "doc": "v3.22: мозг пишет код по просьбе. POST {text, lang?} -> {reply, ...}.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/code/catalog",
+  "handler": "h_codegen_catalog",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/code/run",
+  "handler": "h_codegen_run",
+  "doc": "v3.22: запуск Python-блока из чата в песочнице облака (только Python).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/code/read",
+  "handler": "h_code_read",
+  "doc": "Изучить программный код: POST {name, text} — разбор на функции/",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/code/list",
+  "handler": "h_code_list",
+  "doc": "Сводка изученного кода (индекс файлов/функций).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/curiosity",
+  "handler": "h_curiosity_get",
+  "doc": "Статус любопытства: очередь «хочу знать», журнал чтений, статистика.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/curiosity",
+  "handler": "h_curiosity_post",
+  "doc": "Управление любопытством: POST {action: 'on'|'off'|'now', q: 'тема'}.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/hypo",
+  "handler": "h_hypo_get",
+  "doc": "Статус предположений: счётчики + последние гипотезы.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/hypo",
+  "handler": "h_hypo_post",
+  "doc": "Управление предположениями: POST {action: 'verdict'|'clear',",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/speech",
+  "handler": "h_speech_get",
+  "doc": "Состояние сети речи (панель «Речь из словаря»).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/speech",
+  "handler": "h_speech_post",
+  "doc": "СОБРАТЬ фразу из слов словаря по теме (без заготовок, честно).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/applab/bricks",
+  "handler": "h_applab_bricks",
+  "doc": "Каталог кирпичиков для палитры (категории + параметры).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/applab/apps",
+  "handler": "h_applab_apps",
+  "doc": "v3.170: App Lab на Python — список приложений.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/applab/get",
+  "handler": "h_applab_get",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/applab/save",
+  "handler": "h_applab_save",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/applab/delete",
+  "handler": "h_applab_delete",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/applab/run",
+  "handler": "h_applab_run",
+  "doc": "Запуск: сохранённого (id) или черновика из редактора (code).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/applab/flags",
+  "handler": "h_applab_flags",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/applab/ai",
+  "handler": "h_applab_ai",
+  "doc": "ИИ пишет приложение App Lab по описанию (pyapps.ai_write).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/applab/guide",
+  "handler": "h_applab_guide",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/applab/chat",
+  "handler": "h_applab_chat",
+  "doc": "Приложения для окна чата (вместо типичных вопросов).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/applab/example",
+  "handler": "h_applab_example",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/applab/recipes",
+  "handler": "h_applab_recipes",
+  "doc": "Рецепты — примеры кода в базе данных (для панели и платы).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/applab/from_recipe",
+  "handler": "h_applab_from_recipe",
+  "doc": "Собрать приложение из рецепта (без сохранения): {id, question?}.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/math/formulas",
+  "handler": "h_math_formulas",
+  "doc": "База формул (v3.8) — для панели и синхронизации платы.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/update/status",
+  "handler": "h_update_status",
+  "doc": "Состояние обновления: версия, последний пакет, резервные копии.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/update/upload",
+  "handler": "h_update_upload",
+  "doc": "Загрузить zip-пакет новой версии (поле «zip» в multipart) и обновить",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/update/rollback",
+  "handler": "h_update_rollback",
+  "doc": "Откат к резервной копии: POST {backup: 'pre-3.18.0-…'}.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/update/restart",
+  "handler": "h_update_restart",
+  "doc": "Перезапустить облако вручную (кнопка панели).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/maxbot/status",
+  "handler": "h_maxbot_status",
+  "doc": "Состояние бота МАКС: включён, токен, кто я, чаты, статистика.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/maxbot/status",
+  "handler": "h_maxbot_status",
+  "doc": "Состояние бота МАКС: включён, токен, кто я, чаты, статистика.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/maxbot/config",
+  "handler": "h_maxbot_config",
+  "doc": "Сохранить токен и/или вкл-выкл бота. Токен сразу проверяется на",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/maxbot/config",
+  "handler": "h_maxbot_config",
+  "doc": "Сохранить токен и/или вкл-выкл бота. Токен сразу проверяется на",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/maxbot/probe",
+  "handler": "h_maxbot_probe",
+  "doc": "Обновить вручную: кто я + список чатов (кнопка панели).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/maxbot/probe",
+  "handler": "h_maxbot_probe",
+  "doc": "Обновить вручную: кто я + список чатов (кнопка панели).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/maxbot/wipe",
+  "handler": "h_maxbot_wipe",
+  "doc": "v3.31: стереть из базы знаний выученное ботом из чатов МАКС",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/maxbot/restart",
+  "handler": "h_maxbot_restart",
+  "doc": "v3.184: перезагрузить бота МАКС (без перезапуска облака).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/maxbot/scan",
+  "handler": "h_maxbot_scan",
+  "doc": "v3.24: СКАН ИСТОРИИ ЧАТА — кнопка панели «Скан истории чата»:",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/maxbot/sources",
+  "handler": "h_maxbot_sources",
+  "doc": "v3.188: ЧАТЫ-ИСТОЧНИКИ ОТВЕТОВ (maxsrc). GET — состояние.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/maxbot/sources",
+  "handler": "h_maxbot_sources",
+  "doc": "v3.188: ЧАТЫ-ИСТОЧНИКИ ОТВЕТОВ (maxsrc). GET — состояние.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/maxbot/scan",
+  "handler": "h_maxbot_scan",
+  "doc": "v3.24: СКАН ИСТОРИИ ЧАТА — кнопка панели «Скан истории чата»:",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/hear",
+  "handler": "h_hear_upload",
+  "doc": "Загрузить звуковой/видео файл — мозг его «послушает» (hearing.report).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/github",
+  "handler": "h_github",
+  "doc": "GET — состояние; POST {url} — принять ссылку GitHub; POST {gh_on,",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/github",
+  "handler": "h_github",
+  "doc": "GET — состояние; POST {url} — принять ссылку GitHub; POST {gh_on,",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/code/try",
+  "handler": "h_code_try",
+  "doc": "Пробная просьба к режиму «Код»: POST {task}.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/github/zip",
+  "handler": "h_github_zip",
+  "doc": "Загрузить ZIP репозитория вручную (скачан в браузере с любой площадки).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/ssh/servers",
+  "handler": "h_ssh_servers",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/ssh/servers",
+  "handler": "h_ssh_servers",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/ssh/run",
+  "handler": "h_ssh_run",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/ssh/agent",
+  "handler": "h_ssh_agent",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/ssh/agent",
+  "handler": "h_ssh_agent",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/code/write",
+  "handler": "h_code_write",
+  "doc": "v3.178: окно «Серверы» — код от раздела «Код» (своя LLM, модель, примеры).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/crashes",
+  "handler": "h_crashes",
+  "doc": "v3.183: почему падало облако — список падений и хвост crash.log.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/security/blocked",
+  "handler": "h_security_blocked",
+  "doc": "v3.182: запрещённые адреса (владелец).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/security/blocked",
+  "handler": "h_security_blocked",
+  "doc": "v3.182: запрещённые адреса (владелец).",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/servers",
+  "handler": "h_servers",
+  "doc": "v3.178: окно «Серверы» (только владелец). GET — цели, ключ облака,",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/servers",
+  "handler": "h_servers",
+  "doc": "v3.178: окно «Серверы» (только владелец). GET — цели, ключ облака,",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/admin/agent",
+  "handler": "h_admin_agent",
+  "doc": "GET ?id= — задание; без id — список заданий и настройки по умолчанию.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/admin/agent",
+  "handler": "h_admin_agent",
+  "doc": "GET ?id= — задание; без id — список заданий и настройки по умолчанию.",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/admin/settings",
+  "handler": "h_admin_settings",
+  "doc": "v3.189: настройки агентов режима «Администрирование» и «Контур»,",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/admin/settings",
+  "handler": "h_admin_settings",
+  "doc": "v3.189: настройки агентов режима «Администрирование» и «Контур»,",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/memory",
+  "handler": "h_memory",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/memory",
+  "handler": "h_memory",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/zai",
+  "handler": "h_zai",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/zai",
+  "handler": "h_zai",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/stargate",
+  "handler": "h_stargate",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/stargate",
+  "handler": "h_stargate",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/vision",
+  "handler": "h_vision",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/vision",
+  "handler": "h_vision",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/install/pillow",
+  "handler": "h_install_pillow",
+  "doc": "",
+  "auth": false,
+  "file": "api_ui.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/health",
+  "handler": "h_health",
+  "doc": "",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/board/codegen",
+  "handler": "h_board_codegen",
+  "doc": "v3.22: плата просит облако написать код (режим «Код»).",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/brains/register",
+  "handler": "h_brains_register",
+  "doc": "",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/brains",
+  "handler": "h_brains_list",
+  "doc": "",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/brains/delete",
+  "handler": "h_brains_delete",
+  "doc": "",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/brains/ask",
+  "handler": "h_brains_ask",
+  "doc": "Спросить СВОБОДНУЮ плату (от мозга или из чата).",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/brain/think",
+  "handler": "h_brain_think",
+  "doc": "v3.28: ПЛАТА СПРАШИВАЕТ ВЕСЬ МОЗГ ОБЛАКА (синхронно): документы,",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/brain/learn",
+  "handler": "h_brain_learn",
+  "doc": "v3.29: ЕДИНЫЙ МОЗГ — плата передаёт подтверждённое у себя:",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/brain/knowledge",
+  "handler": "h_brain_knowledge",
+  "doc": "v3.29: ЕДИНЫЙ МОЗГ — подтверждённое облаком для платы:",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/brain/msg",
+  "handler": "h_brain_msg",
+  "doc": "Письмо устройству: от платы ИЛИ из чата облака (to=id платы).",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/brain/inbox",
+  "handler": "h_brain_inbox",
+  "doc": "",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/brain/d6",
+  "handler": "h_brain_d6",
+  "doc": "Мысли зон облака для платы (GET /api/brain/d6?board=, v3.17): забрать",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/brain/d4",
+  "handler": "h_brain_d4",
+  "doc": "Мысли облака для D4 платы (GET /api/brain/d4?board=, v3.210): забрать",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/tls",
+  "handler": "h_tls",
+  "doc": "v3.210: состояние HTTPS и отпечаток сертификата (SHA-256) — для",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/instructions",
+  "handler": "h_instructions",
+  "doc": "v3.219: библиотека инструкций агента. GET — список (?id=… — одна целиком,",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/instructions",
+  "handler": "h_instructions",
+  "doc": "v3.219: библиотека инструкций агента. GET — список (?id=… — одна целиком,",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/thoughts/journal",
+  "handler": "h_thought_journal",
+  "doc": "v3.215: журнал — что делали мозг и LLM с мыслями. ?who=мозг|LLM&limit=60;",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/thoughts/journal",
+  "handler": "h_thought_journal",
+  "doc": "v3.215: журнал — что делали мозг и LLM с мыслями. ?who=мозг|LLM&limit=60;",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/thought/extend",
+  "handler": "h_thought_extend",
+  "doc": "v3.210: облако ДОПОЛНЯЕТ мысль платы (по теме вопроса и слов мысли).",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/negfreq/decide",
+  "handler": "h_negfreq_decide",
+  "doc": "POST /api/negfreq/decide {text}: знак частоты D6 для СОБСТВЕННОЙ фразы",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/genmod/words",
+  "handler": "h_genmod_words",
+  "doc": "POST /api/genmod/words {text}: уровень слов -1..1 по таблице «сигнал ↔",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/genmod/frame",
+  "handler": "h_genmod_frame",
+  "doc": "POST /api/genmod/frame {device, text, hz}: фраза + знаковая частота",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/brain/ping",
+  "handler": "h_brain_ping",
+  "doc": "",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/brain/answer",
+  "handler": "h_brain_answer",
+  "doc": "",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/brain/progress",
+  "handler": "h_brain_progress",
+  "doc": "",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/brain/result/<mid>",
+  "handler": "h_brain_result",
+  "doc": "",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/brain/log",
+  "handler": "h_brain_log",
+  "doc": "v3.176.2: журнал облака — из ПОЛНОГО файла data/log.txt (а не 60",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/memory/save",
+  "handler": "h_memory_save",
+  "doc": "Бандл памяти платы: {app, device, memory[], chat[], state{}}.",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/memory/load",
+  "handler": "h_memory_load",
+  "doc": "",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/memory/delete",
+  "handler": "h_memory_delete",
+  "doc": "",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/memory/list",
+  "handler": "h_memory_list",
+  "doc": "",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/buffer",
+  "handler": "h_buffer",
+  "doc": "Сводный буфер облака: мозг качает его раз в 5 мин (GET /api/buffer).",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/cache",
+  "handler": "h_buffer",
+  "doc": "Сводный буфер облака: мозг качает его раз в 5 мин (GET /api/buffer).",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/think",
+  "handler": "h_think",
+  "doc": "",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/link",
+  "handler": "h_link",
+  "doc": "v3.102: СВЯЗЬ МОЗГОВ — плата шлёт частоту генератора и новые мысли,",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/particles",
+  "handler": "h_particles",
+  "doc": "GET: галочки и шум плат; POST: сохранить галочки.",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/particles",
+  "handler": "h_particles",
+  "doc": "GET: галочки и шум плат; POST: сохранить галочки.",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/board/read",
+  "handler": "h_board_read",
+  "doc": "v3.167: МОЗГ ПЛАТЫ НЕ ЗНАЕТ — ЧИТАЕТ САМ. Плата присылает тему,",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/doom/bot",
+  "handler": "h_doom_bot",
+  "doc": "v3.127: бот платы в игре «РОК-12»: действие -> что видит + награда.",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/gubble/bot",
+  "handler": "h_gubble_bot",
+  "doc": "v3.181: бот платы в игре «Gubble 2»: {board, act:{dx,dy}, want} -> obs.",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/worddict/sync",
+  "handler": "h_worddict_sync",
+  "doc": "v3.133: общий словарь — плата шлёт прирост, получает изменения.",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/hearing/stream",
+  "handler": "h_hearing_stream",
+  "doc": "v3.178: живой звук с платы — сырой PCM 16 кГц кусками.",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/hearing/live",
+  "handler": "h_hearing_live",
+  "doc": "v3.178: GET — состояние ушей/глаз плат; POST {board?, on, sec?} —",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/hearing/live",
+  "handler": "h_hearing_live",
+  "doc": "v3.178: GET — состояние ушей/глаз плат; POST {board?, on, sec?} —",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/hearing/vosk-board",
+  "handler": "h_vosk_board",
+  "doc": "v3.181: кнопка в карточке микрофона: POST {board} — плата (v2.96+)",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/hearing/to-board",
+  "handler": "h_hearing_to_board",
+  "doc": "v3.181.4: кнопка в карточке микрофона: POST {board, what: phrase|clip, sec?}",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/hearing/live.wav",
+  "handler": "h_hearing_live_wav",
+  "doc": "",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/hearing/voice",
+  "handler": "h_hearing_voice",
+  "doc": "v3.178: ГОЛОСОВОЙ ВВОД В ЧАТЕ. POST {wav: base64} — звук с микрофона",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/board/codejob",
+  "handler": "h_board_codejob",
+  "doc": "v3.178: плата вернула результат задания (код/команда).",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/board/backup",
+  "handler": "h_board_backup",
+  "doc": "v3.180: копия памяти платы (все её JSON сжатым пакетом).",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/board/restore",
+  "handler": "h_board_restore",
+  "doc": "",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/board/pair",
+  "handler": "h_board_pair",
+  "doc": "v3.180: плата без адреса облака просит подключения (без токена).",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/board/pair",
+  "handler": "h_board_pair",
+  "doc": "v3.180: плата без адреса облака просит подключения (без токена).",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/board/safe",
+  "handler": "h_board_safe",
+  "doc": "v3.180: владелец — копии плат и запросы подключения.",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/board/safe",
+  "handler": "h_board_safe",
+  "doc": "v3.180: владелец — копии плат и запросы подключения.",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/code/board",
+  "handler": "h_code_board",
+  "doc": "v3.178: владелец — проверить/запустить код или команду на плате.",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/code/board",
+  "handler": "h_code_board",
+  "doc": "v3.178: владелец — проверить/запустить код или команду на плате.",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/hearing/vosk-model.zip",
+  "handler": "h_vosk_model_zip",
+  "doc": "v3.178: русская модель Vosk для платы — из облака, без интернета.",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/hearing/phrase.wav",
+  "handler": "h_hearing_phrase_wav",
+  "doc": "",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/hearing/mic",
+  "handler": "h_hearing_mic",
+  "doc": "v3.128: фраза с микрофона мозга (плата, WAV base64) -> речь в текст;",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/thoughts",
+  "handler": "h_thoughts",
+  "doc": "",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/chat/thought",
+  "handler": "h_chat_thought_post",
+  "doc": "Мысли плат -> чат-сессия «Мысли плат» (id=thoughts).",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/chat/thought",
+  "handler": "h_chat_thought_get",
+  "doc": "",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/cloud/thought",
+  "handler": "h_cloud_thought",
+  "doc": "v3.209: мысли самого облака -> платы и чат «Мысли плат».",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/cloud/thought",
+  "handler": "h_cloud_thought",
+  "doc": "v3.209: мысли самого облака -> платы и чат «Мысли плат».",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/import",
+  "handler": "h_import",
+  "doc": "Хроника: сообщения плат (лента на главной/в панели).",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/gen/task",
+  "handler": "h_gen_task_post",
+  "doc": "",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/gen/task",
+  "handler": "h_gen_task_get",
+  "doc": "",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/chat/readings",
+  "handler": "h_readings_post",
+  "doc": "",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/chat/readings",
+  "handler": "h_readings_get",
+  "doc": "",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/web/fetch",
+  "handler": "h_web_fetch",
+  "doc": "",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/sandbox/run",
+  "handler": "h_sandbox_run",
+  "doc": "",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/skills",
+  "handler": "h_skills_list",
+  "doc": "",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/skills/full",
+  "handler": "h_skills_full",
+  "doc": "",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/skills",
+  "handler": "h_skills_add",
+  "doc": "",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/skills/<sid>",
+  "handler": "h_skills_get",
+  "doc": "",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "DELETE",
+  "path": "/api/skills/<sid>",
+  "handler": "h_skills_del",
+  "doc": "",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/skills/<sid>/run",
+  "handler": "h_skills_run",
+  "doc": "",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/skills/learned",
+  "handler": "h_skills_learned",
+  "doc": "",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/dict/list",
+  "handler": "h_dict_list",
+  "doc": "",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/dict/get",
+  "handler": "h_dict_get",
+  "doc": "",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/dict/put",
+  "handler": "h_dict_put",
+  "doc": "Словарь от платы: облако ДЕРЖИТ ОБЪЕДИНЕНИЕ (склеивает).",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/kb/list",
+  "handler": "h_kb_list",
+  "doc": "",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/kb/search",
+  "handler": "h_kb_search",
+  "doc": "",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/kb/article/<aid>",
+  "handler": "h_kb_article",
+  "doc": "",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/kb/pack",
+  "handler": "h_kb_pack",
+  "doc": "v3.49: база знаний для платы в JSON (плата тянет пачками).",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/kb/import",
+  "handler": "h_kb_import",
+  "doc": "",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/kb/delete",
+  "handler": "h_kb_delete",
+  "doc": "",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/tts",
+  "handler": "h_tts",
+  "doc": "POST /api/tts {text, voice} -> WAV-байты (мозг играет динамиком).",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/tts/ru",
+  "handler": "h_tts_ru",
+  "doc": "Real Russian speech only. Never silently substitute formant beeps.",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/llm/teach",
+  "handler": "h_llm_teach",
+  "doc": "Учительский канал: purpose word_goal|verdict|advice — ТОЛЬКО обучение.",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/llm/ask",
+  "handler": "h_llm_ask",
+  "doc": "Старый ответчик LLM закрыт навсегда (как в мозге v2.14).",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/llm/test",
+  "handler": "h_llm_test",
+  "doc": "",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/vision/frame",
+  "handler": "h_vision_frame",
+  "doc": "",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/vision/raw",
+  "handler": "h_vision_raw",
+  "doc": "",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/vision/raster",
+  "handler": "h_vision_raster",
+  "doc": "v3.52: кадр камеры -> растр 16x12 для D6 (только если опция включена).",
+  "auth": true,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/vision/buffer",
+  "handler": "h_vision_buffer",
+  "doc": "",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/vision/last.jpg",
+  "handler": "h_vision_last",
+  "doc": "",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/vision/hist",
+  "handler": "h_vision_hist",
+  "doc": "v3.189: лента последних кадров камеры (целые и битые).",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/vision/frame.jpg",
+  "handler": "h_vision_frame_img",
+  "doc": "v3.189: кадр из ленты по имени файла (f_<ts>.jpg).",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/vision/cams",
+  "handler": "h_vision_cams",
+  "doc": "",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/files/upload",
+  "handler": "h_files_upload",
+  "doc": "multipart: device, text, file -> текст в KB устройства + сеть.",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/files/list",
+  "handler": "h_files_list",
+  "doc": "",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "GET",
+  "path": "/api/files/get/<fn>",
+  "handler": "h_files_get",
+  "doc": "",
+  "auth": false,
+  "file": "api_board.py"
+ },
+ {
+  "method": "POST",
+  "path": "/api/files/delete",
+  "handler": "h_files_delete",
+  "doc": "",
+  "auth": false,
+  "file": "api_board.py"
+ }
+]

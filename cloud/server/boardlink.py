@@ -405,16 +405,19 @@ def _health(board, b, up, rss, crash, ver, ip):
 
 def _learn_phrases(board, ph):
     """Фоновая учёба на мыслях платы из /api/link (см. link)."""
+    approved=[]
     for t, _s in ph:
         try:                               # v3.121: вердикт связности
             import coherence
-            coherence.verdict(board, t, coherence.judge(t))
+            verdict=coherence.judge(t)
+            coherence.verdict(board,t,verdict)
+            if verdict.get("ok"):approved.append((t,_s))
         except Exception:
             pass
     try:                                   # v3.133: мысли плат -> общий словарь
         import worddict
-        for t, s in ph:
-            worddict.learn(t, hz=s)
+        for t, s in approved:
+            worddict.learn(t,hz=s)  # stored for feelings; lexical scoring ignores Hz
     except Exception:
         pass
     try:                                   # мысль + её частота -> смысл частоты
@@ -430,11 +433,14 @@ def _learn_phrases(board, ph):
 def link(board, hz=0, shz=None, ema=0, phrases=None, answers=None,
          up=None, rss=None, crash=None, ver=None, ip=None, asks_ok=False,
          bridge=None, grav=None, net=None, cam=None, breath=None, will=None,
-         extras_err=None, lead=None):
+         extras_err=None, lead=None, neuron_context=None):
     """POST /api/link от платы. -> {msgs (мысли облака для платы), z, ...}."""
     board = str(board or "")[:40]
     if not board:
         return {"ok": False, "error": "нет board"}
+    if neuron_context is not None:
+        from neuron_context import note as note_neurons
+        note_neurons(board,neuron_context)
     now = time.time()
     for a in (answers or [])[:6]:          # ответы на вопросы по каналу
         if not isinstance(a, dict):

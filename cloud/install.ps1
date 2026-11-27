@@ -1,5 +1,5 @@
 ﻿# ============================================================================
-# install.ps1 — neuro12-cloud v3.8 · УСТАНОВЩИК ОБЛАКА «МОЗГ-12» ДЛЯ WINDOWS
+# install.ps1 — neuro12-cloud v3.8 · УСТАНОВЩИК ОБЛАКА «STAR GATE» ДЛЯ WINDOWS
 # ----------------------------------------------------------------------------
 # Запуск: двойной клик по install.bat, или в PowerShell:
 #   powershell -NoProfile -ExecutionPolicy Bypass -File install.ps1
@@ -41,7 +41,7 @@ function Warn($t) { Write-Host "  [!!] $t" -ForegroundColor Yellow }
 function Die($t)  { Write-Host "  [XX] $t" -ForegroundColor Red; exit 1 }
 
 Write-Host ""
-Write-Host "  neuro12-cloud v3.8 — установка облака 'мозг-12' на Windows" -ForegroundColor Green
+Write-Host "  neuro12-cloud v3.8 — установка облака 'Star Gate' на Windows" -ForegroundColor Green
 Write-Host "  ===========================================================" -ForegroundColor Green
 
 # ------------------------------- 1. Python ----------------------------------
@@ -133,12 +133,12 @@ foreach ($f in @("server", "web", "launcher", "runtime", "docs")) {
     Copy-Item -Recurse -Force -Path (Join-Path $Root $f) -Destination $Dir
   }
 }
-# v3.30: ярлык «Мозг-12 запуск» (облако + плата без App Lab) на рабочем столе
+# v3.30: ярлык «Star Gate запуск» (облако + плата без App Lab) на рабочем столе
 try {
   $exeL = Join-Path $Dir "launcher\neuro12-start.exe"
   if (Test-Path $exeL) {
     $sh = New-Object -ComObject WScript.Shell
-    $lk = $sh.CreateShortcut((Join-Path ([Environment]::GetFolderPath("Desktop")) "Мозг-12 запуск.lnk"))
+    $lk = $sh.CreateShortcut((Join-Path ([Environment]::GetFolderPath("Desktop")) "Star Gate запуск.lnk"))
     $lk.TargetPath = $exeL; $lk.WorkingDirectory = (Join-Path $Dir "launcher"); $lk.Save()
   }
 } catch {}
@@ -330,7 +330,7 @@ if ($exeSrc) {
     $lnk = $ws.CreateShortcut((Join-Path $desktop "neuro12-cloud.lnk"))
     $lnk.TargetPath = Join-Path $Dir "neuro12-cloud.exe"
     $lnk.WorkingDirectory = $Dir
-    $lnk.Description = "Облако мозг-12: запустить и открыть веб-панель"
+    $lnk.Description = "Облако Star Gate: запустить и открыть веб-панель"
     $lnk.Save()
     Ok "ярлык «neuro12-cloud» на рабочем столе (запускает облако и панель)"
   } catch {
@@ -440,7 +440,7 @@ if (-not $NoStart) {
 # -------------------------------- Итог --------------------------------------
 Write-Host ""
 Write-Host "  ============================================================" -ForegroundColor Green
-Write-Host "   neuro12-cloud установлен — ОБЛАКО «МОЗГ-12» готово" -ForegroundColor Green
+Write-Host "   neuro12-cloud установлен — ОБЛАКО «STAR GATE» готово" -ForegroundColor Green
 Write-Host "  ============================================================" -ForegroundColor Green
 Write-Host ""
 Write-Host "   Веб-панель (стиль ChatGPT):  http://localhost:$Port"

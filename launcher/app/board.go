@@ -168,7 +168,7 @@ func boardRun(title, remote string, to time.Duration) {
 		setStep("")
 		return
 	}
-	consoleSteps("Мозг-12: "+title, []cstep{{title, "ssh -t -o StrictHostKeyChecking=accept-new " +
+	consoleSteps("Star Gate: "+title, []cstep{{title, "ssh -t -o StrictHostKeyChecking=accept-new " +
 		c.User + "@" + c.IP + " " + q(remote)}})
 }
 
@@ -180,7 +180,7 @@ func sudoRun(title, remote string, to time.Duration) {
 	}
 	c := getCfg()
 	logf("%s: нужен пароль платы для sudo — откроется окно.", title)
-	consoleSteps("Мозг-12: "+title, []cstep{{title + " (введите пароль платы для sudo)",
+	consoleSteps("Star Gate: "+title, []cstep{{title + " (введите пароль платы для sudo)",
 		"ssh -t -o StrictHostKeyChecking=accept-new " + c.User + "@" + c.IP + " " + q("sudo bash -c "+shq(remote))}})
 }
 
@@ -370,7 +370,7 @@ echo started
 	case strings.Contains(strings.ToLower(res), "not authorized") || strings.Contains(res, "sudo"):
 		logf("Интернет платы: у пользователя платы нет прав менять сеть без пароля — открою окно, там nmcli спросит пароль сети, а sudo — пароль платы.")
 		c := getCfg()
-		consoleSteps("Мозг-12: Wi-Fi платы", []cstep{{"подключение к «" + ssid + "» (пароль платы для sudo, затем пароль сети)",
+		consoleSteps("Star Gate: Wi-Fi платы", []cstep{{"подключение к «" + ssid + "» (пароль платы для sudo, затем пароль сети)",
 			"ssh -t -o StrictHostKeyChecking=accept-new " + c.User + "@" + c.IP + " " +
 				q("sudo nmcli --ask dev wifi connect "+shq(ssid)+map[bool]string{true: " hidden yes", false: ""}[hidden])}})
 	case res == "":

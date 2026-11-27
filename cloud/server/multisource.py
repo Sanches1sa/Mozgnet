@@ -636,6 +636,22 @@ def pages_answer(q, long_mode=False):
         errors = errors + ["на страницах выдачи ответа на вопрос нет"]
         _CACHE[ckey] = (now, None, {"sources": [], "errors": errors})
         return None, {"sources": [], "errors": errors}
-    errors = errors or ["страницы выдачи не ответили"]
+    # v3.194: пустая выдача — честный диагноз вместо общей фразы: какой
+    # поисковик почему молчит и какие страницы не открылись. Причины без
+    # точек/точек с запятой внутри — фраза целиком дойдёт до чата
+    # (brain._short_err берёт первое предложение до «. » / «; »).
+    reasons = list(errors)
+    try:
+        diag = webfetch.engines_diag(2)
+    except Exception:
+        diag = []
+    if diag:
+        reasons.append("поисковики молчат: %s" % ", ".join(diag))
+    reasons += ["%s — %s" % (f["name"], f["why"]) for f in (failed or [])[:2]]
+    if reasons:
+        errors = reasons + ["в Настройках можно вписать ключи API "
+                            "Google/Яндекса — надёжнее безключевых страниц"]
+    else:
+        errors = ["поисковики и Википедия не дали ссылок (сеть недоступна?)"]
     _CACHE[ckey] = (now, None, {"sources": [], "errors": errors})
     return None, {"sources": [], "errors": errors}

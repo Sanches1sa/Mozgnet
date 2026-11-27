@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Командный лаунчер для Linux-компьютера: neuro12-cli start|stop|status|logs|doctor|update …
+D="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+N12_PROFILE=desktop exec python3 "$D/n12ctl.py" "$@"

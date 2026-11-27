@@ -1,5 +1,5 @@
 #!/bin/sh
-# Сборка лаунчера «Мозг-12» (Go, без cgo).
+# Сборка лаунчера «Star Gate» (Go, без cgo).
 #   ./build.sh          → ../neuro12-start.exe (Windows: Go + WebView2, иконка из .syso)
 #   ./build.sh linux    → ../bin/neuro12-start-linux-amd64 и -arm64 (Linux: окно браузера)
 # Windows: зависимость github.com/jchv/go-webview2; golang.org/x/sys — с зеркала GitHub.

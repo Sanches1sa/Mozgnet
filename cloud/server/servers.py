@@ -56,6 +56,68 @@ def classify(cmd):
 
 
 # ------------------------------------------------------------------ цели
+LOCAL = "local:cloud"
+
+
+def local_enabled():
+    """v3.216: сам компьютер облака как цель агента (код и команды пишет и
+    запускает мозг ЗДЕСЬ, а не на плате). Включается так же, как терминал:
+    Настройки → Общие → «Терминал и рабочий стол»."""
+    try:
+        return bool(store.settings().get("terminal_on"))
+    except Exception:
+        return False
+
+
+def is_windows():
+    return os.name == "nt"
+
+
+def _decode(b):
+    """Вывод консоли -> текст: сначала UTF-8, затем кодовая страница консоли
+    Windows (cp866/cp1251), чтобы не получались «ромбики»."""
+    for enc in ("utf-8", "cp866", "cp1251"):
+        try:
+            return b.decode(enc)
+        except (UnicodeDecodeError, LookupError):
+            continue
+    return b.decode("utf-8", "replace")
+
+
+def _local_run(cmd, timeout=60):
+    """Команда на компьютере облака. Windows: PowerShell с выводом в UTF-8;
+    Linux/macOS: sh."""
+    try:
+        if is_windows():
+            argv = ["powershell", "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command",
+                    "[Console]::OutputEncoding=[Text.Encoding]::UTF8; $OutputEncoding=[Text.Encoding]::UTF8; " + cmd]
+            r = subprocess.run(argv, capture_output=True, timeout=max(2, min(180, int(timeout))),
+                               stdin=subprocess.DEVNULL, cwd=os.path.expanduser("~"))
+        else:
+            r = subprocess.run(cmd, shell=True, capture_output=True, timeout=max(2, min(180, int(timeout))),
+                               stdin=subprocess.DEVNULL, cwd=os.path.expanduser("~"))
+        out = _decode(r.stdout + r.stderr)[-16000:]
+        store.log("СЕРВЕРЫ", "локально: %s -> rc=%s" % (cmd[:80].replace("\n", " "), r.returncode))
+        return {"ok": r.returncode == 0, "code": r.returncode, "out": out.strip() or "(нет вывода)", "server": LOCAL}
+    except FileNotFoundError as e:
+        return {"ok": False, "error": "нет программы: %s" % str(e)[:120], "server": LOCAL}
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "code": -9, "error": "таймаут %d с — процесс остановлен" % timeout, "server": LOCAL}
+    except Exception as e:
+        return {"ok": False, "error": "%s: %s" % (type(e).__name__, str(e)[:200]), "server": LOCAL}
+
+
+def _ssh_for_board(board):
+    """SSH-запись, которая указывает на эту плату (по адресу или имени)."""
+    host = ""
+    for t in targets():
+        if t.get("target") == "board:" + board:
+            host = str(t.get("host") or "")
+    for s in ssh_servers.list_servers():
+        h, n = str(s.get("host") or ""), str(s.get("name") or "").lower()
+        if (host and h == host) or (board and board.lower() in n) or s.get("kind") == "board":
+            return s["id"]
+    return ""
 def targets():
     """Все цели окна: SSH-серверы + платы на связи."""
     out = []
@@ -73,6 +135,10 @@ def targets():
                         "admin": b.get("admin"), "code": b.get("code"), "age": b["age"]})
     except Exception:
         pass
+    if local_enabled():
+        out.append({"id": LOCAL, "target": LOCAL, "name": "облако (этот компьютер)", "host": "localhost",
+                    "user": "", "via": "local", "kind": "windows" if is_windows() else "local", "ok": True,
+                    "os": "Windows (PowerShell)" if is_windows() else "Linux/macOS (sh)"})
     return out
 
 
@@ -86,6 +152,8 @@ def resolve(name):
         if n in (str(t.get("id") or "").lower(), str(t.get("name") or "").lower(),
                  str(t.get("host") or "").lower()):
             return t["target"]
+    if n in ("облако", "облаке", "локально", "этот компьютер", "local", "cloud") and local_enabled():
+        return LOCAL
     if n in ("плата", "плату", "board", "uno-q", "uno q"):
         for t in ts:
             if t["via"] == "board":
@@ -108,6 +176,9 @@ def _host(target):
 
 def check(target, timeout=3.0):
     """Доступен ли сервер (порт SSH открыт) / плата на связи."""
+    if str(target) == LOCAL:
+        return {"ok": local_enabled(), "out": "облако (этот компьютер) — " +
+                ("доступно" if local_enabled() else "выключено в Настройках → Общие")}
     if str(target).startswith("board:"):
         for t in targets():
             if t["target"] == target:
@@ -177,13 +248,32 @@ def wake(target, wait=0):
 def run(target, cmd, timeout=60):
     """Выполнить команду на цели. {ok, code, out | error}."""
     target = str(target or "")
+    if target == LOCAL:
+        if not local_enabled():
+            return {"ok": False, "error": "локальные команды выключены: Настройки → Общие → «Терминал и рабочий стол»"}
+        return _local_run(cmd, timeout)
     if target.startswith("board:"):
         import boardcode
-        r = boardcode.run(cmd, "sh", target[6:], timeout=min(120, timeout))
+        board = target[6:]
+        r = boardcode.run(cmd, "sh", board, timeout=min(120, timeout))
         if r.get("error"):
             return {"ok": False, "error": r["error"]}
+        if not r.get("ok") and boardcode.is_refusal(r.get("out")):
+            boardcode.mark_blocked(board)
+            sid = _ssh_for_board(board)
+            if sid:                                  # честный обход: Linux платы по SSH
+                rr = ssh_servers.run(sid, cmd, timeout=timeout)
+                rr["note"] = "приложение платы отказало в исполнении — выполнено по SSH (%s)" % sid
+                return rr
+            return {"ok": False, "blocked": True, "code": r.get("rc"), "server": board,
+                    "error": "Плата %s не исполняет команды: в её приложении исполнение отключено "
+                             "(так настроена версия платы), это не ошибка команды. Что можно: "
+                             "добавить Linux платы (arduino@её_IP) в «Серверы» как SSH-сервер — "
+                             "команды пойдут туда; либо писать и запускать код на «облаке "
+                             "(этот компьютер)» (включить терминал в Настройках → Общие)." % board}
+        boardcode.mark_blocked(board, False)
         return {"ok": bool(r.get("ok")), "code": r.get("rc"), "out": r.get("out") or "",
-                "server": target[6:]}
+                "server": board}
     return ssh_servers.run(target, cmd, timeout=timeout)
 
 
@@ -192,6 +282,23 @@ def write_file(target, path, content, check_syntax=True):
     path = str(path or "").strip()
     if not path or len(path) > 300 or "\n" in path or "'" in path:
         return {"ok": False, "error": "плохой путь"}
+    if str(target) == LOCAL:                     # v3.216: файл на самом облаке — без base64/sh
+        if not local_enabled():
+            return {"ok": False, "error": "локальные команды выключены (Настройки → Общие)"}
+        try:
+            fp = os.path.expanduser(path)
+            os.makedirs(os.path.dirname(fp) or ".", exist_ok=True)
+            with open(fp, "w", encoding="utf-8") as f:
+                f.write(str(content or ""))
+            msg = "записано %d байт: %s" % (len(str(content or "").encode("utf-8")), fp)
+            if check_syntax and path.endswith(".py"):
+                import py_compile
+                py_compile.compile(fp, doraise=True)
+                msg += "; синтаксис Python — ок"
+            store.log("СЕРВЕРЫ", "локальный файл %s" % fp)
+            return {"ok": True, "out": msg, "server": LOCAL}
+        except Exception as e:
+            return {"ok": False, "error": "%s: %s" % (type(e).__name__, str(e)[:200]), "server": LOCAL}
     b64 = base64.b64encode(str(content or "").encode("utf-8")).decode("ascii")
     if len(b64) > 90000:
         return {"ok": False, "error": "файл больше ~64 КБ — разбей на части"}

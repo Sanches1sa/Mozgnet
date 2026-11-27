@@ -9,11 +9,11 @@
 # Если второй аргумент не задан, берётся папка neuro_12 рядом с deploy_cli
 # (то есть распакованный zip как есть).
 # ===========================================================================
-set -e
+set -euo pipefail
 
 TARGET="${1:?использование: push_and_run.sh arduino@<IP-платы> [путь/к/neuro_12]}"
 HERE="$(cd "$(dirname "$0")" && pwd)"
-SRC="${2:-$(dirname "$HERE")/neuro_12}"
+SRC="${2:-$(dirname "$HERE")}"
 
 if [ ! -f "$SRC/python/main.py" ] || [ ! -f "$SRC/app.yaml" ]; then
   echo "ОШИБКА: в $SRC нет app.yaml / python/main.py — укажи путь вторым аргументом"
@@ -28,8 +28,11 @@ ssh "$TARGET" "echo ok"
 echo "==> создаю ~/ArduinoApps на плате"
 ssh "$TARGET" 'mkdir -p ~/ArduinoApps'
 
+echo "==> останавливаю существующее приложение и сохраняю резервную копию"
+ssh "$TARGET" 'set -e; if [ -f ~/ArduinoApps/neuro_12/app.yaml ]; then arduino-app-cli app stop ~/ArduinoApps/neuro_12; mkdir -p ~/neuro12_backups; tar -czf ~/neuro12_backups/neuro_12-$(date +%Y%m%d-%H%M%S).tgz -C ~/ArduinoApps neuro_12; fi'
+
 echo "==> копирую приложение (scp)..."
-scp -r "$SRC" "$TARGET:ArduinoApps/"
+tar -C "$SRC" -cf - . | ssh "$TARGET" 'mkdir -p ~/ArduinoApps/neuro_12 && tar -xf - -C ~/ArduinoApps/neuro_12'
 
 echo "==> запускаю на плате..."
 ssh "$TARGET" 'arduino-app-cli app start ~/ArduinoApps/neuro_12'

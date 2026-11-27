@@ -39,7 +39,18 @@
 </head>
 <body>
 <h1>mozg<b>net</b></h1>
-<div class="sub" id="ver">мобильное облако «Мозг-12»</div>
+<div class="sub" id="ver">мобильное облако «Star Gate»</div>
+
+<div class="card" id="cRemote">
+  <h2>Облако на компьютере / сервере</h2>
+  <div class="mut">Телефон подключается к облаку, которое работает на компьютере (или в интернете), и ничего не раздаёт. Облако телефона при подключении выключается.</div>
+  <div class="row"><input type="text" id="rUrl" placeholder="http://192.168.1.5:8077 или https://…:8443" autocapitalize="off"></div>
+  <div class="row"><input type="text" id="rPw" placeholder="пароль панели (необязательно)" autocapitalize="off"><input type="text" id="rTok" placeholder="мозг-токен (для плат)" autocapitalize="off"></div>
+  <div class="row"><button id="rGo">Подключить</button><button class="g" id="rOpen">Открыть облако</button><button class="g" id="rOff">Отключить</button></div>
+  <div class="row"><span class="dot" id="rDot"></span><span id="rState">не подключено</span></div>
+  <div class="row"><span class="dot" id="bDot"></span><span id="bState">бот МАКС: …</span><button class="g s" id="bBtn">Включить бота</button></div>
+  <div class="err" id="rErr"></div>
+</div>
 
 <div class="card" id="cLocal">
   <h2>Облако в телефоне</h2>
@@ -48,6 +59,7 @@
   <div class="row"><span class="k">Адрес для плат</span><span class="v" id="lAddr">—</span><button class="g s" id="cpAddr">копировать</button></div>
   <div class="row"><span class="k">Пароль панели</span><span class="v" id="lPw">••••••</span><button class="g s" id="shPw">показать</button><button class="g s" id="cpPw">копировать</button></div>
   <div class="row"><span class="k">Мозг-токен</span><span class="v" id="lTok">—</span><button class="g s" id="cpTok">копировать</button></div>
+  <div class="row"><button class="g s" id="bBtn2">Включить бота МАКС</button><span class="mut" id="bState2"></span></div>
   <div class="row"><button id="openLocal">Открыть облако</button><button class="g" id="brLocal">в браузере</button></div>
   <div class="err" id="lErr"></div>
   <div class="mut">Это то же облако, что на компьютере: чат, мозг, своя LLM, база знаний, боты, обновления. Память хранится в телефоне.</div>
@@ -165,6 +177,12 @@ function drawHosts() {
   $('#hosts').innerHTML = list.length ? list.map(hostHtml).join('') : '<div class="mut">Пока ничего не найдено.</div>';
   document.querySelectorAll('[data-open]').forEach(b => b.onclick = () => M.open(b.dataset.open));
   document.querySelectorAll('[data-conn]').forEach(b => b.onclick = () => {
+    const rr = J(M.remoteInfo(), {});
+    if (rr.on && rr.url && rr.token) {      // телефон подключён к облаку компьютера
+      note(b.dataset.conn, 'подключаю к облаку ' + rr.url + '…');
+      M.connectBoard(b.dataset.conn, rr.url, rr.token);
+      return;
+    }
     if (!INFO.ip || !INFO.token) { alert('Облако телефона ещё не готово или нет Wi-Fi'); return; }
     note(b.dataset.conn, 'подключаю к облаку телефона…');
     M.connectBoard(b.dataset.conn, 'http://' + INFO.ip + ':' + (INFO.port || 8077), INFO.token);
@@ -272,8 +290,9 @@ window.onScan = (done, total, h, fin) => {
     drawHosts();
   }
 };
-window.onProbe = (ip, h) => {
+window.onProbe = (ip, h, why) => {
   $('#manGo').disabled = false;
+  if (why === 'loop') { alert('127.0.0.1 / localhost — это сам телефон, по такому адресу ничего не загрузится. Впиши IP платы или компьютера в Wi-Fi, напр. 192.168.1.50'); return; }
   if (h) { hosts[h.ip] = h; drawHosts(); } else alert(ip + ': ни платы, ни облака (порты 7000, 8077 закрыты)');
 };
 window.onConnect = (base, res) => {
@@ -295,7 +314,7 @@ $('#macCred').onclick = () => {
   M.setBoardUser(user, pass); alert('Сохранено');
 };
 $('#scan').onclick = () => { if (!M) return; $('#scan').disabled = true; $('#scanBar').style.width = '0'; $('#scanTxt').textContent = 'ищу…'; M.scan(); };
-$('#manGo').onclick = () => { const ip = $('#manIp').value.trim(); if (!ip || !M) return; $('#manGo').disabled = true; M.probe(ip); };
+$('#manGo').onclick = () => { const ip = $('#manIp').value.trim(); if (!ip || !M) return; if (isLoop(ip)) { alert('127.0.0.1 / localhost — это сам телефон, по такому адресу ничего не загрузится. Впиши IP платы или компьютера в Wi-Fi, напр. 192.168.1.50'); return; } $('#manGo').disabled = true; M.probe(ip); };
 $('#lOn').onchange = () => { M.setLocal($('#lOn').checked); setTimeout(refresh, 600); };
 $('#openLocal').onclick = () => M.openLocal();
 $('#brLocal').onclick = () => INFO.ip && M.browser('http://' + INFO.ip + ':' + (INFO.port || 8077) + '/');
@@ -304,6 +323,33 @@ $('#cpPw').onclick = () => INFO.password && M.copy(INFO.password);
 $('#cpTok').onclick = () => INFO.token && M.copy(INFO.token);
 $('#shPw').onclick = () => { pwShown = !pwShown; $('#shPw').textContent = pwShown ? 'скрыть' : 'показать'; refresh(); };
 
+
+function isLoop(v) { const h = String(v || '').trim().toLowerCase().replace(/^[a-z]+:\/\//, '').replace(/[\/?#].*$/, '').replace(/:\d+$/, ''); return h === 'localhost' || h === '0.0.0.0' || h === '::1' || /^127(\.\d{1,3}){3}$/.test(h); }
+function remoteRefresh() {
+  if (!M) return;
+  const r = J(M.remoteInfo(), {});
+  $('#rDot').className = 'dot' + (r.on ? ' ok' : '');
+  $('#rState').textContent = r.on ? 'подключено: ' + r.url + (r.fp ? ' · https, сертификат закреплён' : '') : 'не подключено';
+  if (r.on && !$('#rUrl').value) { $('#rUrl').value = r.url; $('#rTok').value = r.token || ''; }
+}
+window.onRemote = (okv, msg) => { $('#rErr').textContent = okv ? '' : (msg || ''); $('#rGo').disabled = false; remoteRefresh(); refresh(); if (okv) M.openRemote(); };
+$('#rGo').onclick = () => { if (!M) return; if (isLoop($('#rUrl').value)) { $('#rErr').textContent = '127.0.0.1 / localhost — это сам телефон, облако по такому адресу не загрузится. Укажи IP компьютера в Wi-Fi, например 192.168.1.5'; return; } $('#rGo').disabled = true; $('#rErr').textContent = 'проверяю…'; M.connectCloud($('#rUrl').value, $('#rPw').value, $('#rTok').value); };
+$('#rOpen').onclick = () => M && M.openRemote();
+$('#rOff').onclick = () => { if (M) M.disconnectCloud(); };
+remoteRefresh();
+
+// ---- бот МАКС ----
+let BOT = {on: false, tok: false};
+function botDraw(err) {
+  const t = err ? '⚠️ ' + err : (BOT.on ? 'бот МАКС включён' : 'бот МАКС выключен') + (BOT.tok ? '' : ' (нет токена бота — задай в облаке: Бот МАКС)');
+  ['#bState', '#bState2'].forEach(q => { const e = $(q); if (e) e.textContent = t; });
+  const d = $('#bDot'); if (d) d.className = 'dot' + (BOT.on ? ' ok' : '');
+  ['#bBtn', '#bBtn2'].forEach(q => { const e = $(q); if (e) { e.textContent = BOT.on ? 'Выключить бота' : 'Включить бота'; e.disabled = false; } });
+}
+window.onBot = (on, tok, err) => { if (!err) { BOT.on = on; BOT.tok = tok; } botDraw(err); };
+function botToggle() { if (!M) return; ['#bBtn', '#bBtn2'].forEach(q => { const e = $(q); if (e) e.disabled = true; }); M.botSet(BOT.on ? 0 : 1, INFO.token || ''); }
+$('#bBtn').onclick = botToggle; $('#bBtn2').onclick = botToggle;
+if (M) setTimeout(() => M.botSet(-1, INFO.token || ''), 1200);
 if (M) { hosts = J(M.pref('hosts') || '{}', {}) || {}; }
 drawHosts();
 refresh();

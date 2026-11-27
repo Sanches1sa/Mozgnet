@@ -183,10 +183,7 @@ class SharedDict:
                 pass
         if grav:
             sc *= 1.0 + min(5.0, grav.get(w, 0.0))
-        if hz is not None:
-            hw = self.hz_of(w)
-            if hw is not None:
-                sc *= 1.0 + 0.8 * math.exp(-abs(hw - float(hz)) / 400.0)
+        # Hz associations are stored for feeling encoding, never lexical scoring.
         sc = max(0.1, sc)
         try:
             sc = sc ** (1.0 / (1.0 + 0.3 * max(-1.0, min(1.0, float(breath or 0)))))

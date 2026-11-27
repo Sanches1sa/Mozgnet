@@ -129,6 +129,8 @@ def parse_zip(blob):
         pfx = _prefix_of(zin)
         entries, skipped_data, unpacked = [], 0, 0
         for info in zin.infolist():
+            if pfx and not info.filename.startswith(pfx):
+                continue                   # v3.224: файлы вне папки пакета (отчёт агента и т.п.) не ставим
             rel = _safe_rel(info.filename[len(pfx):]
                             if info.filename.startswith(pfx)
                             else info.filename)
@@ -577,6 +579,11 @@ def schedule_restart(reason=""):
                   % (", ".join(k for k, _v in saved) or "—"))
     except Exception as e:
         store.log("ОБНОВЛЕНИЕ", "сохранение перед перезапуском: %s" % e)
+    try:
+        import crashguard
+        crashguard.mark_planned()            # v3.228: оборванные запросы — не падение
+    except Exception:
+        pass
     try:                     # v3.155: сторож не поднимает процесс сам —
         with open(store.p("_planned_restart"), "w") as f:   # это сделает helper
             f.write(str(int(time.time())))
@@ -651,11 +658,13 @@ def _cli():
         print(json.dumps(status(), ensure_ascii=False, indent=1))
     elif cmd == "apply":
         path = sys.argv[2] if len(sys.argv) > 2 else ""
+        # v3.227: перезапуск из CLI гасил бы САМ CLI, а не сервер — по умолчанию без него;
+        # перезапускает лаунчер (n12ctl restart) или флаг --restart (если CLI запущен тем же процессом)
         with open(path, "rb") as f:
-            r = apply_zip(f.read(), restart=True, actor="CLI")
+            r = apply_zip(f.read(), restart=("--restart" in sys.argv), actor="CLI")
         print(json.dumps(r, ensure_ascii=False, indent=1))
     elif cmd == "rollback":
-        r = rollback(sys.argv[2], restart=True)
+        r = rollback(sys.argv[2], restart=("--restart" in sys.argv))
         print(json.dumps(r, ensure_ascii=False, indent=1))
     elif cmd == "restart":
         print(json.dumps(schedule_restart("CLI"), ensure_ascii=False))

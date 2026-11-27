@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# uninstall-linux.sh — удаление лаунчера «Мозг-12» (Linux). Облако и его память
+# uninstall-linux.sh — удаление лаунчера «Star Gate» (Linux). Облако и его память
 # (data/) удаляются ТОЛЬКО если ответить «да» (или ключ --with-cloud).
 DATA="${XDG_DATA_HOME:-$HOME/.local/share}"
 CLOUD="$DATA/neuro12-cloud"

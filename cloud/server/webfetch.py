@@ -58,6 +58,9 @@ _UA = ("neuro12-cloud/3.14 (educational platform; stdlib; "
 # Запасной DNS-over-HTTPS (JSON API; только константы — белый список и тут)
 _DOH = ("https://dns.google/resolve?name=%s&type=A",
         "https://cloudflare-dns.com/dns-query?name=%s&type=A")
+# v3.194: DoH в проводном формате RFC 8484 — dns.yandex.ru отвечает в
+# российских сетях, где dns.google и cloudflare замедлены или закрыты
+_DOH_WIRE = ("https://dns.yandex.ru/dns-query?dns=%s",)
 _DOH_TTL = 600          # кэш DoH-ответов, 10 минут
 
 _cache = {}          # q -> (ts, results, src)
@@ -241,9 +244,55 @@ def _assert_wiki(url):
 _doh_cache = {}      # hostname -> (ts, [публичные ip])
 
 
+def _dns_wire_q(hostname, qtype=1):
+    """v3.194: минимальный DNS-запрос в проводном формате (RFC 1035/8484,
+    рекурсия желательна). Только A-записи."""
+    import struct
+    q = b"".join(bytes([len(p)]) + p.encode("idna")
+                 for p in str(hostname).strip().rstrip(".").split(".") if p) \
+        + b"\x00"
+    return struct.pack(">HHHHHH", 0x4219, 0x0100, 1, 0, 0, 0) + q + \
+        struct.pack(">HH", qtype, 1)
+
+
+def _dns_skip_name(pkt, i):
+    """Пропустить имя (со сжатием RFC 1035) — смещение после имени."""
+    while True:
+        if i >= len(pkt):
+            return len(pkt)
+        b = pkt[i]
+        if b == 0:
+            return i + 1
+        if b & 0xC0 == 0xC0:
+            return i + 2
+        i += 1 + b
+
+
+def _dns_wire_ips(pkt):
+    """v3.194: A-записи (IPv4) из DNS-ответа в проводном формате."""
+    import struct
+    if len(pkt) < 12 or pkt[3] & 0x0F:      # обрыв или rcode != NOERROR
+        return []
+    an = struct.unpack(">H", pkt[6:8])[0]
+    i = _dns_skip_name(pkt, 12) + 4          # QNAME вопроса + QTYPE/QCLASS
+    out = []
+    for _ in range(an):
+        i = _dns_skip_name(pkt, i)
+        if i + 10 > len(pkt):
+            return out
+        rtype, _cls, _ttl, rdlen = struct.unpack(">HHIH", pkt[i:i + 10])
+        i += 10
+        if rtype == 1 and rdlen == 4 and i + 4 <= len(pkt):
+            out.append(".".join(str(x) for x in pkt[i:i + 4]))
+        i += rdlen
+    return out
+
+
 def _doh_resolve(hostname, timeout=6):
     """НАСТОЯЩИЙ адрес домена через DNS-over-HTTPS — обход DNS-блокировок.
-    Только A-записи (IPv4), только публичные адреса."""
+    Только A-записи (IPv4), только публичные адреса.
+    v3.194: после JSON-шлюзов — проводной формат RFC 8484 (dns.yandex.ru):
+    работает в российских сетях, где dns.google/cloudflare замедлены."""
     hit = _doh_cache.get(hostname)
     if hit and time.time() - hit[0] < _DOH_TTL:
         return list(hit[1])
@@ -258,6 +307,21 @@ def _doh_resolve(hostname, timeout=6):
             ips = _public_ips([a.get("data")
                                for a in (data.get("Answer") or [])
                                if a.get("type") == 1])
+            if ips:
+                _doh_cache[hostname] = (time.time(), ips)
+                return ips
+        except Exception:
+            continue
+    for tpl in _DOH_WIRE:                   # v3.194: проводной DoH
+        try:
+            import base64 as _b64
+            pkt = _dns_wire_q(str(hostname))
+            url = tpl % _b64.urlsafe_b64encode(pkt).decode("ascii").rstrip("=")
+            req = urllib.request.Request(
+                url, headers={"User-Agent": _UA,
+                              "Accept": "application/dns-message"})
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                ips = _public_ips(_dns_wire_ips(r.read(65536)))
             if ips:
                 _doh_cache[hostname] = (time.time(), ips)
                 return ips
@@ -913,6 +977,58 @@ def _hdr(headers, name):
     return None
 
 
+def _proxy_addr():
+    """v3.194: HTTPS_PROXY/https_proxy/ALL_PROXY -> (host, порт, basic-авт)
+    или None. Владелец на рабочей сети: интернет только через прокси —
+    раньше шлюз молчал, теперь туннель CONNECT до того же ip:443."""
+    for var in ("HTTPS_PROXY", "https_proxy", "ALL_PROXY", "all_proxy"):
+        rawv = str(os.environ.get(var) or "").strip()
+        if not rawv:
+            continue
+        u = urllib.parse.urlparse(rawv if "://" in rawv else "http://" + rawv)
+        if not u.hostname:
+            continue
+        auth = ""
+        if u.username:
+            import base64 as _b64
+            cred = "%s:%s" % (urllib.parse.unquote(u.username),
+                              urllib.parse.unquote(u.password or ""))
+            auth = _b64.b64encode(cred.encode("utf-8")).decode("ascii")
+        return u.hostname, u.port or (443 if u.scheme == "https" else 8080), auth
+    return None
+
+
+def _proxy_connect(ip, proxy, timeout):
+    """CONNECT-туннель до ip:443 через прокси (_proxy_addr). Шифрование не
+    меняется: TLS с SNI поверх туннеля, сертификат по имени домена."""
+    host, port, auth = proxy
+    s = socket.create_connection((host, port), timeout=timeout)
+    try:
+        req = "CONNECT %s:443 HTTP/1.1\r\nHost: %s:443\r\n" % (ip, ip)
+        if auth:
+            req += "Proxy-Authorization: Basic %s\r\n" % auth
+        req += "\r\n"
+        s.sendall(req.encode("ascii"))
+        buf = b""
+        while b"\r\n\r\n" not in buf and len(buf) < 8192:
+            chunk = s.recv(4096)
+            if not chunk:
+                break
+            buf += chunk
+        head = buf.split(b"\r\n\r\n", 1)[0].decode("latin-1", "replace")
+        m = re.match(r"HTTP/[\d.]+\s+(\d+)", head)
+        code = int(m.group(1)) if m else 0
+        if code != 200:
+            raise OSError("прокси отклонил туннель (HTTP %s)" % (code or "?"))
+        return s
+    except Exception:
+        try:
+            s.close()
+        except Exception:
+            pass
+        raise
+
+
 def _https_call(hostname, ip, path_qs, timeout=12, max_bytes=400000,
                 method="GET", form=None, extra_headers=None, raw_body=None,
                 content_type=None, extra_ca=None):
@@ -932,7 +1048,13 @@ def _https_call(hostname, ip, path_qs, timeout=12, max_bytes=400000,
             ctx.load_verify_locations(cadata=extra_ca)
         except Exception:
             pass
-    raw = socket.create_connection((ip, 443), timeout=timeout)
+    # v3.194: HTTPS_PROXY/ALL_PROXY — CONNECT-туннель вместо прямого
+    # соединения (на рабочих сетях, где прямой путь до сайтов закрыт,
+    # шлюз раньше молчал). TLS поверх туннеля тот же: SNI и проверка
+    # сертификата по имени домена — прокси прочитать трафик не может.
+    px = _proxy_addr()
+    raw = _proxy_connect(ip, px, timeout) if px else \
+        socket.create_connection((ip, 443), timeout=timeout)
     try:
         tls = ctx.wrap_socket(raw, server_hostname=hostname)
         conn = http.client.HTTPSConnection(ip, 443, timeout=timeout)
@@ -998,11 +1120,15 @@ def _public_host_check(hostname):
 
 def _resolve_public(hostname):
     """Публичные адреса домена: системный DNS, а при DNS-блокировке —
-    запасной DoH (урок v3.12.1). Только публичные — всегда."""
+    запасной DoH (урок v3.12.1). Только публичные — всегда.
+    v3.194: IPv4-адреса первыми (на машинах без IPv6 две попытки к
+    IPv6-адресам съедали весь таймаут соединения); если системный DNS не дал
+    ни одной A-записи (пусто, только IPv6 или блокировка) — DoH добавляет
+    A-записи к списку."""
     pub = _public_ips(_sys_resolve(hostname))
-    if pub:
-        return pub
-    return _doh_resolve(hostname)
+    if not [x for x in pub if ":" not in x]:
+        pub = pub + _doh_resolve(hostname)
+    return [x for x in pub if ":" not in x] + [x for x in pub if ":" in x]
 
 
 def fetch_page(url, timeout=10, max_bytes=400000, hops=3):
@@ -1423,7 +1549,10 @@ _BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                "(KHTML, like Gecko) Chrome/124.0 Safari/537.36")
 # Google отдаёт простую HTML-выдачу (без JavaScript) текстовым браузерам
 _LYNX_UA = "Lynx/2.9.0dev.12 libwww-FM/2.14 SSL-MM/1.4.1 GNUTLS/3.7.8"
-_ENGINE_STATE = {}       # движок -> {"ok": ts, "err": текст, "ts": ts}
+_ENGINE_STATE = {}       # движок -> {"ok": ts, "err": текст, "ts": ts,
+                         #             "fails": n, "skip_until": ts}
+# v3.194: предохранитель — 3 неудачи подряд -> движок на паузу 10 минут
+_ENGINE_SKIP = {"fails": 3, "pause": 600}
 
 
 def _engine_note(name, ok, err=""):
@@ -1432,17 +1561,65 @@ def _engine_note(name, ok, err=""):
     if ok:
         st["ok"] = st["ts"]
         st["err"] = ""
+        st["fails"] = 0                     # v3.194: успех сбрасывает счётчик
+        st["skip_until"] = 0.0
     else:
         st["err"] = str(err)[:200]
+        st["fails"] = int(st.get("fails") or 0) + 1
+        if st["fails"] >= _ENGINE_SKIP["fails"]:
+            st["skip_until"] = st["ts"] + _ENGINE_SKIP["pause"]
         _remember_err("%s: %s" % (name, err))
+
+
+def _engine_alive(name):
+    """v3.194: предохранитель движка. Три неудачи подряд (сеть, капча,
+    требование входа) — движок пропускается 10 минут: вопрос больше не ждёт
+    заведомо мёртвый сайт, ответ собирается из работающих источников."""
+    st = _ENGINE_STATE.get(name) or {}
+    return time.time() >= float(st.get("skip_until") or 0.0)
 
 
 def engines_state():
     """Для панели: какие поисковики работают и почему нет."""
+    now = time.time()
     out = {}
     for k, v in _ENGINE_STATE.items():
-        out[k] = {"ok_ago": int(time.time() - v["ok"]) if v.get("ok") else None,
-                  "err": v.get("err") or ""}
+        out[k] = {"ok_ago": int(now - v["ok"]) if v.get("ok") else None,
+                  "err": v.get("err") or "",
+                  "fails": int(v.get("fails") or 0),
+                  "pause_s": max(0, int(float(v.get("skip_until") or 0) - now))}
+    return out
+
+
+_DIAG_TITLE = {"mailru": "Поиск Mail.ru", "mojeek": "Mojeek",
+               "yandex-html": "Яндекс (выдача)", "google": "Google API",
+               "yandex": "Яндекс API"}
+
+
+def engines_diag(limit=2):
+    """v3.194: честный диагноз «почему поисковики молчат» — для чата, когда
+    выдача пустая: «Яндекс (выдача) — попросил капчу, Поиск Mail.ru — …».
+    Работающие движки в список не попадают; пусто — никто ещё не отвечал."""
+    out = []
+    try:
+        names = engines_list()
+    except Exception:
+        names = list(_ENGINES)
+    for name in names:
+        st = _ENGINE_STATE.get(name) or {}
+        if st.get("ok") and not st.get("err"):
+            continue                    # этот работает — не жалуемся
+        why = str(st.get("err") or "")
+        if not why:
+            if not st.get("ts"):
+                continue                # ещё не запускался в этом сеансе
+            why = "не дал ссылок"
+        cut = why[:70]                  # коротко и по границе слова
+        if len(why) > 70 and " " in cut:
+            cut = cut[:cut.rfind(" ")]
+        out.append("%s — %s" % (_DIAG_TITLE.get(name, name), cut))
+        if len(out) >= limit:
+            break
     return out
 
 
@@ -1627,44 +1804,29 @@ def google_search(q, limit=10):
 
 
 # ---------------------------- Яндекс ---------------------------------------
-def yandex_api(q, limit=10):
-    """Яндекс Search API (Yandex Cloud): ключ API + folderid из настроек.
-    Ответ — XML (как у классического Яндекс.XML)."""
-    key, folder = _skey("yandex_api_key"), _skey("yandex_folder")
-    if not key or not folder:
+def yandex_api(q, limit=10, credentials=None):
+    """Search API v2: JSON POST + Api-Key header, base64 XML response."""
+    import yandex_search
+    key, folder = credentials if credentials is not None else (_skey("yandex_api_key"), _skey("yandex_folder"))
+    if not key and not folder:
         return None
-    url = ("https://yandex.ru/search/xml?" + urllib.parse.urlencode(
-        {"folderid": folder, "apikey": key, "query": q, "l10n": "ru",
-         "sortby": "rlv", "filter": "moderate", "maxpassages": "2",
-         "groupby": "attr=\"\".mode=flat.groups-on-page=%d.docs-in-group=1"
-                    % max(5, min(20, int(limit)))}))
-    st, _f, txt = _search_get(url, ua=_UA)
-    if st != 200:
-        _engine_note("yandex-api", False, "HTTP %s" % st)
+    try:
+        out = yandex_search.search(key, folder, q, limit)
+    except (yandex_search.SearchError, ValueError) as e:
+        _engine_note("yandex", False, str(e))
+        _ENGINE_STATE["yandex"]["empty"] = False
         return []
-    em = re.search(r'<error[^>]*code="(\d+)"[^>]*>(.*?)</error>', txt, re.S)
-    if em:
-        _engine_note("yandex-api", False, "ошибка %s: %s" % (
-            em.group(1), _clean_txt(em.group(2))[:120]))
-        return []
-    out = []
-    for doc in re.findall(r"<doc\b[^>]*>(.*?)</doc>", txt, re.S):
-        um = re.search(r"<url>(.*?)</url>", doc, re.S)
-        tm = re.search(r"<title>(.*?)</title>", doc, re.S)
-        if not um:
-            continue
-        link = _clean_txt(um.group(1))
-        pas = " ".join(_clean_txt(p) for p in
-                       re.findall(r"<passage>(.*?)</passage>", doc, re.S))
-        if not pas:
-            hm = re.search(r"<headline>(.*?)</headline>", doc, re.S)
-            pas = _clean_txt(hm.group(1)) if hm else ""
-        out.append({"title": _clean_txt(tm.group(1) if tm else link)[:160],
-                    "url": link[:300], "snippet": pas[:400], "src": ""})
-        if len(out) >= limit:
-            break
-    _engine_note("yandex-api", True)
+    _engine_note("yandex", True)
+    _ENGINE_STATE["yandex"]["empty"] = not bool(out)
     return out
+
+
+def reset_yandex_state():
+    for name in ("yandex", "yandex-api"):
+        _ENGINE_STATE.pop(name, None)
+    for key in list(_cache):
+        if str(key).startswith("ya:"):
+            _cache.pop(key, None)
 
 
 def _parse_yandex_html(txt, limit=10):
@@ -1712,18 +1874,18 @@ def yandex_html(q, limit=10):
     if "showcaptcha" in final or "/captcha" in final or \
             "smartcaptcha" in low or "checkbox-captcha" in low or \
             ("captcha" in low and "serp-item" not in low):
-        _engine_note("yandex", False, "Яндекс попросил капчу (много "
+        _engine_note("yandex-html", False, "Яндекс попросил капчу (много "
                      "запросов с этого адреса) — нужен ключ Search API")
         return []
     if st != 200:
-        _engine_note("yandex", False, "HTTP %s %s" % (st, txt[:100]
+        _engine_note("yandex-html", False, "HTTP %s %s" % (st, txt[:100]
                                                       if st == 0 else ""))
         return []
     out = _parse_yandex_html(txt, limit)
     if out:
-        _engine_note("yandex", True)
+        _engine_note("yandex-html", True)
     else:
-        _engine_note("yandex", False, "выдача без ссылок (изменилась "
+        _engine_note("yandex-html", False, "выдача без ссылок (изменилась "
                      "разметка или антибот)")
     return out
 
@@ -1851,6 +2013,14 @@ def mailru_search(q, limit=10):
     st, final, txt = _search_get("https://go.mail.ru/search?" +
                                  urllib.parse.urlencode({"q": q}))
     low = (txt or "")[:40000].lower()
+    # v3.194: Mail.ru закрыл поиск без аккаунта — анонимная выдача
+    # перенаправляет на страницу входа; фиксируем и не тратим время каждый раз
+    fh = (urllib.parse.urlparse(final or "").hostname or "").lower()
+    if "login." in fh or fh.startswith("account.mail.ru") or \
+            "act=autologin" in (final or "") or "errorCode=" in (final or ""):
+        _engine_note("mailru", False, "требует входа (поиск без аккаунта "
+                     "закрыт) — нужен Mail.ru API или другие движки")
+        return []
     if st != 200:
         _engine_note("mailru", False, "HTTP %s %s" % (st, txt[:100] if st == 0 else ""))
         return []
@@ -1928,7 +2098,8 @@ def _keyed_yandex(q, limit=10):
     return yandex_api(q, limit) or []
 
 
-_ENGINES = {"mailru": mailru_search, "mojeek": mojeek_search,
+_ENGINES = {"yandex-html": yandex_html, "mailru": mailru_search,
+            "mojeek": mojeek_search,
             "google": _keyed_google, "yandex": _keyed_yandex}
 
 
@@ -1943,17 +2114,24 @@ def engines_list():
     # v3.167: старое «google,yandex» без ключей — заменяем на доступные в РФ
     if not names or (set(names) <= {"google", "yandex"} and
                      not (_skey("google_api_key") or _skey("yandex_api_key"))):
-        names = ["mailru", "mojeek"]
+        names = ["yandex-html", "mailru", "mojeek"]   # v3.194: + выдача Яндекса
+    elif "yandex-html" not in names and \
+            set(names) <= {"mailru", "mojeek", "google", "yandex"}:
+        names = ["yandex-html"] + names       # v3.194: выдача Яндекса — в строй
     if _skey("google_api_key") and _skey("google_cx") and "google" not in names:
         names.append("google")
-    if _skey("yandex_api_key") and _skey("yandex_folder") and "yandex" not in names:
-        names.append("yandex")
-    return names
+    if _skey("yandex_api_key") and _skey("yandex_folder"):
+        # Configured API gets priority over anonymous HTML and its captchas.
+        names = ["yandex"] + [n for n in names if n not in ("yandex", "yandex-html")]
+    return list(dict.fromkeys(names))
 
 
 def engine_search(q, limit=10):
-    """Первая непустая выдача включённых поисковиков (v3.167)."""
+    """Первая непустая выдача включённых поисковиков (v3.167).
+    v3.194: движки на паузе (предохранитель) пропускаются."""
     for name in engines_list():
+        if not _engine_alive(name):
+            continue
         try:
             out = _ENGINES[name](q, limit)
         except Exception:
@@ -1992,14 +2170,15 @@ def top_pages(q, limit=10):
         if not s.get("web_any", True):
             eng = []                     # только Википедия
     except Exception:
-        eng = ["mailru", "mojeek"]
+        eng = ["yandex-html", "mailru", "mojeek"]
+    eng = [n for n in eng if _engine_alive(n)]   # v3.194: предохранитель
     from concurrent.futures import ThreadPoolExecutor as _TPE
     jobs, res = {}, {}
     pool = _TPE(max_workers=max(2, len(eng) + 1))
     try:
         for name in eng:
             jobs[name] = pool.submit(_ENGINES[name], q, limit)
-        jobs["wiki"] = pool.submit(wiki_search, q, 2)
+        jobs["wiki"] = pool.submit(wiki_search, q, 3)   # v3.194: было 2
         for k, f in jobs.items():
             try:
                 res[k] = f.result(timeout=10) or []

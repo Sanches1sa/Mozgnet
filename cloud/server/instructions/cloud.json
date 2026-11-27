@@ -1,0 +1,361 @@
+[
+ {
+  "id": "cl.status",
+  "title": "Состояние облака",
+  "ask": [
+   "состояние облака",
+   "как облако",
+   "проверь облако",
+   "облако живо",
+   "статус облака"
+  ],
+  "target": "cloud",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "cloud",
+    "op": "status"
+   },
+   {
+    "tool": "cloud",
+    "op": "boards"
+   },
+   {
+    "tool": "cloud",
+    "op": "thoughts_stats"
+   }
+  ],
+  "verify": [
+   "версия, порт, HTTPS, платы на связи, банк мыслей"
+  ],
+  "verified": false
+ },
+ {
+  "id": "cl.logs",
+  "title": "Журнал облака",
+  "ask": [
+   "журнал облака",
+   "логи облака",
+   "что пишет облако",
+   "ошибки облака"
+  ],
+  "target": "cloud",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "cloud",
+    "op": "logs"
+   }
+  ],
+  "verify": [
+   "последние 40 строк журнала"
+  ],
+  "verified": false
+ },
+ {
+  "id": "cl.restart",
+  "title": "Перезапустить облако",
+  "ask": [
+   "перезапусти облако",
+   "рестарт облака",
+   "перезагрузи облако",
+   "перезапусти себя",
+   "перезагрузи себя"
+  ],
+  "target": "cloud",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "cloud",
+    "op": "save_memory"
+   },
+   {
+    "tool": "restart_cloud"
+   }
+  ],
+  "verify": [
+   "облако поднимется на том же порту через 10–20 секунд"
+  ],
+  "rollback": "если не поднялось: data/restart.log, затем запустить start.sh / neuro12-cloud.exe вручную",
+  "notes": "Перед перезапуском память сохраняется. После перезапуска агент завершает задание.",
+  "verified": false
+ },
+ {
+  "id": "cl.save",
+  "title": "Сохранить память облака",
+  "ask": [
+   "сохрани память облака",
+   "сохрани мозг",
+   "сделай бэкап памяти облака"
+  ],
+  "target": "cloud",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "cloud",
+    "op": "save_memory"
+   }
+  ],
+  "verify": [
+   "перечислено, что сохранено"
+  ],
+  "verified": false
+ },
+ {
+  "id": "cl.kb.reindex",
+  "title": "Переиндексировать базу знаний",
+  "ask": [
+   "переиндексируй базу знаний",
+   "пересобери индекс знаний",
+   "база знаний не находит"
+  ],
+  "target": "cloud",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "cloud",
+    "op": "kb_reindex"
+   },
+   {
+    "tool": "wait",
+    "seconds": 15
+   },
+   {
+    "tool": "cloud",
+    "op": "status"
+   }
+  ],
+  "verify": [
+   "индекс ready"
+  ],
+  "verified": false
+ },
+ {
+  "id": "cl.llm.status",
+  "title": "Состояние своей LLM",
+  "ask": [
+   "состояние llm",
+   "обучена ли llm",
+   "как моя llm",
+   "статус своей llm"
+  ],
+  "target": "cloud",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "cloud",
+    "op": "llm_status"
+   }
+  ],
+  "verify": [
+   "шаги обучения, готовность"
+  ],
+  "verified": false
+ },
+ {
+  "id": "cl.llm.train",
+  "title": "Дообучить свою LLM",
+  "ask": [
+   "обучи llm",
+   "дообучи llm",
+   "запусти обучение llm",
+   "переобучи свою llm"
+  ],
+  "target": "cloud",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "cloud",
+    "op": "llm_train"
+   },
+   {
+    "tool": "wait",
+    "seconds": 10
+   },
+   {
+    "tool": "cloud",
+    "op": "llm_status"
+   }
+  ],
+  "verify": [
+   "обучение идёт"
+  ],
+  "notes": "Обучение грузит процессор; идёт на вдохе мозга. Новые уроки администрирования подхватываются потоком «admin».",
+  "verified": false
+ },
+ {
+  "id": "cl.maxbot.restart",
+  "title": "Перезагрузить бота МАКС",
+  "ask": [
+   "перезагрузи бота макс",
+   "бот макс завис",
+   "перезапусти бота"
+  ],
+  "target": "cloud",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "cloud",
+    "op": "maxbot_restart"
+   }
+  ],
+  "verify": [
+   "бот перезагружен без перезапуска облака"
+  ],
+  "verified": false
+ },
+ {
+  "id": "cl.tls.status",
+  "title": "HTTPS облака",
+  "ask": [
+   "https облака",
+   "сертификат облака",
+   "ssl облака",
+   "статус сертификата"
+  ],
+  "target": "cloud",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "cloud",
+    "op": "tls_status"
+   }
+  ],
+  "verify": [
+   "включён ли HTTPS, отпечаток SHA-256"
+  ],
+  "notes": "Установка/обновление сертификата: Linux — cloud/launcher/install-ssl-linux.sh; плата закрепляет отпечаток.",
+  "verified": false
+ },
+ {
+  "id": "cl.update.status",
+  "title": "Версия облака и резервные копии",
+  "ask": [
+   "версия облака",
+   "какая версия облака",
+   "резервные копии облака",
+   "список копий"
+  ],
+  "target": "cloud",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "cloud",
+    "op": "update_status"
+   }
+  ],
+  "verify": [
+   "версия и список копий для отката"
+  ],
+  "verified": false
+ },
+ {
+  "id": "cl.rollback",
+  "title": "Откатить облако к резервной копии",
+  "ask": [
+   "откати облако",
+   "верни прошлую версию облака",
+   "откат обновления"
+  ],
+  "target": "cloud",
+  "risk": "danger",
+  "steps": [
+   {
+    "tool": "cloud",
+    "op": "update_status"
+   },
+   {
+    "tool": "note",
+    "text": "Выбери имя копии из списка (например pre-3.218.0-…) и повтори задачу: «откати облако на копию <имя>»."
+   },
+   {
+    "tool": "cloud",
+    "op": "rollback",
+    "backup": "{backup}"
+   }
+  ],
+  "slots": {
+   "backup": "(?:копи\\w+|backup)\\s+(pre-[\\w.\\-]+)"
+  },
+  "verify": [
+   "облако перезапустится на выбранной версии"
+  ],
+  "rollback": "повторный откат/обновление на нужную версию",
+  "notes": "Данные (data/) не откатываются — меняется только код.",
+  "verified": false
+ },
+ {
+  "id": "cl.update.manual",
+  "title": "Обновить облако из zip",
+  "ask": [
+   "обнови облако",
+   "установи новую версию облака",
+   "обновление облака"
+  ],
+  "target": "cloud",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "cloud",
+    "op": "update_status"
+   },
+   {
+    "tool": "note",
+    "text": "В панели: Настройки → Обновление → загрузить zip облака (или CLI: python server/updater.py apply <zip>). Облако само сделает копию, заменит код и перезапустится."
+   },
+   {
+    "tool": "cloud",
+    "op": "save_memory"
+   }
+  ],
+  "verify": [
+   "версия после перезапуска новая"
+  ],
+  "rollback": "инструкция «Откатить облако»",
+  "verified": false
+ },
+ {
+  "id": "cl.thoughts",
+  "title": "Банк мыслей и журнал LLM",
+  "ask": [
+   "мысли облака",
+   "банк мыслей",
+   "что делала llm с мыслями",
+   "журнал мыслей"
+  ],
+  "target": "cloud",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "cloud",
+    "op": "thoughts_stats"
+   }
+  ],
+  "verify": [
+   "сколько мыслей в банке, что собрала LLM, что оставил мозг"
+  ],
+  "verified": false
+ },
+ {
+  "id": "cl.boards",
+  "title": "Какие платы на связи",
+  "ask": [
+   "какие платы на связи",
+   "список плат",
+   "платы онлайн",
+   "плата на связи"
+  ],
+  "target": "cloud",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "cloud",
+    "op": "boards"
+   }
+  ],
+  "verify": [
+   "список плат с версиями"
+  ],
+  "verified": false
+ }
+]

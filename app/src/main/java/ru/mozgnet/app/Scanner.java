@@ -24,7 +24,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Скан локальной сети, как в лаунчере: платы neuro_12 (порт 7000, /api/alive)
- * и облака «Мозг-12» (порт 8077, /api/health) во всей подсети телефона.
+ * и облака «Star Gate» (порт 8077, /api/health) во всей подсети телефона.
  */
 public class Scanner {
     public interface Progress {

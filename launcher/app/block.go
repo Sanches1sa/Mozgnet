@@ -19,7 +19,7 @@ func boardBlockScript(ips []string) string {
 	return `set -e
 cat > /usr/local/bin/neuro12_block.sh <<'N12EOF'
 #!/bin/sh
-# neuro12_block.sh — запрещённые адреса (ставит лаунчер Мозг-12)
+# neuro12_block.sh — запрещённые адреса (ставит лаунчер Star Gate)
 IPS="` + list + `"
 if command -v iptables >/dev/null 2>&1; then
   for ip in $IPS; do
@@ -100,7 +100,7 @@ func crashReport() {
 	c := getCfg()
 	data := filepath.Join(c.Cloud, "data")
 	var b strings.Builder
-	fmt.Fprintf(&b, "Мозг-12: отчёт о падениях облака, %s\nпапка облака: %s\n\n", time.Now().Format("02.01.2006 15:04:05"), c.Cloud)
+	fmt.Fprintf(&b, "Star Gate: отчёт о падениях облака, %s\nпапка облака: %s\n\n", time.Now().Format("02.01.2006 15:04:05"), c.Cloud)
 	var crashes []map[string]interface{}
 	if raw, err := os.ReadFile(filepath.Join(data, "crashes.json")); err == nil {
 		json.Unmarshal(raw, &crashes)

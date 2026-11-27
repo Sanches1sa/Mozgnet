@@ -47,7 +47,7 @@
             android:foregroundServiceType="specialUse">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Локальный сервер облака Мозг-12 для плат в сети" />
+                android:value="Локальный сервер облака Star Gate для плат в сети" />
         </service>
     </application>
 </manifest>

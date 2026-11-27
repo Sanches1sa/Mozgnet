@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Зрение и слух · мозг-12</title>
+<title>Зрение и слух · Star Gate</title>
 <style>
   :root{--bg:#171717;--panel:#2f2f2f;--line:#3a3a3a;--text:#ececec;
         --muted:#9b9b9b;--acc:#10a37f}
@@ -25,6 +25,11 @@
     border-radius:9px;padding:8px 12px;font-size:13px;cursor:pointer;margin-top:12px}
   #desc{white-space:pre-wrap;font-size:13px;margin-top:10px;max-width:760px;line-height:1.45}
   h2{font-size:15px;margin:22px 0 8px}
+  .camstrip{display:flex;gap:8px;overflow-x:auto;margin-top:10px;max-width:760px;padding-bottom:4px}
+  .camstrip figure{margin:0;flex:0 0 auto;width:130px;font-size:10.5px;color:var(--muted)}
+  .camstrip img{width:130px;border-radius:8px;border:1px solid var(--line)}
+  .camstrip figure.broken img{border-color:#e55}
+  .camstrip figure.broken figcaption{color:#e55}
   #heard div{font-size:13px;padding:4px 0;border-bottom:1px solid var(--line);max-width:760px}
   #heard .t{color:var(--muted);margin-right:8px}
 </style>
@@ -37,6 +42,7 @@
 <select id="camSel"></select>
 <img id="frame" alt="кадр камеры" onerror="document.getElementById('det').innerHTML='<span class=empty>Кадр не открылся: файла нет или он повреждён. Причину смотри в разделе «Зрение» панели и в строке «📷 камера» на плате.</span>'">
 <div class="det" id="det">—</div>
+<div class="camstrip" id="strip"></div>
 <button id="btnSee">👁 Что видно на кадре? (спросить мозг)</button>
 <div id="desc"></div>
 <h2>🎤 Что мозг слышит в свой микрофон</h2>
@@ -66,9 +72,32 @@ async function refresh(){
   document.getElementById('frame').src =
     '/api/vision/last.jpg?cam='+encodeURIComponent(cam)+'&t='+Date.now();
   const info = r.cams.find(c=>c.cam===cam) || {};
+  const why = info.bad && info.bad_ts && (!info.ts || info.bad_ts > info.ts)
+    ? '<br>⚠ ' + (info.bad_why||'') : '';
   document.getElementById('det').innerHTML = 'Видит: <b>'+
     ((info.names||[]).join(', ') || '—')+'</b> · обновлено '+
-    new Date((info.ts||0)*1000).toLocaleTimeString('ru');
+    new Date((info.ts||0)*1000).toLocaleTimeString('ru') +
+    (info.broken ? '<br>🧩 Последний кадр <b>неполный/битый</b> — показан как есть'+
+      (info.broken_n ? ' (битых в последних 24: '+info.broken_n+')' : '') : '') + why;
+  strip();
+}
+async function strip(){
+  const box = document.getElementById('strip');
+  const r = await fetch('/api/vision/buffer?limit=12').then(x=>x.json()).catch(()=>null);
+  const items = (r && r.items) || [];
+  if (!items.length) { box.innerHTML = ''; return; }
+  const esc = (t)=>String(t||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'})[c]);
+  box.innerHTML = items.map(b => b.file ?
+    '<figure'+(b.broken?' class="broken"':'')+'><img loading="lazy" src="/api/vision/frame.jpg?cam='+
+    encodeURIComponent(b.cam)+'&f='+encodeURIComponent(b.file)+'" alt="кадр"><figcaption>'+
+    esc(b.cam)+' · '+new Date((b.ts||0)*1000).toLocaleTimeString('ru')+
+    (b.broken ? ' · 🧩 '+esc(b.why||'битый') : '')+'</figcaption></figure>' : '').join('');
+  box.querySelectorAll('img').forEach(im => im.onerror = () => {
+    const fig = im.closest('figure');
+    if (!fig) return;
+    fig.classList.add('noimg');
+    im.replaceWith(Object.assign(document.createElement('span'), {textContent: 'кадр не открылся'}));
+  });
 }
 async function ears(){
   const r = await fetch('/api/senses?what=hear').then(x=>x.json()).catch(()=>null);

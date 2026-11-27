@@ -158,7 +158,7 @@ func boardMac(mode string, auto bool) bool {
 			return false
 		}
 		logf("MAC: нужны права root — откроется окно, введите пароль платы для sudo")
-		consoleSteps("Мозг-12: MAC платы", []cstep{{"смена MAC (пароль платы для sudo; связь затем на миг оборвётся — это нормально)",
+		consoleSteps("Star Gate: MAC платы", []cstep{{"смена MAC (пароль платы для sudo; связь затем на миг оборвётся — это нормально)",
 			"ssh -t -o StrictHostKeyChecking=accept-new " + c.User + "@" + c.IP + " " + q("sudo bash ~/ArduinoApps/n12_mac.sh "+mode)}})
 		out, _ = sshRun("cat ~/ArduinoApps/.n12_mac/current", "", 15*time.Second)
 		kv = map[string]string{"NEW": strings.TrimSpace(out), "WAS": kv["WAS"], "STEP": kv["STEP"], "IFACE": kv["IFACE"]}

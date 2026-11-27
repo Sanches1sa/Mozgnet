@@ -166,8 +166,66 @@ def _sig(t):
     return hashlib.md5(t.encode("utf-8", "replace")).hexdigest()[:16]
 
 
+TOOL_LESSONS = [
+    ("Общий обзор сервера", "Задача владельца: проверь сервер, проверь машину, проверь состояние, проверь как дела, покажи состояние, покажи состояние сервера, как дела на сервере, состояние сервера, всё ли в порядке, "
+     "обзор, осмотри машину, что с сервером, диагностика. Сначала читающие команды, потом по найденному (диск, "
+     "упавшая служба, нагрузка) — следующий урок.\nШаг: {\"tool\": \"check\"}\nКоманды (Linux):\n```bash\n"
+     "uptime; nproc; free -h; df -h / 2>/dev/null | tail -1\n"
+     "systemctl --failed --no-pager 2>/dev/null | head -15 || echo 'systemd нет (контейнер?)'\n```\n"
+     "Команды (Windows PowerShell):\n```powershell\n"
+     "Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version,CSName | Format-List\n"
+     "Get-PSDrive -PSProvider FileSystem | Select-Object Name,Used,Free\n"
+     "Get-Service | Where-Object {$_.Status -eq 'Stopped' -and $_.StartType -eq 'Automatic'} | Select-Object -First 15 Name\n```"),
+    ("Перезапустить облако", "Задача владельца: перезапусти облако, рестарт облака, перезагрузи себя, перезапусти neuro12. "
+     "Это не служба сервера, а сам процесс облака: данные сохраняются, он поднимется на том же порту. Инструмент агента.\n"
+     "Шаг: {\"tool\": \"restart_cloud\"}"),
+    ("Снимок рабочего стола", "Задача владельца: покажи экран, сделай скриншот, что на рабочем столе ПК, снимок экрана.\n"
+     "Шаг: {\"tool\": \"shot\"}"),
+    ("Камеры плат: кадры и битые кадры", "Задача владельца: что видят камеры, почему битые кадры, зрение плат, камера не работает.\n"
+     "Шаг: {\"tool\": \"vision\"}"),
+    ("Окна рабочего стола", "Задача владельца: какие окна открыты на компьютере, список окон, что запущено на рабочем столе.\n"
+     "Шаг: {\"tool\": \"desk\", \"act\": \"windows\"}"),
+    ("Список целей", "Задача владельца: какие серверы есть, список целей, какими машинами управляет агент.\n"
+     "Шаг: {\"tool\": \"list\"}"),
+    ("Доступность цели по порту SSH", "Задача владельца: сервер жив, доступен ли сервер, отвечает ли плата, проверь связь с целью.\n"
+     "Шаг: {\"tool\": \"check\"}"),
+    ("Включить сервер по сети", "Задача владельца: включи сервер, разбуди компьютер, Wake-on-LAN, поднять выключенный сервер.\n"
+     "Шаг: {\"tool\": \"wake\"}"),
+    ("Написать скрипт на цели", "Задача владельца: напиши скрипт, создай программу, сделай код, который делает что-то на сервере. "
+     "Мозг пишет код сам, кладёт на цель, проверяет и запускает.\n"
+     "Шаг: {\"tool\": \"code\"}"),
+]
+
+
+def tool_lessons():
+    return list(TOOL_LESSONS)
+
+
+def win_lessons():
+    try:
+        import admincmds
+        return admincmds.lessons(win=True)
+    except Exception:
+        return []
+
+
+def catalog_lessons():
+    """v3.216: ~55 уроков с командами из admincmds (команды в ```)."""
+    try:
+        import admincmds
+        return admincmds.lessons()
+    except Exception:
+        return []
+
+
 def lesson_texts():
     out = []
+    for title, body in win_lessons() + tool_lessons():
+        t = "Урок администрирования: %s.\n%s" % (title, body)
+        out.append(("adm-w-" + _sig(t), t))
+    for title, body in catalog_lessons():
+        t = "Урок администрирования: %s.\n%s" % (title, body)
+        out.append(("adm-c-" + _sig(t), t))
     for title, body in LESSONS:
         t = "Урок администрирования: %s.\n%s" % (title, body)
         out.append(("adm-l-" + _sig(t), t))
@@ -191,8 +249,48 @@ def learned_texts(n=400):
     return out
 
 
+def instruction_texts():
+    """v3.219: библиотека инструкций (agent_instructions.py) — уроки и примеры для LLM."""
+    try:
+        import agent_instructions as instructions
+        return instructions.corpus()
+    except Exception:
+        return []
+
+
+def code_texts():
+    """v3.220: уроки программирования (проверенные шаблоны) — в поток обучения LLM."""
+    try:
+        import codelessons
+        return codelessons.corpus()
+    except Exception:
+        return []
+
+
+def applab_texts():
+    """v3.225: инструкции App Lab (функции и кирпичики) + код с задачей «# task: App Lab: …».
+    v3.226: + то, что Star Gate написал/проверил/вызвал (LLM наблюдает)."""
+    try:
+        import applab_guide
+        import applab_brain
+        import brickplan
+        return [t for _s, t in applab_guide.corpus()] + applab_brain.learned_texts() + applab_brain.fix_texts() + \
+            [t for _s, t in brickplan.corpus()]
+    except Exception:
+        return []
+
+
+def contour_texts():
+    """v3.221: инструкции Контура + то, что LLM увидела в работе мозга."""
+    try:
+        import project_brain
+        return [t for _s, t in project_brain.corpus()] + project_brain.learned_texts()
+    except Exception:
+        return []
+
+
 def texts():
-    return lesson_texts() + learned_texts()
+    return lesson_texts() + instruction_texts() + code_texts() + applab_texts() + contour_texts() + learned_texts()
 
 
 def learn_from_job(job):

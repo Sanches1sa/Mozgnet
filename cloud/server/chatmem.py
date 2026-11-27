@@ -266,10 +266,13 @@ def match(q, limit=2):
     Оценка: число общих стемов вопроса и инструкции; бонус +0.5 командным
     инструкциям при вопросе-просьбе («как установить…»). Порог честный:
     минимум 2 общих содержательных слова (или 1 при сильной командности)."""
-    qs = _stems(q)
+    import answer_focus
+    qs = _stems(answer_focus._normal(q))
     if not qs:
         return []
-    qset = set(qs)
+    qset = set(qs) - _GENERIC
+    if not qset:
+        return []
     intent = bool(_INTENT.search(str(q or "")))
     scored = []
     try:
@@ -285,8 +288,11 @@ def match(q, limit=2):
         except Exception:
             pass
         title = str(it.get("title") or "")
-        ist = set(_stems(title)) | set(_stems(txt[:1200]))
+        ist = set(_stems(answer_focus._normal(title))) | set(_stems(answer_focus._normal(txt[:1200])))
         ov = qset & ist
+        import answer_focus
+        if not answer_focus.platform_ok(q,title+" "+txt) or not answer_focus.relevant(q,title+" "+txt):
+            continue
         topic = ov - _GENERIC              # v3.145: совпадение именно по теме
         if not topic:
             continue
@@ -296,7 +302,7 @@ def match(q, limit=2):
         if title and set(_stems(title)) & qset:
             sc += 0.3                                   # тема в заголовке
         need = 2.0 if len(qset - _GENERIC) >= 3 else 1.0
-        if sc >= need or (intent and _cmd_like(txt) and sc >= 1.0):
+        if len(topic) >= min(2, max(1, len(qset - _GENERIC))) and sc >= need:
             r = dict(it)
             r["score"] = round(sc, 2)
             r["words"] = sorted(ov)[:6]

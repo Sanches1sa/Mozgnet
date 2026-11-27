@@ -109,6 +109,26 @@ public class MainActivity extends Activity {
             }
 
             @Override
+            public void onReceivedSslError(WebView v, android.webkit.SslErrorHandler h, android.net.http.SslError err) {
+                // самоподписанный сертификат облака компьютера: пускаем только
+                // тот, чей SHA-256 закреплён при подключении (Remote)
+                try {
+                    SharedPreferences sp = getSharedPreferences("mozgnet", MODE_PRIVATE);
+                    String fp = sp.getString("remote_fp", "");
+                    android.os.Bundle bd = android.net.http.SslCertificate.saveState(err.getCertificate());
+                    byte[] der = bd.getByteArray("x509-certificate");
+                    Uri cu = Uri.parse(err.getUrl());
+                    if (!fp.isEmpty() && der != null && Remote.isHost(cu)
+                            && fp.equalsIgnoreCase(Remote.sha256(der))) {
+                        h.proceed();
+                        return;
+                    }
+                } catch (Exception ignored) {
+                }
+                h.cancel();
+            }
+
+            @Override
             public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest req) {
                 Uri u = req.getUrl();
                 if (inside(u)) return false;
@@ -167,7 +187,9 @@ public class MainActivity extends Activity {
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 3);
         }
         SharedPreferences p = getSharedPreferences("mozgnet", MODE_PRIVATE);
-        if (p.getBoolean("local_on", true)) startCloud();
+        Remote.load(p);
+        // телефон подключён к облаку компьютера — своё облако не поднимаем
+        if (p.getBoolean("local_on", true) && !p.getBoolean("remote_on", false)) startCloud();
         web.loadUrl(HOME);
     }
 
@@ -178,6 +200,7 @@ public class MainActivity extends Activity {
         String h = u.getHost();
         if (h == null) return true;
         if (h.equals("localhost")) return true;
+        if (Remote.isHost(u)) return true;          // облако на компьютере/сервере
         if (!h.matches("[0-9.]+")) return h.endsWith(".local") || h.endsWith(".lan");
         try {
             InetAddress a = InetAddress.getByName(h);

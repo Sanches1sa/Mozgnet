@@ -1,4 +1,4 @@
-// neuro12-start — ЛАУНЧЕР «МОЗГ-12» (v3.159: Windows — Go + WebView2, Linux — окно браузера, os_linux.go)
+// neuro12-start — ЛАУНЧЕР «STAR GATE» (v3.159: Windows — Go + WebView2, Linux — окно браузера, os_linux.go)
 //
 // Одно окно программы:
 //   - вкладка «Запуск»: облако на этом компьютере, приложение платы, сканер
@@ -25,6 +25,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -35,7 +36,7 @@ import (
 	"time"
 )
 
-const VER = "3.166.0"
+const VER = "3.239.0"
 
 //go:embed ui.html
 var uiHTML string
@@ -67,6 +68,10 @@ type Cfg struct {
 	MacHz     float64           `json:"mac_hz,omitempty"`     // v3.153: частота спина (Гц), до 15 ТГц
 	Browser   string            `json:"browser,omitempty"`    // v3.159 (Linux): браузер окна, напр. chromium
 	Apk       string            `json:"apk,omitempty"`        // v3.161: APK телефона из общего архива
+	// v3.167: ОБЛАКО В ДОМАШНЕЙ СЕТИ — другой компьютер (адрес[:порт] или http://адрес:порт).
+	// Если задано, плате прописывается ОНО, а своё облако лаунчер не запускает.
+	RemoteCloud string `json:"remote_cloud,omitempty"`
+	RemoteToken string `json:"remote_token,omitempty"` // мозг-токен того облака (data\token.txt там)
 }
 
 type Host struct {
@@ -285,7 +290,70 @@ func getJSON(url string, to time.Duration) (map[string]interface{}, int, error) 
 	return d, r.StatusCode, nil
 }
 
-func cloudURL() string { return fmt.Sprintf("http://127.0.0.1:%d/", cloudPort(getCfg().Cloud)) }
+func cloudURL() string {
+	if u, ok := remoteCloud(); ok {
+		return u + "/"
+	}
+	return fmt.Sprintf("http://127.0.0.1:%d/", cloudPort(getCfg().Cloud))
+}
+
+// v3.167: нормализует адрес облака из домашней сети: "192.168.1.20", "192.168.1.20:8077",
+// "http://pc.local:8077/" -> "http://192.168.1.20:8077". Пусто/мусор -> "", false.
+func normRemoteCloud(in string) (string, bool) {
+	in = strings.TrimSpace(in)
+	if in == "" {
+		return "", false
+	}
+	if !strings.Contains(in, "://") {
+		in = "http://" + in
+	}
+	u, err := url.Parse(in)
+	if err != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return "", false
+	}
+	h := u.Hostname()
+	for _, r := range h {
+		if !(r == '.' || r == '-' || r == '_' || r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z') {
+			return "", false
+		}
+	}
+	port := u.Port()
+	if port == "" {
+		port = "8077"
+	}
+	return fmt.Sprintf("%s://%s:%s", u.Scheme, h, port), true
+}
+
+// remoteCloud — выбрано ли облако другого компьютера в домашней сети.
+func remoteCloud() (string, bool) { return normRemoteCloud(getCfg().RemoteCloud) }
+
+// cloudForBoard — какой адрес облака и токен прописать плате с адресом ip.
+func cloudForBoard(ip string) (string, string) {
+	c := getCfg()
+	if u, ok := remoteCloud(); ok {
+		return u, strings.NewReplacer("'", "", "\"", "", " ", "").Replace(strings.TrimSpace(c.RemoteToken))
+	}
+	return fmt.Sprintf("http://%s:%d", pcIPFor(ip), cloudPort(c.Cloud)), cloudToken(c.Cloud)
+}
+
+// remoteCloudCheck — отвечает ли облако в домашней сети (GET /api/health).
+func remoteCloudCheck() bool {
+	u, ok := remoteCloud()
+	if !ok {
+		return false
+	}
+	d, code, err := getJSON(u+"/api/health", 4*time.Second)
+	if err != nil || code >= 500 {
+		logf("Облако в домашней сети %s не отвечает (%v). Компьютер включён, облако запущено, порт 8077 открыт в брандмауэре?", u, err)
+		return false
+	}
+	ver := ""
+	if d != nil {
+		ver = fmt.Sprint(d["version"])
+	}
+	logf("Облако в домашней сети %s отвечает (версия %s).", u, ver)
+	return true
+}
 
 func startCloud() bool {
 	c := getCfg()
@@ -636,7 +704,7 @@ func probeHost(ip string, ports []int) *Host {
 		}
 		if d, code, err := getJSON(base+"/api/health", 2500*time.Millisecond); err == nil && code == 200 && d != nil {
 			if s, _ := d["service"].(string); s == "neuro12-cloud" {
-				h.Cloud = fmt.Sprintf("облако мозг-12 v%v на порту %d", d["version"], p)
+				h.Cloud = fmt.Sprintf("облако Star Gate v%v на порту %d", d["version"], p)
 				continue
 			}
 		}
@@ -656,7 +724,7 @@ func probeHost(ip string, ports []int) *Host {
 	case h.SSH != "" && strings.Contains(low, "debian"):
 		h.Kind, h.Score = "Linux Debian с SSH — может быть плата (приложение не запущено)", 40
 	case h.Cloud != "":
-		h.Kind, h.Score = "облако мозг-12", 20
+		h.Kind, h.Score = "облако Star Gate", 20
 	case h.SSH != "":
 		h.Kind, h.Score = "устройство с SSH", 10
 	default:
@@ -782,9 +850,7 @@ func runScan() {
 
 // ----------------------------------------------------------------- плата
 func configureBoard(ip string) {
-	c := getCfg()
-	url := fmt.Sprintf("http://%s:%d", pcIPFor(ip), cloudPort(c.Cloud))
-	tok := cloudToken(c.Cloud)
+	url, tok := cloudForBoard(ip)
 	body, _ := json.Marshal(map[string]interface{}{"cloud_url": url, "token": tok, "brain_on": true})
 	cl := &http.Client{Timeout: 8 * time.Second, Transport: &http.Transport{Proxy: nil}}
 	r, err := cl.Post("http://"+ip+":7000/api/settings", "application/json", bytes.NewReader(body))
@@ -859,10 +925,18 @@ func runAll() {
 	if spinOn {
 		spinStop()
 	}
-	setStep("ШАГ 0: облако на этом компьютере")
-	if !startCloud() {
-		logf("«Запустить всё» остановлен: облако не запустилось (⚙ → папка облака).")
-		return
+	if _, remote := remoteCloud(); remote {
+		setStep("ШАГ 0: облако в домашней сети")
+		if !remoteCloudCheck() {
+			logf("«Запустить всё» остановлен: облако в домашней сети не отвечает (⚙ → «Облако в домашней сети»).")
+			return
+		}
+	} else {
+		setStep("ШАГ 0: облако на этом компьютере")
+		if !startCloud() {
+			logf("«Запустить всё» остановлен: облако не запустилось (⚙ → папка облака).")
+			return
+		}
 	}
 	ip := needIP()
 	if ip == "" {
@@ -873,8 +947,8 @@ func runAll() {
 		logf("В папке приложения платы нет app.yaml — укажи папку neuro_12 (из архива neuro_12-v….zip).")
 		return
 	}
-	cu := fmt.Sprintf("http://%s:%d", pcIPFor(ip), cloudPort(c.Cloud))
-	tok := strings.NewReplacer("'", "", "\"", "", " ", "").Replace(cloudToken(c.Cloud))
+	cu, tok := cloudForBoard(ip)
+	tok = strings.NewReplacer("'", "", "\"", "", " ", "").Replace(tok)
 	logf("Облако для платы: %s%s", cu, map[bool]string{true: ", мозг-токен из data\\token.txt", false: ", токена нет (открытый режим)"}[tok != ""])
 	stage := filepath.Join(os.TempDir(), "n12stage")
 	os.RemoveAll(stage)
@@ -894,7 +968,7 @@ func runAll() {
 	} else {
 		// запасной путь — окно, где каждый шаг подписан
 		logf("Работаю через окно консоли (вход по ключу не настроен).")
-		consoleSteps("Мозг-12: запуск на плате", []cstep{
+		consoleSteps("Star Gate: запуск на плате", []cstep{
 			{"подготовка папки на плате", "ssh " + opt + host + " \"mkdir -p ~/ArduinoApps && rm -rf ~/ArduinoApps/neuro_12.new\""},
 			{"копирую приложение на плату (может занять минуту)", "scp " + opt + "-r " + q(filepath.Join(stage, "neuro_12.new")) + " " +
 				q(filepath.Join(stage, "n12_setcfg.py")) + " " + q(filepath.Join(stage, "n12_deploy.sh")) + " " + host + ":ArduinoApps/"},
@@ -943,7 +1017,7 @@ func keySetup() {
 	steps = append(steps, cstep{"передаю ключ плате " + c.IP + " — введите пароль платы",
 		catCmd + " " + q(key+".pub") + " | ssh -o StrictHostKeyChecking=accept-new " + c.User + "@" + c.IP +
 			" \"mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys && echo КЛЮЧ ПРИНЯТ\""})
-	consoleSteps("Мозг-12: вход по ключу", steps)
+	consoleSteps("Star Gate: вход по ключу", steps)
 	if keyOK() {
 		logf("Вход по ключу работает — дальше без окон и паролей.")
 	} else {
@@ -953,6 +1027,7 @@ func keySetup() {
 
 // ------------------------------------------------------------- мониторинг
 var lastLearn time.Time
+var lastCallPoll time.Time
 var vpnLogged bool
 
 func monitor() {
@@ -972,7 +1047,7 @@ func monitor() {
 		if c.IP != "" {
 			if d, code, err := getJSON("http://"+c.IP+":7000/api/alive", 2500*time.Millisecond); err == nil && code == 200 && d != nil {
 				bs["ok"] = true
-				for _, k := range []string{"ver", "sketch_seen", "sketch_alive", "stuck", "up"} {
+				for _, k := range []string{"ver", "sketch_seen", "sketch_alive", "stuck", "up", "board_id"} {
 					bs[k] = d[k]
 				}
 			} else if err == nil && code == 404 {
@@ -1025,6 +1100,10 @@ func monitor() {
 		// v3.155: плата не ответила — сразу пробуем предсказать её адрес по MAC
 		if !vpnBlock && c.IP != "" && bs["ok"] != true && bs["ssh"] != true && !running && time.Since(lastPredict) > 5*time.Second {
 			go predictBoard("по " + c.IP + " не отвечает")
+		}
+		if time.Since(lastCallPoll) > 4*time.Second && (cs["ok"] == true) {
+			lastCallPoll = time.Now()
+			go callPoll()
 		}
 		if bs["ok"] == true && time.Since(lastLearn) > time.Minute {
 			lastLearn = time.Now()
@@ -1095,6 +1174,11 @@ func api(w http.ResponseWriter, r *http.Request) {
 			pc[k] = v
 		}
 		out["predict"] = pc
+		cl := map[string]interface{}{}
+		for k, v := range callSt {
+			cl[k] = v
+		}
+		out["call"] = cl
 		mu.Unlock()
 		out["pkg"] = pkgState() // v3.161: установка из ZIP
 		out["apk"] = apkState() // v3.161: APK для телефона
@@ -1105,7 +1189,7 @@ func api(w http.ResponseWriter, r *http.Request) {
 		netMu.Unlock()
 	case "/api/save":
 		mu.Lock()
-		for k, p := range map[string]*string{"cloud": &cfg.Cloud, "app": &cfg.App, "ip": &cfg.IP, "user": &cfg.User, "ports": &cfg.Ports, "range": &cfg.Range} {
+		for k, p := range map[string]*string{"cloud": &cfg.Cloud, "app": &cfg.App, "ip": &cfg.IP, "user": &cfg.User, "ports": &cfg.Ports, "range": &cfg.Range, "remote_cloud": &cfg.RemoteCloud, "remote_token": &cfg.RemoteToken} {
 			if _, ok := in[k]; ok {
 				*p = s(k)
 			}
@@ -1190,6 +1274,14 @@ func api(w http.ResponseWriter, r *http.Request) {
 			}()
 		case "macshow":
 			go macJob("show", false)
+		case "call": // v3.238: позвонить выбранной плате (синхронный спин MAC)
+			go placeCall(s("to"))
+		case "hangup":
+			go hangupCall(s("id"))
+		case "callperiod":
+			if v, ok := in["sec"].(float64); ok {
+				setCallPeriod(v)
+			}
 		case "fixbuild":
 			go fixBuild()
 		case "zip": // v3.161: общий архив — облако, плата, APK
@@ -1197,7 +1289,7 @@ func api(w http.ResponseWriter, r *http.Request) {
 			if d := downloadDirs(); len(d) > 0 {
 				dl = d[0]
 			}
-			zp := pickFile("Общий архив Мозг-12 (neuro12-all-v….zip) или архив облака/платы", dl)
+			zp := pickFile("Общий архив Star Gate (neuro12-all-v….zip) или архив облака/платы", dl)
 			out["path"] = zp
 			if zp != "" {
 				go installZip(zp, in["deploy"] == true)
@@ -1231,6 +1323,33 @@ func api(w http.ResponseWriter, r *http.Request) {
 		case "configure":
 			if net.ParseIP(ip) != nil {
 				go configureBoard(ip)
+			}
+		case "remote_use": // v3.167: выбрать найденное в сети облако (адрес[:порт])
+			if u, ok := normRemoteCloud(s("addr")); ok {
+				mu.Lock()
+				cfg.RemoteCloud = u
+				mu.Unlock()
+				saveCfg()
+				logf("Облако в домашней сети: %s (своё облако на этом компьютере не запускается).", u)
+				go remoteCloudCheck()
+			} else {
+				out["ok"] = false
+				logf("Облако в домашней сети: адрес «%s» не понятен (пример: 192.168.1.20:8077).", s("addr"))
+			}
+		case "remote_clear":
+			mu.Lock()
+			cfg.RemoteCloud, cfg.RemoteToken = "", ""
+			mu.Unlock()
+			saveCfg()
+			logf("Облако в домашней сети сброшено — снова своё облако на этом компьютере.")
+		case "remote_test":
+			go remoteCloudCheck()
+		case "remote_apply": // прописать выбранное облако плате (адрес платы — из настроек)
+			if net.ParseIP(getCfg().IP) != nil {
+				go configureBoard(getCfg().IP)
+			} else {
+				out["ok"] = false
+				logf("Нет адреса платы — сначала найди плату (⚙ → сканер).")
 			}
 		case "browser":
 			u := s("url")
@@ -1302,7 +1421,7 @@ func main() {
 	secret = hex.EncodeToString(b)
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
-		msgBox("Мозг-12", "Не открыть локальный порт: "+err.Error())
+		msgBox("Star Gate", "Не открыть локальный порт: "+err.Error())
 		return
 	}
 	homeURL = "http://" + ln.Addr().String() + "/"
@@ -1313,7 +1432,7 @@ func main() {
 	go http.Serve(ln, touchMW(mux))
 	go monitor()
 
-	logf("Лаунчер мозг-12 v%s (%s). Облако и плата открываются в этом окне (вкладки сверху).", VER, osName())
+	logf("Лаунчер Star Gate v%s (%s). Облако и плата открываются в этом окне (вкладки сверху).", VER, osName())
 	c := getCfg()
 	startOpen := false
 	for _, a := range os.Args[1:] {
@@ -1347,7 +1466,7 @@ func main() {
 }
 
 // v3.155: на страницах облака и платы вместо кнопки «⟵ Запуск» — та же
-// верхняя панель, что на главной (Мозг-12 · Запуск · Облако · Плата).
+// верхняя панель, что на главной (Star Gate · Запуск · Облако · Плата).
 // Страница сдвигается вниз на высоту панели, закреплённые сверху элементы
 // страницы — тоже, чтобы панель ничего не закрывала.
 const homeBtnJS = `(function(){try{
@@ -1360,7 +1479,7 @@ function shift(){var all=document.body.getElementsByTagName("*");for(var i=0;i<a
 var cs=getComputedStyle(e);if((cs.position==="fixed"||cs.position==="sticky")&&parseFloat(cs.top)<PX&&cs.top!=="auto"){e.style.top=(parseFloat(cs.top)+PX)+"px";e.dataset.n12s="1";}}}
 function add(){if(document.getElementById("n12bar"))return;var b=document.createElement("div");b.id="n12bar";
 b.style.cssText="position:fixed;left:0;right:0;top:0;height:"+PX+"px;z-index:2147483647;display:flex;align-items:center;gap:4px;padding:0 18px;background:rgba(15,19,28,.96);border-bottom:1px solid #243043;box-shadow:0 2px 14px rgba(0,0,0,.35);backdrop-filter:blur(10px);box-sizing:border-box";
-var t=document.createElement("b");t.textContent="🧠 Мозг-12";t.style.cssText="font:600 15px Segoe UI,system-ui,sans-serif;margin-right:16px;background:linear-gradient(90deg,#2dd4bf,#818cf8);-webkit-background-clip:text;background-clip:text;color:transparent;cursor:pointer";t.onclick=function(){location.href=H};
+var t=document.createElement("b");t.textContent="🧠 Star Gate";t.style.cssText="font:600 15px Segoe UI,system-ui,sans-serif;margin-right:16px;background:linear-gradient(90deg,#2dd4bf,#818cf8);-webkit-background-clip:text;background-clip:text;color:transparent;cursor:pointer";t.onclick=function(){location.href=H};
 b.appendChild(t);b.appendChild(tab("Запуск",H,false));b.appendChild(tab("Облако",H+"?go=cloud",!isB));b.appendChild(tab("Плата",H+"?go=board",isB));
 document.body.appendChild(b);
 var st=document.createElement("style");st.id="n12fit";st.textContent="html{padding-top:"+PX+"px!important;box-sizing:border-box!important;height:100%}";document.head.appendChild(st);

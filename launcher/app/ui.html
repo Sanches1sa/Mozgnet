@@ -2,7 +2,7 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<title>Мозг-12</title>
+<title>Star Gate</title>
 <style>
 :root{--bg:#0b0e14;--bg2:#12161f;--panel:#151a25;--line:#243043;--fg:#eef2f8;--mut:#8b95ab;
 --acc:#2dd4bf;--acc2:#818cf8;--acc3:#f472b6;--on-acc:#04211d;--bad:#f87171;--warn:#fbbf24;--ok:#4ade80;--r:16px}
@@ -218,7 +218,7 @@ header{padding:10px 20px}
 </head>
 <body>
 <header>
-  <span class="brand"><b>🧠 Мозг-12</b></span>
+  <span class="brand"><b>🧠 Star Gate</b></span>
   <button class="tab on">Запуск</button>
   <button class="tab" id="tCloud" title="Панель облака в этом окне">Облако</button>
   <button class="tab" id="tBoard" title="Интерфейс платы (порт 7000) в этом окне">Плата</button>
@@ -265,6 +265,7 @@ header{padding:10px 20px}
 
 <div class="stabs" id="stabs">
   <button class="stab" id="bBolt" title="Запуск: кнопка ⏻ и статус облака, платы и спина"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><path d="M13.2 2.5 5 13.6h6.3l-1 7.9 8.3-11.2h-6.4z"/></svg></button>
+  <button class="stab" id="bCall" title="Позвонить плате: синхронный спин MAC двух плат (до 38 мин)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 3.5h3l1.5 4-2 1.5a12 12 0 0 0 6 6l1.5-2 4 1.5v3a2 2 0 0 1-2.2 2A16.5 16.5 0 0 1 4.5 5.7 2 2 0 0 1 6.5 3.5z"/></svg></button>
   <button class="stab" id="bGear" title="Настройки: облако, плата, вращение MAC, интернет платы"><svg id="gearIco" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path id="gearPath"/><circle cx="12" cy="12" r="3.2"/></svg></button>
   <button class="stab" id="bApk" title="APK для телефона (mozgnet): сохранить в «Загрузки» или раздать на телефон по Wi-Fi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="6.5" y="2.5" width="11" height="19" rx="2.4"/><path d="M10.5 18.5h3"/><path d="M12 7v6.5M9.4 11l2.6 2.6 2.6-2.6"/></svg></button>
   <button class="stab" id="bWrench" title="Сеть: подключение, предсказание адреса, сканер, журнал"><svg class="wr" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg></button>
@@ -272,6 +273,19 @@ header{padding:10px 20px}
 
 <div class="scrim" id="scrim"></div>
 
+<aside class="drawer" id="dCall">
+  <div class="dhead"><h3>📞 Позвонить плате</h3><button class="b" data-close>✕ Закрыть</button></div>
+  <div class="msec" style="border-top:none">
+    <div class="hint" style="margin-top:0">Звонок соединяет <b>эту плату</b> с выбранной: обе крутят MAC <b>синхронно</b> (одна скорость, общий ритм от облака) и скрытно общаются с облаком — не дольше <b>38 минут</b>, потом адрес возвращается. Платы должны быть на связи; занятой плате (уже в сессии) позвонить нельзя. Адрес меняется вместе с MAC — лаунчер ищет платы предсказанием.</div>
+    <div class="row" style="margin-top:10px">
+      <label style="min-width:auto">Период смены MAC, с (2–600)</label>
+      <input type="number" id="fCallPer" min="2" max="600" step="1" style="max-width:90px">
+    </div>
+    <div id="callActive" style="margin-top:10px"></div>
+    <div id="callList" style="margin-top:6px"></div>
+    <div class="hint" id="callNote" style="margin-top:8px"></div>
+  </div>
+</aside>
 <aside class="drawer" id="dGear">
   <div class="dhead"><h3>⚙ Настройки</h3><button class="b" data-close>✕ Закрыть</button></div>
     <div class="msec" style="border-top:none">
@@ -282,6 +296,20 @@ header{padding:10px 20px}
         <span class="chk" style="margin:0"><input type="checkbox" id="cZipDeploy"> сразу залить приложение на плату</span>
       </div>
       <div class="netbox" id="zipBox" style="display:none"></div>
+    </div>
+    <div class="msec">
+      <h4>Облако в домашней сети (на другом компьютере)</h4>
+      <div class="hint" style="margin-top:0">Если облако уже работает на другом компьютере дома, укажи его адрес — плате пропишется оно, а своё облако здесь запускаться не будет. Пусто — используется облако этого компьютера. Токен — из файла <b>data\token.txt</b> на том компьютере (пусто, если облако открытое).</div>
+      <label>Адрес облака (например 192.168.1.20:8077)</label>
+      <div class="row"><input type="text" id="fRemote" placeholder="192.168.1.20:8077" autocomplete="off"></div>
+      <label>Мозг-токен того облака</label>
+      <div class="row"><input type="text" id="fRemoteTok" placeholder="необязательно" autocomplete="off"></div>
+      <div class="row" style="margin-top:10px">
+        <button class="b" id="bRemoteTest" title="Проверить, отвечает ли облако">Проверить</button>
+        <button class="b p" id="bRemoteApply" title="Прописать это облако плате (адрес платы выбран в сканере)">Прописать плате</button>
+        <button class="b" id="bRemoteClear" title="Вернуться к облаку этого компьютера">Своё облако</button>
+      </div>
+      <div class="hint" id="remoteSt"></div>
     </div>
     <div class="msec">
       <h4>Облако на этом компьютере</h4>
@@ -418,7 +446,7 @@ header{padding:10px 20px}
   </section>
   <section class="dsec">
     <h4>📜 Лицензии</h4>
-    <div class="hint" style="margin-top:0">Сторонние программы, библиотеки и нейросеть, из которых собран «Мозг-12» (лаунчер, облако, плата UNO Q, камера ESP32-CAM), — под какой лицензией и что она требует при продаже устройства. Список составлен по файлам LICENSE и страницам проектов; пометка ⚠ — нужно решение или проверка. Это справка, не юридическая консультация.</div>
+    <div class="hint" style="margin-top:0">Сторонние программы, библиотеки и нейросеть, из которых собран «Star Gate» (лаунчер, облако, плата UNO Q, камера ESP32-CAM), — под какой лицензией и что она требует при продаже устройства. Список составлен по файлам LICENSE и страницам проектов; пометка ⚠ — нужно решение или проверка. Это справка, не юридическая консультация.</div>
     <div id="licBox"></div>
     <div class="row" style="margin-top:10px"><button class="b" id="bLicCopy">Скопировать список</button></div>
   </section>
@@ -447,13 +475,17 @@ function vpnShow(v) {
 }
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c])); }
 
-const fields = {fCloud: "cloud", fApp: "app", fIp: "ip", fUser: "user", fPorts: "ports", fRange: "range"};
+const fields = {fCloud: "cloud", fApp: "app", fIp: "ip", fUser: "user", fPorts: "ports", fRange: "range", fRemote: "remote_cloud", fRemoteTok: "remote_token"};
 for (const [id, k] of Object.entries(fields)) {
   const el = $(id);
   el.addEventListener("focus", () => editing = id);
   el.addEventListener("blur", () => { editing = null; call("/api/save", {[k]: el.value}); });
   el.addEventListener("keydown", e => { if (e.key === "Enter") el.blur(); });
 }
+// v3.167: облако другого компьютера в домашней сети
+$("bRemoteTest").onclick = () => call("/api/save", {remote_cloud: $("fRemote").value, remote_token: $("fRemoteTok").value}).then(() => act("remote_test"));
+$("bRemoteApply").onclick = () => call("/api/save", {remote_cloud: $("fRemote").value, remote_token: $("fRemoteTok").value}).then(() => act("remote_use", {addr: $("fRemote").value})).then(() => act("remote_apply"));
+$("bRemoteClear").onclick = () => { $("fRemote").value = ""; $("fRemoteTok").value = ""; act("remote_clear"); };
 $("cAuto").onchange = e => call("/api/save", {auto_cloud: e.target.checked});
 $("cOpen").onchange = e => call("/api/save", {open_cloud: e.target.checked});
 $("cMacAuto").onchange = e => call("/api/save", {mac_auto: e.target.checked});
@@ -501,19 +533,52 @@ document.querySelectorAll("[data-pick]").forEach(b => b.onclick = async () => {
 });
 // v3.155: две выезжающие панели — ⚙ настройки и 🔧 сеть/журнал
 function openDrawer(id) {
-  ["dGear", "dWrench", "dApk", "dRun"].forEach(d => $(d).classList.toggle("show", d === id));
+  ["dGear", "dWrench", "dApk", "dRun", "dCall"].forEach(d => $(d).classList.toggle("show", d === id));
   $("scrim").classList.add("show"); $("stabs").classList.add("open");
-  $("bGear").classList.toggle("on", id === "dGear"); $("bWrench").classList.toggle("on", id === "dWrench"); $("bApk").classList.toggle("on", id === "dApk"); $("bBolt").classList.toggle("on", id === "dRun");
+  $("bGear").classList.toggle("on", id === "dGear"); $("bWrench").classList.toggle("on", id === "dWrench"); $("bApk").classList.toggle("on", id === "dApk"); $("bBolt").classList.toggle("on", id === "dRun"); $("bCall").classList.toggle("on", id === "dCall");
   if (id === "dWrench") { const lg = $("log"); lg.scrollTop = lg.scrollHeight; }
 }
 function closeDrawers() {
-  ["dGear", "dWrench", "dApk", "dRun"].forEach(d => $(d).classList.remove("show"));
-  $("scrim").classList.remove("show"); $("stabs").classList.remove("open"); ["bGear", "bWrench", "bApk", "bBolt"].forEach(b => $(b).classList.remove("on"));
+  ["dGear", "dWrench", "dApk", "dRun", "dCall"].forEach(d => $(d).classList.remove("show"));
+  $("scrim").classList.remove("show"); $("stabs").classList.remove("open"); ["bGear", "bWrench", "bApk", "bBolt", "bCall"].forEach(b => $(b).classList.remove("on"));
 }
 $("bGear").onclick = () => { if ($("dGear").classList.contains("show")) return closeDrawers(); openDrawer("dGear"); if (!(st.mac && st.mac.board) && $("fIp").value.trim()) act("macshow"); };
 $("bWrench").onclick = () => $("dWrench").classList.contains("show") ? closeDrawers() : openDrawer("dWrench");
 $("bApk").onclick = () => $("dApk").classList.contains("show") ? closeDrawers() : openDrawer("dApk");
 $("bBolt").onclick = () => $("dRun").classList.contains("show") ? closeDrawers() : openDrawer("dRun");
+$("bCall").onclick = () => { if ($("dCall").classList.contains("show")) return closeDrawers(); openDrawer("dCall"); renderCall(); };
+$("fCallPer").addEventListener("focus", () => editing = "fCallPer");
+$("fCallPer").addEventListener("blur", () => { editing = null; });
+$("fCallPer").onchange = () => { const v = parseFloat($("fCallPer").value); if (v > 0) call("/api/action", {do: "callperiod", sec: v}); };
+function renderCall() {
+  const cl = st.call || {}, self = cl.self || "", act_ = cl.active || [], boards = cl.boards || [];
+  if ($("fCallPer") !== document.activeElement && cl.period) $("fCallPer").value = cl.period;
+  const sess = act_.find(x => (x.a === self || x.b === self)) || act_[0];
+  const A = $("callActive");
+  if (sess) {
+    const other = sess.a === self ? sess.b : (sess.b === self ? sess.a : (sess.a + " ↔ " + sess.b));
+    const mm = Math.floor((sess.remaining || 0) / 60), ss = (sess.remaining || 0) % 60;
+    A.innerHTML = '<div class="netbox" style="display:block;border-color:#2f7">🟢 Идёт звонок: <b>' + esc(sess.a) + ' ↔ ' + esc(sess.b) +
+      '</b><br>Платы крутят MAC синхронно. Осталось <b>' + mm + ' мин ' + ss + ' с</b> из 38.<br>' +
+      '<button class="b" id="bHang" style="margin-top:8px">📴 Отбой</button></div>';
+    $("bHang").onclick = () => call("/api/action", {do: "hangup", id: sess.id});
+  } else A.innerHTML = "";
+  if (cl.err) { $("callNote").textContent = "Облако не отвечает — список плат недоступен."; $("callList").innerHTML = ""; return; }
+  if (!boards.length) { $("callList").innerHTML = '<div class="hint">В реестре облака пока нет плат. Запусти платы — они появятся здесь.</div>'; return; }
+  let h = '<div class="hint" style="margin:4px 0">Платы в облаке:</div>';
+  boards.forEach(b => {
+    const me = b.id === self, canCall = b.online && !b.busy && !me && self && !sess;
+    const tag = me ? '<span class="v">эта плата</span>' : (!b.online ? '<span class="v">не на связи</span>' : (b.busy ? '<span class="v">занята</span>' : '<span class="v" style="color:#2f7">можно позвонить</span>'));
+    h += '<div class="row" style="justify-content:space-between;margin:4px 0;padding:6px 8px;border:1px solid var(--line);border-radius:10px">' +
+      '<span><span class="dot" style="background:' + (b.online ? (b.busy ? '#e0a92e' : '#2f7') : '#666') + '"></span> <b>' + esc(b.name || b.id) + '</b> ' + tag + '</span>' +
+      '<button class="b' + (canCall ? ' p' : '') + '" ' + (canCall ? '' : 'disabled ') + 'data-call="' + esc(b.id) + '">📞 Позвонить</button></div>';
+  });
+  $("callList").innerHTML = h;
+  if (!self) $("callNote").textContent = "Эта плата ещё не в реестре облака — звонить не от кого. Запусти её (⏻) и подожди.";
+  else if (sess) $("callNote").textContent = "Пока идёт звонок, новые звонки нельзя — сначала отбой.";
+  else $("callNote").textContent = "";
+  document.querySelectorAll("[data-call]").forEach(btn => btn.onclick = () => call("/api/action", {do: "call", to: btn.dataset.call}));
+}
 // v3.162: ДВА ОКНА на главном экране — облако слева, плата справа
 let SPLIT = null;
 function setSrc(fr, url) { if (url && fr.dataset.src !== url) { fr.dataset.src = url; fr.src = url; } }
@@ -592,6 +657,7 @@ $("bPredict").onclick = () => act("predict");
 })();
 
 function cloudUrl() { return (st.cloud && st.cloud.url) || "http://127.0.0.1:8077/"; }
+function remoteOn() { return !!(st.cfg && st.cfg.remote_cloud); }
 // v3.159: страница облака/платы «в этом окне». В Linux окно — браузер, и
 // облако/плата открываются через локальный мост лаунчера (с верхней панелью).
 function cloudView() { return (st.cloud && st.cloud.view) || cloudUrl(); }
@@ -678,6 +744,7 @@ function render() {
   $("ver").textContent = "лаунчер v" + (st.ver || "?");
   const c = st.cfg || {};
   for (const [id, k] of Object.entries(fields)) if (editing !== id && $(id).value !== (c[k] || "")) $(id).value = c[k] || "";
+  $("remoteSt").textContent = c.remote_cloud ? "Выбрано облако в домашней сети: " + c.remote_cloud + " — своё облако на этом компьютере не запускается." : "Сейчас используется облако этого компьютера.";
   $("cAuto").checked = c.auto_cloud !== false;
   $("cOpen").checked = c.open_cloud !== false;
   $("cMacAuto").checked = !!c.mac_auto;
@@ -765,6 +832,7 @@ function render() {
       (h.ip === c.ip ? '<div class="sub">выбрана</div>' : "") + "</td><td>" + esc(h.kind) +
       (svc ? '<div class="sub">' + svc + "</div>" : "") + '</td><td class="mono">' + (h.ports || []).join(", ") +
       "</td><td>" + esc(h.name || "—") + '<div class="sub mono">' + esc(h.mac || "") + "</div></td><td>" +
+      (h.cloud ? '<div class="tacts"><button class="b sm" data-rc="' + esc(h.ip) + '" title="Использовать облако этого компьютера в домашней сети">Облако отсюда</button></div>' : "") +
       (isB ? '<div class="tacts"><button class="b sm" data-use="' + esc(h.ip) + '">Выбрать</button>' +
         (h.score === 100 ? '<button class="b sm" data-cfg="' + esc(h.ip) + '" title="Прописать плате адрес облака этого компьютера и мозг-токен">Прописать облако</button>' +
           '<button class="b sm" data-open="' + esc(h.ip) + '">Открыть</button>' : "") + "</div>" : "") + "</td></tr>";
@@ -772,10 +840,12 @@ function render() {
   if ($("tb").dataset.h !== html) {
     $("tb").innerHTML = html; $("tb").dataset.h = html;
     $("tb").querySelectorAll("[data-use]").forEach(b => b.onclick = () => act("use", {ip: b.dataset.use}).then(refresh));
+    $("tb").querySelectorAll("[data-rc]").forEach(b => b.onclick = () => { $("fRemote").value = b.dataset.rc + ":8077"; act("remote_use", {addr: b.dataset.rc + ":8077"}); });
     $("tb").querySelectorAll("[data-cfg]").forEach(b => b.onclick = () => act("configure", {ip: b.dataset.cfg}));
     $("tb").querySelectorAll("[data-open]").forEach(b => b.onclick = () => location.href = boardUrl(b.dataset.open));
   }
   renderNet();
+  if ($("dCall").classList.contains("show")) renderCall();
 }
 async function refresh() {
   try {
@@ -845,7 +915,7 @@ const LIC_MUST = [
   "Не использовать товарные знаки (TensorFlow, Arduino, Espressif, Google) так, будто они делают или одобряют устройство.",
 ];
 function licText() {
-  let t = "Мозг-12 — сторонние компоненты и лицензии\n";
+  let t = "Star Gate — сторонние компоненты и лицензии\n";
   LIC.forEach(([g, rows]) => { t += "\n" + g + "\n"; rows.forEach(r => { t += "- " + r[0] + " — " + r[1] + " (" + r[2] + "): " + r[3] + (r[4] ? " [проверить]" : "") + "\n"; }); });
   t += "\nЧто сделать при продаже:\n" + LIC_MUST.map((m, i) => (i + 1) + ". " + m).join("\n") + "\n";
   return t;

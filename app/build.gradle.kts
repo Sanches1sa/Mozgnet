@@ -1,4 +1,4 @@
-// mozgnet — мобильное приложение «Мозг-12»: облако на Python в телефоне (Chaquopy),
+// mozgnet — мобильное приложение «Star Gate»: облако на Python в телефоне (Chaquopy),
 // скан локальной сети, платы и облака в одном окне.
 plugins {
     id("com.android.application")

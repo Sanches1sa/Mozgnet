@@ -1,10 +1,21 @@
 /* ============================================================================
- * uno_q_brain.ino — ЦЕНТРАЛЬНЫЙ ХАБ «ИСКУССТВЕННЫЙ МОЗГ-12»
+ * uno_q_brain.ino — ЦЕНТРАЛЬНЫЙ ХАБ «ИСКУССТВЕННЫЙ STAR GATE»
  * Плата: Arduino UNO Q (микроконтроллерная часть, STM32U585 / Zephyr)
  * Версия: v2.88 — камера с нейросетью (sketch/esp32cam_tflite): приём
  *   зрения (тип 0x03) и голосов (0x04) камеры, RPC cam_vis / cam_vote /
  *   cam_vote_res / cam_say; кадр принимается в отдельный буфер (статус и
  *   зрение больше не портят последний JPEG).
+ * v2.98.2 — «мост ждёт скетч»: PCM-голос D9 больше не тянет в скетч
+ *   символы драйверов Zephyr (функции pwm_, counter_, irq_lock, DEVICE_DT_GET) — в
+ *   llext-модуле они могут не разрешиться при загрузке на MCU (сборка
+ *   проходит, скетч не стартует). Включается только -DNEURO_PCM_ENABLE.
+ * v2.97.4 — страж запуска из v2.97.3 СНЯТ: он держался на потоках Zephyr,
+ *   а ядро UNO Q (core 0.55.2) при сборке скетча как llext-модуля НЕ
+ *   экспортирует TLS-символы z_tls_current / __aeabi_read_tp (нужны для
+ *   k_current_get()) — линковка падала («undefined reference»), скетч
+ *   вообще не заливался и мост вечно ждал скетч. Зависший Bridge.begin()
+ *   теперь подстраховывает Linux-сторож (app stop/start + рестарт
+ *   arduino-router). Версия в on_sver — 2.97.4 (видна в диагностике).
  * v2.85 — меньше лепета: 92% слов из словаря, 5% исследования
  * буквами, фильтр «похоже на слово» отсекает «ИЧИИЕИФИИЪ» перед выдачей
  * нейронам. v2.5-app: обмен с Linux через
@@ -211,6 +222,20 @@
  * ========================================================================== */
 
 #include <Arduino.h>
+/* v2.104: РЕЖИМ РЕЧИ НА D9 (одна строка):
+ *   1 — аппаратный PCM: PWM TIM4 + таймер TIM16 через драйверы Zephyr (звук
+ *       непрерывный, нейроны не блокируются);
+ *   0 — программный PCM (digitalWrite, до ~3 с, на время звука нейроны молчат)
+ *       — вариант, который гарантированно грузится как llext.
+ * Если на режиме 1 снова «мост ждёт скетч», поставь 0 и пришли лог загрузки
+ * скетча из App Lab (строки undefined reference / llext) — по ним видно, какой
+ * именно символ не грузится. */
+#define NEURO_PCM_MODE 1
+#if NEURO_PCM_MODE == 1
+#define NEURO_PCM_ENABLE 1
+#define NEURO_PCM_RING_CAPACITY 6144   // v2.111.3: было 8192 (v2.104: 32768) — память llext-модуля нужна и выводам мозга
+#endif
+#include "pwm_voice.h"
 
 /* ---- STRL-FALLBACK (begin): strlcpy/strlcat для ядра Zephyr (UNO Q) -----
  * Линкер arm-zephyr-eabi не содержит BSD-функций strlcpy/strlcat, а их
@@ -664,12 +689,11 @@ uint16_t cfgSpkSpan = SPK_HZ_SPAN;
  * скетч печатает десятки строк — loop() замирал, сводки по мосту не шли
  * («мост: ждёт/молчит скетч»), а в Serial Monitor было пусто. Теперь строки
  * журнала уходят УВЕДОМЛЕНИЕМ on_log (не ждёт ответа) в приложение — их
- * видно в логах приложения и в панели платы; в Monitor они дублируются,
- * только если панель Monitor была открыта при старте скетча. */
+ * видно в логах приложения и в панели платы. Monitor не вызывается:
+ * его begin()/write() могут ждать RPC-ответ без ограничения времени. */
 String rpcDiag();               // v2.68: форвард (определена ниже)
 class HubLog : public Print {
  public:
-  bool mon = false;
   char buf[200];
   uint16_t n = 0;
   void begin(unsigned long) {}
@@ -690,13 +714,12 @@ class HubLog : public Print {
       utf8Fix(buf);                          // v2.87: журнал тоже чистим —
                                              // иначе 0x93/0x91 роняют мост
       if (Bridge) Bridge.notify("on_log", String(buf));
-      if (mon) Monitor.println(buf);
     }
     n = 0;
   }
 };
 HubLog HubOut;
-  #define HUB_OUT HubOut         /* журнал: on_log (+ Monitor, если открыт) */
+  #define HUB_OUT HubOut         /* журнал: только неблокирующий on_log */
 #else
   #if __has_include(<Arduino_Bridge.h>)
     #define USE_BRIDGE 1
@@ -1006,19 +1029,8 @@ void txtBump(uint8_t n) {
  * работает и без tone() (важно для Zephyr-ядра UNO Q).
  * Анти-заводка: если микрофон перегружен (динамик слишком близко / громко)
  * дольше MIC_HOT_MS — голос молчит VOICE_COOL_MS, петля размыкается.      */
-/* v2.96.1: ДИНАМИК — ТОЛЬКО РЕЧЬ (TTS). Раньше D8 ещё пищал «мотивацией
- * говорить» (тоны от частоты шины genHz) и мелодиями слов (буква = нота) —
- * владельцу это слышалось случайными звуками генератора. Теперь при
- * SPEAKER_TTS_ONLY 1 на D8 звучит ТОЛЬКО say_wave (речь из облака, которую
- * Python разобрал в огибающую). Поставь 0, чтобы вернуть старое поведение. */
-#define SPEAKER_TTS_ONLY 1
-
 void voiceSay(uint16_t hzBase, uint8_t tones) {
   if (!voiceOn) return;
-#if SPEAKER_TTS_ONLY
-  (void)hzBase; (void)tones;
-  return;                                 // мотивационные тоны выключены
-#endif
   if (voxSteps || melLen) return;         // уже говорим — не перебиваем
   if (micHotSince && millis() - micHotSince > MIC_HOT_MS &&
       millis() - lastPhraseMs < VOICE_COOL_MS)
@@ -1074,10 +1086,6 @@ void voiceTick() {
  * слово из текущего буфера сборки звучит целиком, как короткое «слово».
  * Неблокирующая очередь шагов (нота/пауза) поверх голосового движка.       */
 void melStart() {
-#if SPEAKER_TTS_ONLY
-  melLen = 0;                             // v2.96.1: мелодии слов выключены
-  return;
-#endif
   if (voxSteps) { melLen = 0; return; }   // не перебивать фразу мотивации
   melIdx = 0; melTone = true; tMel = millis();
   if (mel[0].hz) toneHz = mel[0].hz;
@@ -1119,10 +1127,6 @@ uint8_t letterNumOf(const char *two) {
 }
 
 void voiceWord(const char *w) {
-#if SPEAKER_TTS_ONLY
-  (void)w;
-  return;                                 // v2.96.1: слова нотами не играем
-#endif
   if (!voiceOn || melLen) return;         // голос выключен или уже звучит слово
   for (uint16_t p = 0; w[p] && melLen < MEL_MAX - 2; p += 2) {
     uint8_t num = letterNumOf(w + p);
@@ -1465,9 +1469,7 @@ String rpcNeuroReset() {
  *   скетча камеры. При LINK_SW_WIRE 0 Serial1 может быть занят нейронами
  *   (запасной вариант) — тогда камеру вешать на другой UART. */
 #define CAMRX          Serial1   // аппаратный UART платы (D0/D1)
-#define CAMRX_BAUD     115200    // = CAM_BAUD скетча камеры. v2.96.5: 115200 (230400 и 460800 —
-                                 // при занятом loop() (≈290 проходов/с) буфер UART
-                                 // переполнялся внутри кадра: bytes шли, bad росло, ok=0
+#define CAMRX_BAUD     460800    // = CAM_BAUD скетча камеры
 #define CAMRX_BUF      20480     // v2.89.2: 2 буфера по 20 КБ = те же 40 КБ памяти, что до v2.88
                                  // (в v2.88 было 2×40 КБ — скетч мог не поместиться и не стартовать);
                                  // JPEG QVGA q12 — 6…15 КБ, кадр больше 20 КБ отбрасывается
@@ -1646,26 +1648,16 @@ void camUartTick() {
             camCrcN++;
           }
         } else if (typ == 0x03 && camPktLen < CAMVIS_MAX) {   // v2.88: зрение
-          if (camRx[0] != '{' || !camAsciiOnly((const char *)camRx, camPktLen)) {
-            camBad++;                     // v2.96.2: не JSON/не ASCII — мусор, в мост нельзя
-            continue;
-          }
           memcpy(camVis, camRx, camPktLen);
           camVis[camPktLen] = 0;
           camVisMs = millis();
           camVisN++;
-#if USE_RB
-          Bridge.notify("on_cam_vis", String(camVis));   // v2.96: зрение — сами
-#endif
         } else if (typ == 0x04 && camPktLen < sizeof(camVote)) { // v2.88: голос
-          if (camRx[0] != '{' || !camAsciiOnly((const char *)camRx, camPktLen)) { camBad++; continue; }
           memcpy(camVote, camRx, camPktLen);
           camVote[camPktLen] = 0;
           camVoteN++;
         } else if (typ == 0x02) {         // текстовый статус камеры
-          uint16_t n = camPktLen < 160 ? camPktLen : 160;   // v2.96.2: коротко и только ASCII
-          camRx[n] = 0;
-          camAsciiFix((char *)camRx, n);
+          if (camPktLen < CAMRX_BUF) camRx[camPktLen] = 0;
           HUB_OUT.print("[CAM] ");
           HUB_OUT.println((const char *)camRx);
         }
@@ -2515,6 +2507,52 @@ void noiseAsStim() {
   if (genHz < GEN_MAX_HZ - 100) genHz += 40;
 }
 
+/* v2.102: ГРУППЫ СПАЙКОВ. Раньше стимул шёл либо всем сразу (редко, 0,5 Гц),
+ * либо только тем, кто уже активен — и пульсировали 2 нейрона из 12. Теперь
+ * живые нейроны делятся на SPK_GROUPS групп (по номеру: 0,4,8 / 1,5,9 …), и
+ * каждые SPK_GROUP_MS мс очередная группа получает свой стимул. Окна
+ * возбуждения соседних групп перекрываются, поэтому через цикл активны ВСЕ
+ * нейроны одновременно, а не по одному-двум. Только I2C-запись живым
+ * нейронам (как broadcastStimWord), без драйверов Zephyr.             */
+static uint8_t spkGroups = 4;           // 1..6; 0 — выключено
+static uint16_t spkGroupMs = 250;       // шаг между группами
+static uint8_t spkGroupIdx = 0;
+static uint32_t spkGroupAt = 0, spkGroupSent = 0;
+static uint8_t spkGroupLast = 0;        // сколько нейронов получило в последний раз
+
+void spikeGroupTick() {
+#if LINK_SW_WIRE
+  if (!spkGroups) return;
+  uint32_t now = millis();
+  if ((int32_t)(now - spkGroupAt) < (int32_t)spkGroupMs) return;
+  spkGroupAt = now;
+  uint8_t g = spkGroupIdx % spkGroups;
+  spkGroupIdx = (uint8_t)((spkGroupIdx + 1) % spkGroups);
+  uint8_t sent = 0;
+  for (uint8_t i = g; i < NEURONS; i += spkGroups) {
+    if (!ns[i].alive) continue;
+    NeuroBus.beginTransmission((uint8_t)(I2C_BASE_ADDR + i));
+    NeuroBus.write((const uint8_t *)"STIM;NOISELO", 12);
+    NeuroBus.endTransmission();
+    sent++;
+    camUartTick();
+  }
+  spkGroupLast = sent; spkGroupSent += sent;
+#endif
+}
+
+static String rpcSpkGroups(String v) {
+  /* "G[:мс]" — число групп (0 = выкл.) и шаг; без аргумента — состояние */
+  if (v.length()) {
+    int c = v.indexOf(':');
+    long g = v.substring(0, c < 0 ? v.length() : c).toInt();
+    if (g < 0) g = 0; if (g > 6) g = 6;
+    spkGroups = (uint8_t)g;
+    if (c > 0) { long ms = v.substring(c + 1).toInt(); if (ms < 60) ms = 60; if (ms > 2000) ms = 2000; spkGroupMs = (uint16_t)ms; }
+  }
+  return String("groups=") + spkGroups + ";ms=" + spkGroupMs + ";last=" + spkGroupLast + ";sent=" + spkGroupSent;
+}
+
 void updateLearningScale() {
   /* d6Activity растёт от particleTick и d6 PWM, спадает сам */
   if (d6Activity > 0) d6Activity--;
@@ -2964,8 +3002,15 @@ void analyzeAndPrint() {
     spkSum += ns[i].spikes;
   }
 
+  char neuronFrame[NEURONS * (TEXT_MAX + 40)] = "";
+  for (uint8_t i=0;i<NEURONS;i++) {
+    char item[TEXT_MAX+40];
+    snprintf(item,sizeof(item),"N%u:%u:%lu:%s|",i,ns[i].alive?1:0,(unsigned long)ns[i].spikes,ns[i].word);
+    strlcat(neuronFrame,item,sizeof(neuronFrame));
+  }
+  utf8Fix(neuronFrame);
   char msg[240] = "";
-  for (uint8_t i = 0; i < NEURONS && strlen(msg) < 220; i++) {
+  for (uint8_t i = 0; i < NEURONS; i++) {
     if (ns[i].spikes > 0) {
       char it[TEXT_MAX + 20];
       snprintf(it, sizeof(it), "N%u:%lu:%s|", i, (unsigned long)ns[i].spikes, ns[i].word);
@@ -3060,6 +3105,7 @@ void analyzeAndPrint() {
   utf8Fix(curChr);
   utf8Fix(genWord);
   utf8Fix(sayBuf);
+  Bridge.notify("on_neurons",String(neuronFrame));
   Bridge.notify("on_state", (int)genHz, (int)curLetterNum, String(curChr),
                 String(genWord), String(sayBuf), (int)spkSum, (int)active,
                 (int)top, (int)cycle);
@@ -3147,19 +3193,12 @@ void rpcTeachScore(int reward) { netTeach(reward >= 0 ? 1 : -1); }
  * Проигрываем через существующий неблокирующий движок мелодий mel[]
  * (melTick в loop): каждый кадр = нота hz на ms, пауза = hz 0.
  * Речь мозга перебивает и мелодию слова, и мотивационные посылки.       */
-/* v2.96.4: КУСКАМИ. Входной буфер RPC у моста MCU — 256 байт (RPClite
- * DEFAULT_RPC_BUFFER_SIZE = 1024/4), а речь целиком — 600–900 байт: такой
- * вызов MCU не разбирал, и декодер потока сбивался (следом гибли даже
- * короткие word_push). Теперь Python шлёт кадры порциями ≤180 байт:
- * первая — как раньше (заменяет речь), следующие — с префиксом '+'
- * (дописываются в хвост mel[], пока первая часть уже звучит).          */
 String rpcSayWave(String frames) {
   if (!voiceOn) return String("voice_off");
-  bool append = frames.length() && frames[0] == '+';
   int16_t hz[MEL_MAX];
   uint16_t ms[MEL_MAX];
   uint8_t n = 0;
-  int p = append ? 1 : 0;
+  int p = 0;
   int L = frames.length();
   while (p < L && n < MEL_MAX) {
     int colon = frames.indexOf(':', p);
@@ -3178,24 +3217,14 @@ String rpcSayWave(String frames) {
     n++;
   }
   if (!n) return String("empty");
-  if (append) {                       /* v2.96.4: дописать в хвост речи     */
-    if (!melLen) return String("gone");   /* первая часть уже отзвучала — начать заново */
-    uint8_t k = melLen;
-    for (uint8_t i = 0; i < n && k < MEL_MAX; i++, k++) { mel[k].hz = (uint16_t)hz[i]; mel[k].ms = ms[i]; }
-    melLen = k;
-    return String("ok+:") + k;
-  }
-  /* v2.96.2: порядок записи безопасный для melTick: сначала остановить
-   * (melLen=0), заполнить кадры, потом melLen=n. */
-  melLen = 0;
   voxSteps = 0;                       /* речь важнее «мотивации» и слова  */
-  for (uint8_t i = 0; i < n; i++) { mel[i].hz = (uint16_t)hz[i]; mel[i].ms = ms[i]; }
   melIdx = 0;
+  melLen = n;
   melTone = true;
   tMel = millis();
+  for (uint8_t i = 0; i < n; i++) { mel[i].hz = (uint16_t)hz[i]; mel[i].ms = ms[i]; }
   if (mel[0].hz) toneHz = mel[0].hz;
   nextToneEdgeUs = micros();
-  melLen = n;                         /* последним — включаем проигрывание */
   voiceWave++;                        /* статистика: сколько «речей»      */
   return String("ok:") + n;
 }
@@ -3203,6 +3232,89 @@ String rpcSayWave(String frames) {
 /* v2.14: пульс моста — Python сам проверяет, жив ли скетч (когда on_state
  * молчат). Отвечаем мгновенно: аптайм в секундах.                       */
 String rpcPing() { return String(millis() / 1000UL); }
+
+/* v2.111.3: АППАРАТНЫЙ УРОВЕНЬ — КОМПАКТНО.
+ * 2.111.0/2.111.1 не стартовали («мост ждёт скетч»), 2.111.3 без блока стартует —
+ * вероятнее всего, скетч упёрся в память llext-модуля (код и данные скетча грузятся
+ * в ограниченную кучу; в 2.104 ради этого уже урезали буфер PCM). Поэтому:
+ *   * блок крошечный: одна команда за вызов, без статических буферов, без String-разбора;
+ *   * под него освобождена память: буфер PCM 8 КБ -> 6 КБ (аппаратный) и 24 КБ -> 16 КБ
+ *     (программный — до ~2 с речи вместо ~3 с).
+ * Выводы: D5, D7 (цифровые), A5 (АЦП). Команда: "<op><вывод>[=значение]":
+ *   w5=1  w7=0  r5  r7  a  p5=200 (импульс мс, до 500)  ->  "ok:N" | "e:код".
+ * Выключить: NEURO_HW_IO 0. */
+#ifndef NEURO_HW_IO
+#define NEURO_HW_IO 1
+#endif
+#if NEURO_HW_IO
+String rpcHwIo(String cmd) {
+  char b[12];
+  strlcpy(b, cmd.c_str(), sizeof(b));
+  int pin = b[1] == '5' ? 5 : b[1] == '7' ? 7 : -1;
+  int v = 0;
+  char *eq = strchr(b, '=');
+  if (eq) v = atoi(eq + 1);
+  char o[16];
+  if (b[0] == 'a') {
+    snprintf(o, sizeof(o), "ok:%d", (int)analogRead(A5));
+  } else if (pin < 0) {
+    snprintf(o, sizeof(o), "e:pin");
+  } else if (b[0] == 'w') {
+    pinMode(pin, OUTPUT); digitalWrite(pin, v ? HIGH : LOW);
+    snprintf(o, sizeof(o), "ok:%d", v ? 1 : 0);
+  } else if (b[0] == 'r') {
+    pinMode(pin, INPUT);
+    snprintf(o, sizeof(o), "ok:%d", digitalRead(pin) == HIGH ? 1 : 0);
+  } else if (b[0] == 'p') {
+    if (v < 1) v = 1;
+    if (v > 500) v = 500;
+    pinMode(pin, OUTPUT); digitalWrite(pin, HIGH); delay(v); digitalWrite(pin, LOW);
+    snprintf(o, sizeof(o), "ok:%d", v);
+  } else {
+    snprintf(o, sizeof(o), "e:op");
+  }
+  return String(o);
+}
+#endif  /* NEURO_HW_IO */
+
+/* v2.113: КОЛЕБАНИЯ ЧАСТИЦ НА ОТДЕЛЬНЫХ ПИНАХ. Раньше гравитоны/мюоны/фотоны
+ * смешивались на одном пине D6 (particleTick). Теперь каждая частица — своё
+ * колебание (меандр) на своём свободном выводе:
+ *   мюон -> D5, гравитон -> D7, фотон -> A5.
+ * Частоты задаёт облако (RPC osc: "m:12,g:2,p:40" — Гц, 0 = выкл). Меандр
+ * генерирует loop() по micros(): кода мало, буферов нет. Выключить весь блок:
+ * NEURO_OSC 0 (на случай нехватки памяти llext — «мост ждёт скетч»). */
+#ifndef NEURO_OSC
+#define NEURO_OSC 1
+#endif
+#if NEURO_OSC
+static const uint8_t OSC_PIN[3] = {5, 7, A5};        /* мюон, гравитон, фотон */
+static uint32_t oscHalfUs[3] = {0, 0, 0};            /* полупериод, 0 = выкл */
+static uint32_t oscNextUs[3] = {0, 0, 0};
+static bool     oscLvl[3]    = {false, false, false};
+static void oscSet(int i, long hz) {
+  if (i < 0 || i > 2) return;
+  if (hz <= 0) { oscHalfUs[i] = 0; pinMode(OSC_PIN[i], OUTPUT); digitalWrite(OSC_PIN[i], LOW); return; }
+  if (hz > 4000) hz = 4000;                          /* выше loop() не успевает */
+  oscHalfUs[i] = (uint32_t)(500000UL / (uint32_t)hz);
+  pinMode(OSC_PIN[i], OUTPUT);
+}
+void rpcOsc(String v) {
+  int a = v.indexOf("m:"); if (a >= 0) oscSet(0, v.substring(a + 2).toInt());
+  int b = v.indexOf("g:"); if (b >= 0) oscSet(1, v.substring(b + 2).toInt());
+  int c = v.indexOf("p:"); if (c >= 0) oscSet(2, v.substring(c + 2).toInt());
+}
+void oscTick() {
+  uint32_t now = micros();
+  for (int i = 0; i < 3; i++) {
+    if (oscHalfUs[i] && (int32_t)(now - oscNextUs[i]) >= 0) {
+      oscLvl[i] = !oscLvl[i];
+      digitalWrite(OSC_PIN[i], oscLvl[i] ? HIGH : LOW);
+      oscNextUs[i] = now + oscHalfUs[i];
+    }
+  }
+}
+#endif  /* NEURO_OSC */
 
 /* v2.67: "гц,сила%" — общий ритм платформы (см. syncHz). Мгновенно. */
 void rpcSyncHz(String v) {
@@ -3370,9 +3482,13 @@ void rpcRegister() {
   Bridge.provide_safe("teach_score", rpcTeachScore);
   Bridge.provide_safe("teach_last", rpcTeachLast);     /* v2.6: точечное обучение */
   Bridge.provide_safe("teach_shape", rpcTeachShape);   /* v2.6: маска наград  */
-  Bridge.provide_safe("say_wave", rpcSayWave);         /* v2.14: речь на D8. НЕ provide: из потока моста
-                                                          (v2.96.2, проверено) приём вызовов умирал — hz[]/ms[]/String
-                                                          на малом стеке потока моста */
+  Bridge.provide_safe("spk_groups", rpcSpkGroups);
+  Bridge.provide_safe("pcm_begin", rpcPcmBegin);
+  Bridge.provide_safe("pcm_write", rpcPcmWrite);
+  Bridge.provide_safe("pcm_end", rpcPcmEnd);
+  Bridge.provide_safe("pcm_status", rpcPcmStatus);
+  Bridge.provide_safe("pcm_stop", rpcPcmStop);
+  Bridge.provide_safe("say_wave", rpcSayWave);         /* v2.14: речь на D8   */
   Bridge.provide_safe("d6seq", rpcD6Seq);              /* v2.22: буфер слов мозга на D6 */
   Bridge.provide_safe("d4pure", rpcD4Pure);             /* v2.50: чистый кадр на D4 (такт = частота генератора) */
   Bridge.provide_safe("d6pure", rpcD6Pure);             /* v2.49: чистый кадр на D6 (без PWM и байтов) */
@@ -3381,6 +3497,9 @@ void rpcRegister() {
   Bridge.provide_safe("d6freq", rpcD6Freq);
   Bridge.provide_safe("frz_info", rpcFrzInfo);            /* v2.98: заморозка гравитонов */
   Bridge.provide_safe("particle_cfg", rpcParticleCfg);   /* v2.92: конфиг частиц и частоты */            /* v2.46: знаковый кадр частоты на D6 */
+#if NEURO_OSC
+  Bridge.provide_safe("osc", rpcOsc);                   /* v2.113: колебания частиц на D5/D7/A5 */
+#endif
   Bridge.provide_safe("word_push", rpcWordPush);       /* v2.27: слово из большого словаря */
   Bridge.provide_safe("word_q", rpcWordQ);             /* v2.34: очередь слов (память платы) */
   Bridge.provide_safe("neuro_assign", rpcNeuroAssign); /* v2.28: назначение номеров нейронам */
@@ -3402,6 +3521,9 @@ void rpcRegister() {
   Bridge.provide_safe("vr_enable", rpcVrEnable);          /* v2.94.3: включается из Python */
   Bridge.provide_safe("vr_send", rpcVrSend);
   Bridge.provide_safe("ping", rpcPing);                /* v2.14: пульс моста  */
+#if NEURO_HW_IO
+  Bridge.provide_safe("hw_io", rpcHwIo);               /* v2.111: свободные выводы D5, D7, A5 — мозгу */
+#endif
   Bridge.provide_safe("sync_hz", rpcSyncHz);           /* v2.67: общий ритм платформы */
   Bridge.provide("diag", rpcDiag);                     /* v2.68: из потока моста — работает, даже если loop() завис */
 }
@@ -3611,15 +3733,28 @@ static void bootAt(uint8_t st) {
 #endif
 }
 
+// No Monitor calls here: missing mon/connected must never block application RPC.
+/* v2.97.4: страж запуска из v2.97.3 снят — не собирался: k_current_get()
+ * требует TLS-символы z_tls_current/__aeabi_read_tp, которые llext-edk
+ * (core 0.55.2) скетчу не экспортирует. Подстраховку от зависшего
+ * Bridge.begin() делает Linux-сторож: app stop/start + рестарт router. */
+
+static void startRouterBridge() {
+#if USE_RB
+  Bridge.begin();
+  rpcRegister();
+  bootAt(1);
+  Bridge.notify("on_sver", String("2.114.0;up=") + String(millis()/1000UL) + ";loops=0");
+  Bridge.notify("$/setMaxMsgSize", 8192);
+#endif
+}
+
 void setup() {
 #if USE_RB
   /* v2.68: МОСТ — ПЕРВЫМ, до шины нейронов, камеры и EEPROM: если что-то
    * из них зависнет, приложение всё равно увидит скетч и шаг зависания */
-  Bridge.begin();
-  Bridge.notify("$/setMaxMsgSize", 8192);  /* запас на длинные фразы */
-  HubOut.mon = Monitor.begin();            /* панель Monitor открыта? */
-  rpcRegister();
-  bootAt(1);
+  startRouterBridge();
+
 #else
   HUB_OUT.begin(115200);
 #endif
@@ -3670,7 +3805,7 @@ void setup() {
 #if BUS_READY == 2
   HUB_OUT.println("[HUB] ВНИМАНИЕ: SoftwareWire не найден, использую аппаратный Wire (SDA/SCL)");
 #endif
-  HUB_OUT.println("[HUB] Мозг-12 v2.4-app (App Lab): шина D4 -> A0 нейронов; RPC RouterBridge");
+  HUB_OUT.println("[HUB] Star Gate v2.4-app (App Lab): шина D4 -> A0 нейронов; RPC RouterBridge");
   HUB_OUT.println("[HUB] Частота = покой + камера(val_b) + микрофон(D12/D13) + текст + спайки");
   HUB_OUT.println("[HUB] Динамик D8: мотивация говорить (голосовая петля, VOX= в total_val_c)");
   bootAt(4);                           // v2.68: EEPROM
@@ -3720,6 +3855,7 @@ void setup() {
 
 void loop() {
   loopCount++;                       // v2.68: шаг loop() — для diag
+  pcmSoftTick();                     // v2.103: речь на D9 (программный PCM), если есть что играть
   /* v2.93: приёмник камеры опрашиваем МЕЖДУ всеми этапами: на 460800 бод
    * аппаратный буфер Serial1 заполняется за ~1-2 мс, и любой медленный этап
    * (I2C нейронов, АЦП, RPC) раньше рвал кадры (bad растёт, ok стоит). */
@@ -3731,14 +3867,17 @@ void loop() {
   loopStage = 6;  letterTick();        camUartTick();   // 5. буквогенератор (v2.3): нейросеть 1..33 -> буквы -> слова
   loopStage = 7;  d6Tick();            camUartTick();   // 5a. v2.22: проигрывание буфера слов на D6 (PWM)
   particleTick();          // v2.92: дискретные кванты частиц, если включены
+#if NEURO_OSC
+  oscTick();               // v2.113: колебания мюон/гравитон/фотон на отдельных пинах D5/D7/A5
+#endif
   sampleCapNoise();        // v2.93: шум конденсатора (1 выборка / 4 мс)
   noiseAsStim();           // шум -> STIM нейронам + подъём genHz
+  spikeGroupTick();        // v2.102: группы спайков — пульсируют ВСЕ нейроны
   updateLearningScale();   // частота D6 + шум -> скорость весов
   loopStage = 8;  camUartTick();       // 5b. v2.30: приём кадров камеры по UART (ESP32-CAM)
   loopStage = 9;  neuroAssignTick();   camUartTick();   // 5c. v2.33: назначение нейронов — один шаг, БЕЗ delay()
   loopStage = 10; eePumpTick();        camUartTick();   // 5d. v2.67: веса в EEPROM — по 2 байта за проход
   loopStage = 11; bridgeSync();        camUartTick();   // 6. обмен с Linux-стороной (val_b, chat_out, teach, speak / total_val_c)
-                  camPushTick();       camUartTick();   // 6a. v2.96: кусок кадра камеры -> Linux (push, без RPC)
   loopStage = 12; analyzeAndPrint();   camUartTick();   // 7. анализ val_c (+val_b, звук) -> частота и total_val_c
   loopStage = 0;
   /* v2.94.5: ДАТЬ ПОТОКУ МОСТА ПРОЦЕССОР. loop() на Zephyr — обычный поток;
@@ -3752,12 +3891,9 @@ void loop() {
   static uint32_t sverMs = 0;            // v2.94.6: версия СКЕТЧА — видно, залился ли новый
   if ((uint32_t)(millis() - sverMs) >= 10000) {
     sverMs = millis();
-    Bridge.notify("on_sver", String("2.99.0;up=") + String(millis() / 1000UL) + ";loops=" + String((unsigned long)loopCount));
+    Bridge.notify("on_sver", String("2.114.0;up=") + String(millis() / 1000UL) + ";loops=" + String((unsigned long)loopCount));
   }
 #endif
-  /* v2.96.2 (проверено на плате): ни сон 1 мс каждые 2 мс, ни yield()
-   * между этапами приём вызовов не улучшают (с yield() мост замолкал
-   * полностью). Оставлен исходный ритм v2.94.5: сон 1 мс каждые 3 мс. */
   static uint32_t yieldMs = 0;
   if ((uint32_t)(millis() - yieldMs) >= 3) {
     yieldMs = millis();

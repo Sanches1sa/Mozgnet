@@ -50,6 +50,7 @@ import random
 import re
 import threading
 import time
+import llm_activity
 
 # ------------------------------ гиперпараметры ------------------------------
 D = 12            # d_model — размерность вектора токена
@@ -346,6 +347,7 @@ class TinyLM(object):
              "g2": [0.0] * D, "be2": [0.0] * D}
         return g
 
+    @llm_activity.tracked("Обучение", zone="Обучение")
     def _train_step(self, tokens, lr):
         """Окно из CTX+1 токенов: вход tokens[:-1], цель tokens[1:].
         Возврат (loss, среднее число позиций в градиенте)."""
@@ -587,6 +589,7 @@ class TinyLM(object):
                 tgt[i] += vv[i]
 
     # --------------------------- генерация -------------------------------
+    @llm_activity.tracked("Генерация")
     def generate(self, prompt, max_new=36, temperature=0.9, top_k=20,
                  top_p=0.92, rep_pen=1.15, seed=None):
         """Сэмплирование продолжения: temperature + top-k + top-p +

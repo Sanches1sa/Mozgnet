@@ -15,6 +15,7 @@
 # Форматы ответов согласованы с тем, что читает мозг (v2.30).
 # ===========================================================================
 import json
+import os
 import re
 import time
 
@@ -33,7 +34,180 @@ def h_health(req):
     return 200, {"ok": True, "service": "neuro12-cloud",
                  "version": store.version(), "ts": time.time(),
                  "uptime": round(time.time() - STARTED[0], 1),
-                 "starting": _starting()}
+                 "capabilities": {"neuron_context":1,"neuron_slots":12,"russian_tts":1,"tts_ru_max_chars":600},
+                 "starting": _starting(),
+                 "https_port": _https_port(), "safe_mode": os.environ.get("NEURO_SAFE") == "1"}
+
+
+def h_thought_journal(req):
+    """v3.215: журнал — что делали мозг и LLM с мыслями. ?who=мозг|LLM&limit=60;
+    POST с {"clear":true} очищает."""
+    import thoughtjournal
+    if req.method == "POST" and (req.body or {}).get("clear"):
+        thoughtjournal.clear()
+    q = getattr(req, "query", None) or {}
+    def _g(k, d=""):
+        v = q.get(k, d)
+        return (v[0] if isinstance(v, list) and v else v) or d
+    try:
+        lim = int(_g("limit", 60))
+    except (TypeError, ValueError):
+        lim = 60
+    try:
+        import thoughtsmooth
+        sm = thoughtsmooth.status()
+    except Exception:
+        sm = {}
+    return 200, {"ok": True, "items": thoughtjournal.recent(lim, str(_g("who", ""))),
+                 "stats": thoughtjournal.stats(), "smooth": sm}
+
+
+def h_applab_guide(req):
+    """v3.225: инструкции App Lab. GET ?q= подбор; ?id= один урок (&verify=1 — запуск примера на заглушке);
+    без параметров — статус; POST — записать в базу знаний."""
+    import applab_guide
+    g = lambda k: str(req.query.get(k, "") or "")
+    if req.method == "POST":
+        return 200, {"ok": True, "seeded": applab_guide.seed_kb(), "status": applab_guide.status()}
+    if g("id"):
+        one = next((x for x in applab_guide.load() if x["id"] == g("id")), None)
+        if not one:
+            return 404, {"ok": False, "error": "нет такого урока"}
+        out = {"ok": True, "lesson": applab_guide.lesson_text(one)}
+        if g("verify"):
+            ok, txt = applab_guide.verify(one)
+            out.update(verified=ok, output=txt)
+        return 200, out
+    if g("q"):
+        return 200, {"ok": True, "matches": [{"score": s, "id": it["id"], "title": it["title"]}
+                                            for s, it in applab_guide.match(g("q"), 5)]}
+    return 200, {"ok": True, "status": applab_guide.status()}
+
+
+def h_bricks(req):
+    """v3.230: кирпичики мозга-12. GET -> библиотека; ?q=задача -> план цепочки; ?verify=1 -> тесты всех встроенных.
+    v3.234 POST {action}: save (свой кирпичик: id,title,stage,in,out,words,code,test,sample), test, delete {id},
+    autogen (шаблоны-цепочки), template_app {id} (приложение App Lab из шаблона, выключенным)."""
+    import brickplan
+    if req.method == "POST":
+        b = req.body or {}
+        act = str(b.get("action") or "")
+        if act == "save":
+            r = brickplan.save_user_brick(b, origin="владелец")
+            if r.get("ok"):
+                import threading
+                threading.Thread(target=brickplan.autogen, daemon=True).start()   # новые цепочки — сразу
+            return (200 if r.get("ok") else 400), r
+        if act == "test":
+            ok, why, spec = brickplan.check_brick(b)
+            if not ok:
+                return 400, {"ok": False, "error": why}
+            tok, msg = brickplan.test_brick(spec)
+            return 200, {"ok": tok, "test": msg, "error": "" if tok else msg}
+        if act == "delete":
+            return 200, brickplan.delete_user_brick(str(b.get("id") or ""))
+        if act == "autogen":
+            return 200, dict(brickplan.autogen(), templates=len(brickplan.templates()))
+        if act == "template_app":
+            import applab_brain
+            t = next((x for x in brickplan.templates() if x["id"] == b.get("id")), None)
+            if not t:
+                return 404, {"ok": False, "error": "нет такого шаблона"}
+            r = applab_brain.write_chain(t["chain"], t["title"])
+            return (200 if r.get("ok") else 400), r
+        return 400, {"ok": False, "error": "action: save | test | delete | autogen | template_app"}
+    if req.query.get("templates"):
+        return 200, {"ok": True, "templates": brickplan.templates()}
+    q = str(req.query.get("q") or "")
+    if q:
+        return 200, {"ok": True, "plan": brickplan.plan(q)}
+    out = {"ok": True, "status": brickplan.status(),
+           "bricks": [{k: b[k] for k in ("id", "title", "stage", "in", "out", "words", "origin")} for b in brickplan.library()]}
+    if req.query.get("verify"):
+        out["verify"] = {b["id"]: brickplan.verify_brick(b)[0] for b in brickplan.B}
+    return 200, out
+
+
+def h_codelessons(req):
+    """v3.220: уроки программирования. GET ?q=задача — подбор; ?id= — один урок; ?verify=1 — прогнать шаблон;
+    без параметров — статус; POST {seed:1} — записать в базу знаний."""
+    import codelessons
+    g = lambda k: str(req.query.get(k, "") or "")
+    if req.method == "POST":
+        return 200, {"ok": True, "seeded": codelessons.seed_kb(), "status": codelessons.status()}
+    if g("id"):
+        one = next((x for x in codelessons.load() if x["id"] == g("id")), None)
+        if not one:
+            return 404, {"ok": False, "error": "нет такого урока"}
+        out = {"ok": True, "lesson": codelessons.lesson_text(one)}
+        if g("verify"):
+            ok, txt = codelessons.verify(one)
+            out.update(verified=ok, output=txt)
+        return 200, out
+    if g("q"):
+        return 200, {"ok": True, "matches": [{"score": s, "id": it["id"], "title": it["title"]}
+                                            for s, it in codelessons.match(g("q"), 5)]}
+    return 200, {"ok": True, "status": codelessons.status()}
+
+
+def h_contour(req):
+    """v3.221: инструкции агента «Контур» (режим «Star Gate по инструкциям»).
+    GET — статус; ?q=задача — какую инструкцию выберет мозг; ?id= — текст; POST {seed:1} — в базу знаний."""
+    import project_brain
+    if req.method == "POST":
+        project_brain.reload()
+        return 200, {"ok": True, "seeded": project_brain.seed_kb(), "status": project_brain.status()}
+    if req.query.get("id"):
+        one = next((x for x in project_brain.load_all() if x["id"] == req.query["id"]), None)
+        return (200, {"ok": True, "instruction": one, "lesson": project_brain.lesson_text(one)}) if one \
+            else (404, {"ok": False, "error": "нет такой инструкции"})
+    if req.query.get("q"):
+        return 200, {"ok": True, "matches": [{"score": s, "id": i["id"], "title": i["title"]}
+                                            for s, i in project_brain.match(req.query["q"], 5)]}
+    return 200, {"ok": True, "status": project_brain.status()}
+
+
+def h_instructions(req):
+    """v3.219: библиотека инструкций агента. GET — список (?id=… — одна целиком,
+    ?corpus=1 — текст для обучения своей LLM); POST {instructions:[…]} — импорт,
+    POST {reload:true} — пересеять в базу знаний."""
+    import agent_instructions as instructions
+    if req.method == "POST":
+        b = req.body or {}
+        if b.get("instructions") is not None:
+            return 200, instructions.import_items(b["instructions"])
+        n = instructions.seed_kb()
+        return 200, {"ok": True, "seeded": n, "status": instructions.status()}
+    q = getattr(req, "query", None) or {}
+    if q.get("corpus"):
+        return 200, {"ok": True, "text": instructions.corpus_text()}
+    items = instructions.load_all()
+    if q.get("id"):
+        one = next((i for i in items if i["id"] == q["id"]), None)
+        return (200, {"ok": True, "instruction": one, "lesson": instructions.lesson_text(one)}) if one \
+            else (404, {"ok": False, "error": "нет такой инструкции"})
+    return 200, {"ok": True, "status": instructions.status(),
+                 "items": [{"id": i["id"], "title": i["title"], "target": i["target"],
+                            "risk": i.get("risk", "read"), "steps": len(i["steps"]),
+                            "verified": bool(i.get("verified"))} for i in items]}
+
+
+def h_tls(req):
+    """v3.210: состояние HTTPS и отпечаток сертификата (SHA-256) — для
+    закрепления на плате и проверки в браузере. Без токена."""
+    try:
+        import tls
+        return 200, dict(tls.status(), ok=True)
+    except Exception as e:
+        return 200, {"ok": False, "on": False, "err": str(e)[:200]}
+
+
+def _https_port():
+    try:
+        import tls
+        return tls._ST.get("port") or 0
+    except Exception:
+        return 0
 
 
 def _starting():
@@ -177,7 +351,109 @@ def h_brain_d6(req):
                  "negfreq4": bool(store.settings().get("d4_negfreq")),
                  "camframe": bool(store.settings().get("d6_camframe")),
                  "d4cam": bool(store.settings().get("d4_camframe")),
-                 "cammode": str(store.settings().get("d6_cammode") or "pure")}
+                 "cammode": str(store.settings().get("d6_cammode") or "pure"),
+                 "llm_push": _llm_push_for(bid), "osc": _osc_wire()}
+
+
+def _osc_wire():
+    try:
+        import oscillations
+        return oscillations.wire()
+    except Exception:
+        return ""
+
+
+def _llm_push_for(bid):
+    try:
+        import llm_export
+        return llm_export.push_for(bid)
+    except Exception:
+        return None
+
+
+def h_llm_bundle(req):
+    """v3.237: пакет своей LLM для платы (GET /api/llm/bundle?board=, токен платы)."""
+    import llm_export
+    r = llm_export.build()
+    if not r.get("ok"):
+        return 404, {"ok": False, "error": r.get("error")}
+    return 200, "file", (r["path"], "application/zip", "llm_bundle.zip")
+
+
+def h_llm_board_state(req):
+    """v3.237: плата сообщает, загрузилась ли у неё LLM: {board, sig, ok, info, error, sample}."""
+    import llm_export
+    b = req.body or {}
+    bid = str(b.get("board") or req.query.get("board", ""))[:40]
+    if not bid:
+        return 400, {"ok": False, "error": "нет board"}
+    return 200, llm_export.board_state(bid, b)
+
+
+def h_netbus_post(req):
+    """v3.237: пакет «дружбы сетей» от платы: {board, re, keys, text, kind}."""
+    import netbus
+    b = req.body or {}
+    bid = str(b.get("board") or "")[:40]
+    if not bid:
+        return 400, {"ok": False, "error": "нет board"}
+    return 200, netbus.board_packet(bid, b)
+
+
+def h_osc(req):
+    """v3.238: колебания частиц. GET — состояние; POST {on, m, g, p, gain}."""
+    import oscillations
+    if req.method == "GET":
+        return 200, oscillations.status()
+    b = req.body or {}
+    upd = {}
+    for k, key in (("on", "osc_on"), ("m", "osc_m"), ("g", "osc_g"), ("p", "osc_p")):
+        if k in b:
+            upd[key] = bool(b[k])
+    if "gain" in b:
+        try:
+            upd["osc_gain"] = max(0.1, min(5.0, float(b["gain"])))
+        except (TypeError, ValueError):
+            pass
+    if upd:
+        store.update_settings(upd)
+    return 200, oscillations.status()
+
+
+def h_spin(req):
+    """v3.238: «позвонить плате» — синхронный спин MAC двух плат.
+    GET ?board=<id> — опрос платой (что делать сейчас).
+    GET (без board) — панель лаунчера: список плат, активные сессии.
+    POST {action: call|hangup|status|report, ...}."""
+    import spin
+    if req.method == "GET":
+        bid = req.query.get("board", "")[:40]
+        if bid:
+            return 200, dict(spin.session_for(bid), ok=True)
+        return 200, spin.status()
+    b = req.body or {}
+    act = str(b.get("action") or "")
+    if act == "call":
+        return 200, spin.call(b.get("a"), b.get("b"), b.get("period") or 8, owner=str(req.client_ip or "")[:40])
+    if act == "hangup":
+        return 200, spin.hangup(sid=str(b.get("id") or ""), board=str(b.get("board") or ""))
+    if act == "report":
+        return 200, spin.report(b.get("board"), b.get("mac"), b.get("ip"), b.get("step"))
+    if act == "status":
+        return 200, spin.status()
+    return 400, {"ok": False, "error": "неизвестное действие"}
+
+
+def h_brain_d4(req):
+    """Мысли облака для D4 платы (GET /api/brain/d4?board=, v3.210): забрать
+    и СНЯТЬ очередь. Плата кодирует текст в биты и шлёт через d4pure;
+    частотой D4 управляет её тензорная сеть, не облако."""
+    bid = req.query.get("board", "")[:40]
+    if not bid:
+        return 400, {"ok": False, "error": "нет board"}
+    msgs = store.d4_take(bid)
+    store.board_seen(bid, ip=req.client_ip)
+    return 200, {"ok": True, "msgs": msgs, "count": len(msgs)}
 
 
 def h_negfreq_decide(req):
@@ -328,7 +604,13 @@ def h_brain_think(req):
     mode = str(b.get("mode") or "auto")
     t0 = time.time()
     sender = "плата %s" % frm
-    if mode == "code":
+    if mode == "applab":                 # v3.226: «/апп …» с платы
+        import applab_brain
+        ab = applab_brain.handle(text, origin="плата")
+        reply, zone = (ab[0], brain.Z["code"]) if ab else (
+            "Команды: «/апп список», «/апп напиши приложение …», «/апп напиши кирпичик …», "
+            "«/апп проверь <имя>», «/апп запусти <имя>».", brain.Z["code"])
+    elif mode == "code":
         import agent
         reply, matched, cinfo = agent.code_agent(text, ctx=ctx)
         zone = brain.Z["code"]
@@ -558,9 +840,14 @@ def h_buffer(req):
 def h_think(req):
     b = req.body or {}
     board = str(b.get("board") or "?")[:40]
-    text = store._tclean(str(b.get("text") or "")[:400])   # v3.118
+    text = store._tclean(str(b.get("text") or "")[:6000])   # v3.118
     if text:
         store.thoughts_add(board, text, b.get("kind") or "say")
+        try:                                  # v3.212: проверенные мысли — в банк разговора
+            import thoughtbank
+            thoughtbank.add(text, board)
+        except Exception:
+            pass
         brain.mn_learn(text, title="мысль %s" % board, src="мысль")
     if board != "?":
         store.board_seen(board)
@@ -581,7 +868,8 @@ def h_link(req):
                        bridge=b.get("bridge"), grav=b.get("grav"),
                        net=b.get("net"), cam=b.get("cam"),
                        breath=b.get("breath"), will=b.get("will"),
-                       extras_err=b.get("extras_err"), lead=b.get("lead"))
+                       extras_err=b.get("extras_err"), lead=b.get("lead"),
+                       neuron_context=b.get("neuron_context"))
     try:                         # v3.127: игра «РОК-12» — плата решает сама
         import doomgame
         if isinstance(r, dict) and r.get("ok"):
@@ -936,7 +1224,7 @@ def h_chat_thought_post(req):
     """Мысли плат -> чат-сессия «Мысли плат» (id=thoughts)."""
     b = req.body or {}
     board = str(b.get("board") or "?")[:40]
-    text = store._tclean(str(b.get("text") or "")[:3500])   # v3.118
+    text = store._tclean(str(b.get("text") or "")[:24000])   # v3.118
     if not text:
         return 200, {"ok": True, "skipped": "шум"}
     with store.LOCK:
@@ -950,6 +1238,30 @@ def h_chat_thought_post(req):
     brain.mn_learn(text, title="мысль платы (%s)" % board,
                    src="мысль платы")   # v3.9: единый источник в сети
     return 200, {"ok": True}
+
+
+def h_cloud_thought(req):
+    """v3.209: мысли самого облака -> платы и чат «Мысли плат».
+    GET — состояние; POST {on, every, to_boards, to_chat, now} — настройки / подумать сейчас."""
+    import cloudthought
+    if req.method == "POST":
+        b = req.body or {}
+        cloudthought.set_cfg(b)
+        if b.get("now"):
+            return 200, dict(cloudthought.think_now(force=True), status=cloudthought.status())
+    return 200, {"ok": True, "status": cloudthought.status()}
+
+
+def h_thought_extend(req):
+    """v3.210: облако ДОПОЛНЯЕТ мысль платы (по теме вопроса и слов мысли)."""
+    b = req.body or {}
+    import thoughtextend
+    r = thoughtextend.extend(b.get("text"), b.get("question"),
+                             b.get("max_chars") or 1200)
+    bid = str(b.get("board") or "")[:40]
+    if bid:
+        store.board_seen(bid, ip=req.client_ip)
+    return 200, r
 
 
 def h_chat_thought_get(req):
@@ -1170,7 +1482,7 @@ def h_kb_search(req):
 def h_kb_import(req):
     b = req.body or {}
     r = kb.add_article(b.get("title"), b.get("text"),
-                       source=b.get("source") or "мозг-12",
+                       source=b.get("source") or "Star Gate",
                        device=b.get("device"))
     if r.get("ok"):
         store.log("KB", "статья: %s (%s зн.)" % (b.get("title", "?")[:50],
@@ -1197,6 +1509,15 @@ def h_tts(req):
     if data[:4] != b"RIFF":
         data = tts.synth_builtin(text, voice)
     return 200, "wav", data
+
+
+def h_tts_ru(req):
+    """Real Russian speech only. Never silently substitute formant beeps."""
+    b=req.body or {};text=' '.join(str(b.get('text') or '').split())
+    if not text or len(text)>600:return 400,{'ok':False,'error':'Русская речь: нужно 1–600 символов на часть'}
+    data=tts.synth_espeak(text,str(b.get('voice') or 'neuro'))
+    if not data:return 503,{'ok':False,'error':'Русский речевой движок недоступен. Установите espeak-ng на сервере; встроенные тоны не считаются русской речью.'}
+    return 200,'wav',data
 
 
 def h_llm_teach(req):
@@ -1255,6 +1576,20 @@ def h_vision_last(req):
     return 200, "jpg", data
 
 
+def h_vision_hist(req):
+    """v3.189: лента последних кадров камеры (целые и битые)."""
+    return 200, {"ok": True, "items": vision.hist(req.query.get("cam", "cam"),
+                                                  req.query.get("limit", "12"))}
+
+
+def h_vision_frame_img(req):
+    """v3.189: кадр из ленты по имени файла (f_<ts>.jpg)."""
+    data = vision.frame_jpeg(req.query.get("cam", "cam"), req.query.get("f", ""))
+    if not data:
+        return 404, {"ok": False, "error": "кадра нет"}
+    return 200, "jpg", data
+
+
 def h_vision_cams(req):
     return 200, {"ok": True, "cams": vision.cams()}
 
@@ -1283,11 +1618,13 @@ def h_files_upload(req):
     try:                       # v3.30: картинка — разбор и описание
         import imgsense
         if imgsense.is_image(safe, raw[:16]):
-            desc = imgsense.describe(raw, name=safe)
-            store.log("ФАЙЛЫ", "%s от %s: картинка разобрана" % (safe, device))
-            return 200, {"ok": True, "name": safe, "kind": "image",
-                         "chars": len(desc), "kb": True,
-                         "description": desc}
+            result = imgsense.describe(raw, name=safe, structured=True)
+            if not result.get("ok"):
+                return 400, result
+            return 200, dict(result, name=safe, kind="image",
+                             chars=len(result["text"]), kb=result["saved"],
+                             description=result["text"], visual=result["description"])
+
     except Exception as e:
         store.log("ФАЙЛЫ", "картинка %s не разобрана: %s" % (safe, e))
     text, kind = _extract_text(safe, raw)
@@ -1428,6 +1765,28 @@ _r("GET", "api/brain/knowledge", h_brain_knowledge, auth=True)
 _r("POST", "api/brain/msg", h_brain_msg, auth=True)
 _r("GET", "api/brain/inbox", h_brain_inbox, auth=True)
 _r("GET", "api/brain/d6", h_brain_d6, auth=True)
+_r("GET", "api/llm/bundle", h_llm_bundle, auth=True)            # v3.237
+_r("POST", "api/llm/board_state", h_llm_board_state, auth=True)
+_r("POST", "api/netbus/post", h_netbus_post, auth=True)
+_r("GET", "api/spin", h_spin, auth=True)                       # v3.238: «позвонить плате»
+_r("POST", "api/spin", h_spin, auth=True)
+_r("GET", "api/osc", h_osc, auth=True)                         # v3.238: колебания частиц на пинах
+_r("POST", "api/osc", h_osc, auth=True)
+_r("GET", "api/brain/d4", h_brain_d4, auth=True)
+_r("GET", "api/tls", h_tls)
+_r("GET", "api/instructions", h_instructions, auth=True)
+_r("POST", "api/instructions", h_instructions, auth=True)
+_r("GET", "api/contour/instructions", h_contour, auth=True)
+_r("POST", "api/contour/instructions", h_contour, auth=True)
+_r("GET", "api/bricks", h_bricks, auth=True)
+_r("POST", "api/bricks", h_bricks, auth=True)
+_r("GET", "api/applab-guide", h_applab_guide, auth=True)
+_r("POST", "api/applab-guide", h_applab_guide, auth=True)
+_r("GET", "api/codelessons", h_codelessons, auth=True)
+_r("POST", "api/codelessons", h_codelessons, auth=True)
+_r("GET", "api/thoughts/journal", h_thought_journal, auth=True)
+_r("POST", "api/thoughts/journal", h_thought_journal, auth=True)
+_r("POST", "api/thought/extend", h_thought_extend, auth=True)
 _r("POST", "api/negfreq/decide", h_negfreq_decide, auth=True)
 _r("POST", "api/genmod/words", h_genmod_words, auth=True)
 _r("POST", "api/genmod/frame", h_genmod_frame, auth=True)
@@ -1504,6 +1863,8 @@ _r("POST", "api/hearing/mic", h_hearing_mic, auth=True)    # v3.128: уши мо
 _r("GET", "api/thoughts", h_thoughts)
 _r("POST", "api/chat/thought", h_chat_thought_post, auth=True)
 _r("GET", "api/chat/thought", h_chat_thought_get)
+_r("GET", "api/cloud/thought", h_cloud_thought, "panel")       # v3.209: мысли облака платам и в чат
+_r("POST", "api/cloud/thought", h_cloud_thought, "panel")
 _r("POST", "api/import", h_import, auth=True)
 _r("POST", "api/gen/task", h_gen_task_post, auth=True)
 _r("GET", "api/gen/task", h_gen_task_get, auth=True)
@@ -1547,6 +1908,7 @@ _r("GET", "api/kb/pack", h_kb_pack, auth=True)
 _r("POST", "api/kb/import", h_kb_import)
 _r("POST", "api/kb/delete", h_kb_delete)
 _r("POST", "api/tts", h_tts)
+_r("POST", "api/tts/ru", h_tts_ru, auth=True)
 _r("POST", "api/llm/teach", h_llm_teach, auth=True)
 _r("POST", "api/llm/ask", h_llm_ask, auth=True)
 _r("POST", "api/llm/test", h_llm_test)
@@ -1555,6 +1917,8 @@ _r("POST", "api/vision/raw", h_vision_raw, auth=True)
 _r("POST", "api/vision/raster", h_vision_raster, auth=True)
 _r("GET", "api/vision/buffer", h_vision_buffer)
 _r("GET", "api/vision/last.jpg", h_vision_last, "panel")
+_r("GET", "api/vision/hist", h_vision_hist, "panel")           # v3.189: лента кадров
+_r("GET", "api/vision/frame.jpg", h_vision_frame_img, "panel")  # v3.189: кадр из ленты
 _r("GET", "api/vision/cams", h_vision_cams, "panel")
 _r("POST", "api/files/upload", h_files_upload)
 _r("GET", "api/files/list", h_files_list)

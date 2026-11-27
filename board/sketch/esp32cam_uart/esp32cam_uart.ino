@@ -60,8 +60,7 @@
 #include "esp_camera.h"
 
 /* ------------------------------ НАСТРОЙКИ -------------------------------- */
-#define CAM_BAUD         115200   // скорость UART на UNO Q (= CAMRX_BAUD скетча платы; v2.96.5: 115200;
-                                  // v2.96.2: 230400 — на 460800 занятый loop() платы терял байты)
+#define CAM_BAUD         460800   // скорость UART на UNO Q
 #define UART_USE_SERIAL0 0        // 1 = шлить через разъём прошивки (TX=1/RX=3)
 #define UART_TX_PIN      13       // UART1: GPIO13 (TX) -> RX UNO Q
 #define UART_RX_PIN      14       // UART1: GPIO14 (RX) <- TX UNO Q (команды)

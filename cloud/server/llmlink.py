@@ -57,6 +57,7 @@ def cfg():
             "learn": bool(s.get("llm_link_learn", True)),
             "gen_minq": max(0.3, min(1.0, float(
                 s.get("llm_link_gen_minq", 0.5) or 0.5))),
+            "thought_chars": max(200, min(3000, int(s.get("llm_thought_chars", 900) or 900))),
             "every": max(0, every), "minq": max(0.0, min(1.0, minq))}
 
 
@@ -179,6 +180,17 @@ def _to_feed(text):
         store.chat_save("thoughts", chat)
 
 
+def _jlog(act, t, source, q, reason=""):
+    if source == "сборка":                       # сборку пишет thoughtsmooth
+        return
+    try:
+        import thoughtjournal
+        thoughtjournal.add("LLM", act, "", t, BOARD, q=round(float(q), 2), source=source,
+                           note=reason or ("своя мысль LLM (%s), %d зн." % (source, len(t))))
+    except Exception:
+        pass
+
+
 def publish_thought(text, topic="", source="авто", quality=None):
     """Мысль LLM -> готовый модуль мыслей, мозг и платы (см. шапку).
     Возврат dict: {ok, reason?, quality, via:[...], boards:n}."""
@@ -215,11 +227,13 @@ def publish_thought(text, topic="", source="авто", quality=None):
                           "reason": res["reason"], "ts": time.time(),
                           "source": source}
             _save()
+            _jlog("rejected", t, source, q, res["reason"])
             return res
         if _dup(t, st["recent"]):
             st["rejected"] += 1
             res["reason"] = "повтор недавней мысли"
             _save()
+            _jlog("rejected", t, source, q, res["reason"])
             return res
     # 1) журнал мыслей — читают зона «Мысли плат», мысль облака, кэш плат
     try:
@@ -247,6 +261,9 @@ def publish_thought(text, topic="", source="авто", quality=None):
         try:
             import unify
             res["boards"] = _d6_all("🤖 " + t, "мысль своей LLM")
+            n4 = _d4_all(t, "мысль своей LLM")      # v3.210: и на шину D4
+            if n4:
+                res["via"].append("платы (D4): %d" % n4)
 
             if res["boards"]:
                 res["via"].append("платы (D6): %d" % res["boards"])
@@ -268,6 +285,7 @@ def publish_thought(text, topic="", source="авто", quality=None):
                       "via": res["via"], "boards": res["boards"],
                       "source": source, "topic": topic}
         _save()
+    _jlog("own", t, source, q)
     return res
 
 
@@ -301,6 +319,29 @@ def _pick_topic():
     return random.choice(cands) if cands else ""
 
 
+def _grow(first, c_floor=0.0):
+    """v3.215: мысль LLM длиннее — достраиваем её следующими предложениями
+    (тема — последние слова) до llm_thought_chars; каждое — не мусор и не повтор."""
+    c = cfg()
+    parts, total, tries = [first], len(first), 0
+    try:
+        import tinyllm
+        while total < c["thought_chars"] and tries < 10 and len(parts) < 8:
+            tries += 1
+            seed = " ".join(parts[-1].split()[-8:])
+            t, _i = tinyllm.sample(seed, temp=0.55 + 0.05 * (tries % 4), topk=20, rep=1.25)
+            t = " ".join(str(t or "").split())
+            if not t or degenerate(t) or _dup(t, [{"text": p} for p in parts]):
+                continue
+            if _quality(t) < c["minq"] * 0.8:
+                continue
+            parts.append(t)
+            total += len(t) + 1
+    except Exception:
+        pass
+    return " ".join(parts)
+
+
 def think_now(topic="", tries=6, source="кнопка", floor=0.0):
     """Подумать СЕЙЧАС: несколько образцов, берём лучший по качеству, и
     публикуем (если проходит порог). Возврат dict с текстом и причиной."""
@@ -326,6 +367,7 @@ def think_now(topic="", tries=6, source="кнопка", floor=0.0):
         return {"ok": False, "text": best, "topic": topic, "quality": best_q,
                 "reason": "мысль LLM (%.2f) хуже мыслей платы (%.2f) — мозг "
                           "думает лучше, не публикую" % (best_q, floor / 0.9)}
+    best = _grow(best, c_floor=best_q)
     res = publish_thought(best, topic, source=source, quality=best_q)
     res.update(text=best, topic=topic)
     return res
@@ -389,7 +431,16 @@ def extend(text, source="функция"):
     if _norm(out) <= _norm(text):
         return {"ok": False, "text": out, "grounded": g,
                 "reason": "нечего добавить к мысли"}
-    return {"ok": True, "text": out, "grounded": g, "facts": len(facts),
+    parts = [out]                                  # v3.215: больше содержания
+    try:
+        for k in range(1, min(3, len(facts))):
+            o2, i2 = tinyllm.compose(text, " ".join(facts[k:])[:1500])
+            if o2 and float(i2.get("grounded") or 0) >= cfg()["gen_minq"] and \
+                    not _dup(o2, [{"text": p} for p in parts]) and _norm(o2) > set():
+                parts.append(o2)
+    except Exception:
+        pass
+    return {"ok": True, "text": " ".join(parts), "grounded": g, "facts": len(facts),
             "seed": text, "source": source}
 
 
@@ -492,6 +543,22 @@ def _d6_all(text, zone, skip=""):
             if skip and str(bid) == str(skip):
                 continue
             if store.d6_add(bid, text, zone):
+                n += 1
+    except Exception:
+        pass
+    return n
+
+
+def _d4_all(text, zone, skip=""):
+    """v3.210: мысль в ящик D4 каждой платы (кроме skip). Возврат: сколько."""
+    n = 0
+    try:
+        if store.settings().get("d4_thoughts", True) is False:
+            return 0
+        for bid in list(store.boards().keys()):
+            if skip and str(bid) == str(skip):
+                continue
+            if store.d4_add(bid, text, zone):
                 n += 1
     except Exception:
         pass

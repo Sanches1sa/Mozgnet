@@ -1,0 +1,836 @@
+[
+ {
+  "id": "wn.overview",
+  "title": "Общий обзор Windows",
+  "ask": [
+   "проверь компьютер",
+   "обзор windows",
+   "состояние компьютера",
+   "как дела на windows",
+   "проверь сервер windows"
+  ],
+  "target": "windows",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version,CSName,LastBootUpTime | Format-List"
+   },
+   {
+    "tool": "run",
+    "command": "Get-PSDrive -PSProvider FileSystem | Select-Object Name,@{n='ИспГБ';e={[math]::Round($_.Used/1GB,1)}},@{n='СвобГБ';e={[math]::Round($_.Free/1GB,1)}}"
+   },
+   {
+    "tool": "run",
+    "command": "Get-Service | Where-Object {$_.Status -eq 'Stopped' -and $_.StartType -eq 'Automatic'} | Select-Object -First 15 Name,DisplayName"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "wn.os",
+  "title": "Версия Windows",
+  "ask": [
+   "версия windows",
+   "какая windows",
+   "сборка windows"
+  ],
+  "target": "windows",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "Get-CimInstance Win32_OperatingSystem | Select-Object Caption,Version,BuildNumber,OSArchitecture | Format-List"
+   },
+   {
+    "tool": "run",
+    "command": "systeminfo | Select-Object -First 25"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "wn.uptime",
+  "title": "Время работы",
+  "ask": [
+   "аптайм windows",
+   "когда включали компьютер",
+   "сколько работает компьютер"
+  ],
+  "target": "windows",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "((Get-Date)-(Get-CimInstance Win32_OperatingSystem).LastBootUpTime).ToString()"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "wn.mem",
+  "title": "Память",
+  "ask": [
+   "память windows",
+   "сколько памяти",
+   "что ест память",
+   "не хватает памяти"
+  ],
+  "target": "windows",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "Get-CimInstance Win32_OperatingSystem | Select-Object @{n='ВсегоГБ';e={[math]::Round($_.TotalVisibleMemorySize/1MB,1)}},@{n='СвободноГБ';e={[math]::Round($_.FreePhysicalMemory/1MB,1)}} | Format-List"
+   },
+   {
+    "tool": "run",
+    "command": "Get-Process | Sort-Object WS -Descending | Select-Object -First 10 Name,Id,@{n='МБ';e={[math]::Round($_.WS/1MB)}}"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "wn.cpu",
+  "title": "Процессор и нагрузка",
+  "ask": [
+   "что грузит процессор windows",
+   "компьютер тормозит",
+   "лагает windows",
+   "процессор загружен"
+  ],
+  "target": "windows",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "Get-CimInstance Win32_Processor | Select-Object Name,NumberOfCores,NumberOfLogicalProcessors,LoadPercentage | Format-List"
+   },
+   {
+    "tool": "run",
+    "command": "Get-Process | Sort-Object CPU -Descending | Select-Object -First 12 Name,Id,CPU,@{n='МБ';e={[math]::Round($_.WS/1MB)}}"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "wn.disk",
+  "title": "Диски и место",
+  "ask": [
+   "место на диске windows",
+   "диск заполнен windows",
+   "сколько места на c",
+   "свободное место"
+  ],
+  "target": "windows",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "Get-PSDrive -PSProvider FileSystem | Select-Object Name,@{n='ИспГБ';e={[math]::Round($_.Used/1GB,1)}},@{n='СвобГБ';e={[math]::Round($_.Free/1GB,1)}}"
+   },
+   {
+    "tool": "run",
+    "command": "Get-Volume | Select-Object DriveLetter,FileSystemLabel,HealthStatus,SizeRemaining,Size"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "wn.bigfiles",
+  "title": "Большие файлы",
+  "ask": [
+   "найди большие файлы windows",
+   "что занимает место windows"
+  ],
+  "target": "windows",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "Get-ChildItem $HOME -Recurse -File -ErrorAction SilentlyContinue | Sort-Object Length -Descending | Select-Object -First 10 FullName,@{n='МБ';e={[math]::Round($_.Length/1MB)}}"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "wn.diskhealth",
+  "title": "Здоровье дисков",
+  "ask": [
+   "здоровье диска windows",
+   "smart windows",
+   "диск умирает windows"
+  ],
+  "target": "windows",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "Get-PhysicalDisk | Select-Object FriendlyName,MediaType,HealthStatus,OperationalStatus"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "wn.proc",
+  "title": "Процессы",
+  "ask": [
+   "список процессов",
+   "что запущено на windows",
+   "какие процессы"
+  ],
+  "target": "windows",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "Get-Process | Sort-Object CPU -Descending | Select-Object -First 20 Name,Id,CPU"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "wn.proc.kill",
+  "title": "Завершить процесс",
+  "ask": [
+   "заверши процесс windows",
+   "убей процесс windows",
+   "закрой процесс"
+  ],
+  "target": "windows",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "Get-Process -Name {proc} -ErrorAction SilentlyContinue | Select-Object Name,Id,StartTime",
+    "stop_on_fail": true
+   },
+   {
+    "tool": "run",
+    "command": "Stop-Process -Name {proc} -ErrorAction Stop"
+   },
+   {
+    "tool": "wait",
+    "seconds": 2
+   },
+   {
+    "tool": "run",
+    "command": "Get-Process -Name {proc} -ErrorAction SilentlyContinue | Select-Object Name,Id"
+   }
+  ],
+  "slots": {
+   "proc": "(?:процесс\\w*|process)\\s+([\\w.\\-]+)"
+  },
+  "rollback": "запустить программу заново",
+  "verified": false
+ },
+ {
+  "id": "wn.svc.list",
+  "title": "Службы Windows",
+  "ask": [
+   "службы windows",
+   "какие службы работают",
+   "остановленные службы"
+  ],
+  "target": "windows",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "Get-Service | Where-Object {$_.Status -eq 'Running'} | Select-Object -First 30 Name,DisplayName"
+   },
+   {
+    "tool": "run",
+    "command": "Get-Service | Where-Object {$_.Status -eq 'Stopped' -and $_.StartType -eq 'Automatic'} | Select-Object Name,DisplayName"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "wn.svc.status",
+  "title": "Статус службы Windows",
+  "ask": [
+   "статус службы windows",
+   "работает ли служба windows"
+  ],
+  "target": "windows",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "Get-Service -Name {service} | Format-List Name,DisplayName,Status,StartType"
+   }
+  ],
+  "slots": {
+   "service": "(?:служб\\w*|сервис\\w*|service)\\s+([\\w.\\-]+)"
+  },
+  "verified": false
+ },
+ {
+  "id": "wn.svc.restart",
+  "title": "Перезапустить службу Windows",
+  "ask": [
+   "перезапусти службу windows",
+   "рестарт службы windows"
+  ],
+  "target": "windows",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "Get-Service -Name {service} | Select-Object Name,Status",
+    "stop_on_fail": true
+   },
+   {
+    "tool": "run",
+    "command": "Restart-Service -Name {service} -ErrorAction Stop"
+   },
+   {
+    "tool": "wait",
+    "seconds": 5
+   },
+   {
+    "tool": "run",
+    "command": "Get-Service -Name {service} | Select-Object Name,Status",
+    "expect": "Running"
+   }
+  ],
+  "slots": {
+   "service": "(?:служб\\w*|сервис\\w*|service)\\s+([\\w.\\-]+)"
+  },
+  "verify": [
+   "Status Running"
+  ],
+  "verified": false
+ },
+ {
+  "id": "wn.events",
+  "title": "Ошибки в журнале событий",
+  "ask": [
+   "журнал windows",
+   "ошибки windows",
+   "что случилось на windows",
+   "события windows"
+  ],
+  "target": "windows",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "Get-WinEvent -FilterHashtable @{LogName='System';Level=1,2} -MaxEvents 20 | Select-Object TimeCreated,ProviderName,Id,Message | Format-List"
+   },
+   {
+    "tool": "run",
+    "command": "Get-WinEvent -FilterHashtable @{LogName='Application';Level=2} -MaxEvents 10 | Select-Object TimeCreated,ProviderName,Message | Format-List"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "wn.net",
+  "title": "Сетевые настройки",
+  "ask": [
+   "сеть windows",
+   "ip windows",
+   "настройки сети"
+  ],
+  "target": "windows",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "Get-NetIPConfiguration | Select-Object InterfaceAlias,IPv4Address,IPv4DefaultGateway,DNSServer | Format-List"
+   },
+   {
+    "tool": "run",
+    "command": "ipconfig /all | Select-Object -First 40"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "wn.ports",
+  "title": "Открытые порты",
+  "ask": [
+   "порты windows",
+   "что слушает порт windows",
+   "открытые порты windows"
+  ],
+  "target": "windows",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "Get-NetTCPConnection -State Listen | Sort-Object LocalPort | Select-Object -First 30 LocalAddress,LocalPort,OwningProcess"
+   },
+   {
+    "tool": "run",
+    "command": "Get-Process -Id (Get-NetTCPConnection -State Listen | Select-Object -First 20 -ExpandProperty OwningProcess -Unique) -ErrorAction SilentlyContinue | Select-Object Id,Name"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "wn.ping",
+  "title": "Доступность сети",
+  "ask": [
+   "нет интернета windows",
+   "проверь сеть windows",
+   "ping windows"
+  ],
+  "target": "windows",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "Test-Connection 1.1.1.1 -Count 3 | Select-Object Address,ResponseTime"
+   },
+   {
+    "tool": "run",
+    "command": "Test-Connection ya.ru -Count 3 | Select-Object Address,ResponseTime"
+   },
+   {
+    "tool": "run",
+    "command": "Test-NetConnection ya.ru -Port 443 | Select-Object ComputerName,TcpTestSucceeded"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "wn.dns",
+  "title": "DNS",
+  "ask": [
+   "dns windows",
+   "сбрось dns",
+   "dns не работает windows"
+  ],
+  "target": "windows",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "Resolve-DnsName ya.ru | Select-Object -First 5 Name,Type,IPAddress"
+   },
+   {
+    "tool": "run",
+    "command": "Get-DnsClientServerAddress | Select-Object InterfaceAlias,ServerAddresses"
+   },
+   {
+    "tool": "run",
+    "command": "Clear-DnsClientCache; 'кэш DNS очищен'"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "wn.fw",
+  "title": "Брандмауэр Windows",
+  "ask": [
+   "файрвол windows",
+   "брандмауэр",
+   "правила брандмауэра"
+  ],
+  "target": "windows",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "Get-NetFirewallProfile | Select-Object Name,Enabled"
+   },
+   {
+    "tool": "run",
+    "command": "Get-NetFirewallRule -Enabled True -Direction Inbound | Select-Object -First 20 DisplayName,Action"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "wn.defender",
+  "title": "Защитник Windows",
+  "ask": [
+   "защитник windows",
+   "антивирус windows",
+   "defender"
+  ],
+  "target": "windows",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "Get-MpComputerStatus | Select-Object AMServiceEnabled,AntivirusEnabled,RealTimeProtectionEnabled,AntivirusSignatureLastUpdated | Format-List"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "wn.updates",
+  "title": "Обновления Windows",
+  "ask": [
+   "обновления windows",
+   "какие обновления установлены",
+   "hotfix"
+  ],
+  "target": "windows",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "Get-HotFix | Sort-Object InstalledOn -Descending | Select-Object -First 10 HotFixID,InstalledOn,Description"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "wn.software",
+  "title": "Установленные программы",
+  "ask": [
+   "какие программы установлены",
+   "список программ windows"
+  ],
+  "target": "windows",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "winget list 2>&1 | Select-Object -First 30"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "wn.winget.upgrade",
+  "title": "Обновить программы через winget",
+  "ask": [
+   "обнови программы windows",
+   "winget upgrade"
+  ],
+  "target": "windows",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "winget upgrade 2>&1 | Select-Object -First 20"
+   },
+   {
+    "tool": "note",
+    "text": "Чтобы обновить всё: winget upgrade --all (займёт время; подтверди отдельно)."
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "wn.tasks",
+  "title": "Планировщик заданий",
+  "ask": [
+   "задания по расписанию windows",
+   "планировщик windows",
+   "schtasks"
+  ],
+  "target": "windows",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "Get-ScheduledTask | Where-Object {$_.State -ne 'Disabled'} | Select-Object -First 25 TaskName,State,TaskPath"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "wn.users",
+  "title": "Пользователи Windows",
+  "ask": [
+   "пользователи windows",
+   "кто админ windows",
+   "учётные записи windows"
+  ],
+  "target": "windows",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "Get-LocalUser | Select-Object Name,Enabled,LastLogon"
+   },
+   {
+    "tool": "run",
+    "command": "Get-LocalGroupMember Administrators -ErrorAction SilentlyContinue"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "wn.startup",
+  "title": "Автозагрузка",
+  "ask": [
+   "автозагрузка windows",
+   "что запускается при старте windows"
+  ],
+  "target": "windows",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "Get-CimInstance Win32_StartupCommand | Select-Object Name,Command,Location"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "wn.time",
+  "title": "Время Windows",
+  "ask": [
+   "время windows",
+   "синхронизация времени windows"
+  ],
+  "target": "windows",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "Get-Date; w32tm /query /status 2>&1 | Select-Object -First 10"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "wn.time.sync",
+  "title": "Синхронизировать время",
+  "ask": [
+   "синхронизируй время windows",
+   "сбилось время windows"
+  ],
+  "target": "windows",
+  "risk": "change",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "w32tm /resync 2>&1"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "wn.usb",
+  "title": "USB, камеры, звук",
+  "ask": [
+   "usb windows",
+   "камера windows",
+   "звук windows",
+   "микрофон windows"
+  ],
+  "target": "windows",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "Get-PnpDevice -PresentOnly | Where-Object {$_.Class -in 'USB','Camera','Image','AudioEndpoint'} | Select-Object Status,Class,FriendlyName"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "wn.serial",
+  "title": "COM-порты",
+  "ask": [
+   "com порты",
+   "arduino windows",
+   "последовательные порты windows"
+  ],
+  "target": "windows",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "[System.IO.Ports.SerialPort]::GetPortNames()"
+   },
+   {
+    "tool": "run",
+    "command": "Get-CimInstance Win32_SerialPort | Select-Object DeviceID,Name"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "wn.docker",
+  "title": "Docker на Windows",
+  "ask": [
+   "docker windows",
+   "контейнеры windows"
+  ],
+  "target": "windows",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "docker ps -a --format '{{.Names}}  {{.Status}}  {{.Image}}'"
+   },
+   {
+    "tool": "run",
+    "command": "docker images"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "wn.python",
+  "title": "Python на Windows",
+  "ask": [
+   "python windows",
+   "версия python windows",
+   "pip windows"
+  ],
+  "target": "windows",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "python --version; pip --version"
+   },
+   {
+    "tool": "run",
+    "command": "pip list 2>&1 | Select-Object -First 25"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "wn.git",
+  "title": "Git на Windows",
+  "ask": [
+   "git windows",
+   "состояние репозитория windows"
+  ],
+  "target": "windows",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "git status -sb 2>&1 | Select-Object -First 15"
+   },
+   {
+    "tool": "run",
+    "command": "git log --oneline -n 10 2>&1"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "wn.reboot",
+  "title": "Перезагрузить Windows",
+  "ask": [
+   "перезагрузи windows",
+   "перезагрузи компьютер",
+   "рестарт windows"
+  ],
+  "target": "windows",
+  "risk": "danger",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "query user 2>&1",
+    "note": "кто вошёл"
+   },
+   {
+    "tool": "run",
+    "command": "Restart-Computer -Force"
+   },
+   {
+    "tool": "wait",
+    "seconds": 90
+   },
+   {
+    "tool": "check"
+   },
+   {
+    "tool": "wait",
+    "seconds": 30
+   },
+   {
+    "tool": "check"
+   }
+  ],
+  "verify": [
+   "компьютер вернулся"
+  ],
+  "notes": "Если на машине работает облако, оно остановится — свяжись по другому каналу.",
+  "verified": false
+ },
+ {
+  "id": "wn.shutdown",
+  "title": "Выключить Windows",
+  "ask": [
+   "выключи компьютер",
+   "выключи windows"
+  ],
+  "target": "windows",
+  "risk": "danger",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "query user 2>&1"
+   },
+   {
+    "tool": "run",
+    "command": "Stop-Computer -Force"
+   }
+  ],
+  "rollback": "включить кнопкой или Wake-on-LAN",
+  "verified": false
+ },
+ {
+  "id": "wn.sfc",
+  "title": "Проверка системных файлов (sfc)",
+  "ask": [
+   "проверь системные файлы",
+   "sfc scannow",
+   "починить windows"
+  ],
+  "target": "windows",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "sfc /verifyonly 2>&1 | Select-Object -Last 8"
+   }
+  ],
+  "verify": [
+   "нарушений целостности нет"
+  ],
+  "notes": "Исправление: sfc /scannow от администратора — долго, подтверди отдельно.",
+  "verified": false
+ },
+ {
+  "id": "wn.hosts",
+  "title": "Файл hosts",
+  "ask": [
+   "файл hosts",
+   "hosts windows"
+  ],
+  "target": "windows",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "Get-Content $env:SystemRoot\\System32\\drivers\\etc\\hosts | Select-Object -First 30"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "wn.env",
+  "title": "Переменные окружения",
+  "ask": [
+   "переменные окружения windows",
+   "path windows"
+  ],
+  "target": "windows",
+  "risk": "read",
+  "steps": [
+   {
+    "tool": "run",
+    "command": "Get-ChildItem Env: | Sort-Object Name | Select-Object -First 30"
+   }
+  ],
+  "verified": false
+ }
+]

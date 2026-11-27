@@ -95,7 +95,7 @@ ZONES = [
      "«площадь круга радиусом 5», «вклад 1000 под 10 процентов на 3 года», "
      "«модель по данным 1,2; 2,4; 3,5 — прогноз 4»"),
     ("kb", "База знаний: статьи, файлы владельца, материалы плат",
-     "«что такое мозг-12», загрузи файлы во вкладке «База знаний»"),
+     "«что такое Star Gate», загрузи файлы во вкладке «База знаний»"),
     ("mn", "Нейросеть материалов: ассоциации, растёт от каждого диалога",
      "«мысль <тема>», «статья <тема>», обычные вопросы по материалам"),
     ("mem", "Память владельца: заметки и их поиск по темам",
@@ -200,7 +200,7 @@ def self_intro(who=False):
     ex.update(_SELF_EX)
     lines = []
     if who:
-        lines.append("Я — «мозг-12», облачный мозг платформы neuro12-cloud. "
+        lines.append("Я — «Star Gate», облачный мозг платформы neuro12-cloud. "
                      "Отвечаю сама, без внешних LLM: из базы знаний, из "
                      "интернета (собираю ответ по найденным страницам), "
                      "считаю, пишу код и документы, рисую. Подключаюсь к "
@@ -963,7 +963,7 @@ def _make_document(text, kind, ctx, long_mode=False):
                 return ("Сохранять пока нечего: в этом диалоге ещё не было "
                         "реплик."), Z["doc"], {}
             body = "\n\n".join("%s: %s" % ("Вы" if x.get("role") == "user"
-                                           else "Мозг-12",
+                                           else "Star Gate",
                                            docgen.clean_body(x.get("text")))
                                for x in hist)
             title = "Диалог от %s" % time.strftime("%d.%m.%Y %H:%M")
@@ -1583,7 +1583,8 @@ def think(text, long_mode=False, route="cloud", chat_id=None,
     # v3.187: ответ написала своя LLM (не статья и не страницы интернета) —
     # если нужно, она сама проверяет факты в интернете и подкрепляет ответ
     # (llmfact.py). Не в ответах из базы/интернета, не при «без сети».
-    if not pre and not no_web and route != "board" and _llm_authored(zone, info):
+    import answer_focus
+    if not pre and not no_web and route != "board" and _llm_authored(zone, info) and not answer_focus.practical(text):
         try:
             import llmfact
             # ответ из подтверждённой памяти (👍, «правильный ответ») уже
@@ -1597,6 +1598,13 @@ def think(text, long_mode=False, route="cloud", chat_id=None,
             pass
         except Exception as e:
             store.log("LLM-ФАКТЫ", "не удалось: %s" % e)
+    if route != 'board':
+        import answer_focus
+        if answer_focus.practical(text):
+            cleaned=answer_focus.clean(text,reply)
+            if cleaned != reply:
+                info=dict(info or {},focus_cleaned=True)
+            reply=cleaned or 'Не знаю: нужен подтверждённый ответ по этому вопросу.'
     after = mn_size()
     if after != before and isinstance(info, dict):
         info["net"] = {"nodes": after[0] - before[0],
@@ -1722,8 +1730,9 @@ def _strict_post(text, reply, zone, info, route="cloud"):
     if not reply or route == "board":
         return reply, zone, info
     # 1) без интернета — только то, что лежит в базе / памяти / навыках
-    if not strict.offline_ok() and not strict.online():
-        safe = {Z["kb"], Z["qa"], Z["skill"], Z["math"], Z["sys"], Z["talk"],
+    proven_web = zone == Z["web"] and bool(info.get("sources"))
+    if not proven_web and not strict.offline_ok() and not strict.online():
+        safe = {Z["kb"], Z["web"], Z["wiki"], Z["qa"], Z["skill"], Z["math"], Z["sys"], Z["talk"],
                 Z["doc"], Z["code"], Z["media"], Z["vision"]}
         mb_ = info.get("mem_brain") or {}
         local_mem = bool(mb_.get("memory")) and not mb_.get("llm_own")
@@ -2085,6 +2094,28 @@ def _think(text, long_mode=False, route="cloud", chat_id=None,
     #    перехватывать вопрос одним источником — отвечает 16-я зона
     #    «Интернет-источники»; v3.14: она читает ПЕРВЫЕ СТРАНИЦЫ выдачи
     #    (до 10) и подписывает каждый сайт + список «Источники:»
+    try:
+        import pyapps
+        _dis = pyapps.disabled_reply(text)          # v3.225: «запусти функцию X», а она выключена
+        if _dis:
+            return _dis, Z["skill"], {"skill": "App Lab"}
+    except Exception:
+        pass
+    try:
+        import pyapps as _pa
+        _ch = _pa.match_context(text, ctx) if not skills.match(text) else None   # v3.226: по контексту
+        if _ch:
+            _r = skills.run_skill(_ch[0], text, board=sender)
+            if _r and _r.get("ok") and str(_r.get("result") or "").strip():
+                try:
+                    import applab_brain
+                    applab_brain.observe("context_call", {"app": _ch[0], "text": text, "score": _ch[2]})
+                except Exception:
+                    pass
+                return str(_r["result"]).strip(), Z["skill"], {"skill": _ch[1].get("name", _ch[0]),
+                                                                "by": "контекст %.2f" % _ch[2]}
+    except Exception:
+        pass
     hit = skills.match(text)
     if hit and not (_Q_LIKE.match(low)
                     and store.settings().get("web_on")

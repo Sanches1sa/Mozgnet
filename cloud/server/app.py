@@ -5,7 +5,7 @@
 # ---------------------------------------------------------------------------
 # Запуск:  python3 server/app.py          (env: NEURO_PORT, NEURO_DATA,
 #                                          NEURO_TOKEN)
-# Порт по умолчанию 8077 (как у привычной платформы мозг-12).
+# Порт по умолчанию 8077 (как у привычной платформы Star Gate).
 # Всё в одном процессе: маршруты API (api_board + api_ui), статика web/,
 # multipart-разбор файлов, MJPEG-стрим камер, встроенный учитель, mozgnet.
 # ===========================================================================
@@ -92,6 +92,7 @@ except Exception:
     pass
 import time
 import urllib.parse
+import crashguard
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -144,6 +145,22 @@ class Req:
     """Обёртка запроса для обработчиков."""
     __slots__ = ("method", "path", "query", "body", "raw", "headers",
                  "files_data", "params", "client_ip")
+
+
+# v3.233: что можно пользователю (не владельцу) — чат, App Lab на просмотр и запуск, свой пароль
+_USER_GET_DENY = ("/api/servers", "/api/admin", "/api/desktop", "/api/settings", "/api/auth/users", "/api/update",
+                  "/api/crash", "/api/ssh", "/api/terminal", "/api/backup", "/api/code/project", "/api/agent",
+                  "/api/maxbot", "/api/max", "/api/aikeys", "/api/ai/keys", "/api/tls", "/api/ipblock", "/api/llm/cfg",
+                  "/api/llm/download", "/api/llm/export", "/api/netbus")
+_USER_POST_OK = ("/api/chat/send", "/api/chat/new", "/api/chat/rename", "/api/chat/delete", "/api/chat/rate",
+                 "/api/chat/gen", "/api/applab/run", "/api/applab/example", "/api/tts", "/api/auth/password",
+                 "/api/auth/logout", "/api/files/upload")
+
+
+def _user_allowed(method, path):
+    if method in ("GET", "HEAD"):
+        return not path.startswith(_USER_GET_DENY)
+    return path.startswith(_USER_POST_OK)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -310,6 +327,12 @@ class Handler(BaseHTTPRequestHandler):
             if path in ("/login", "/login.html"):
                 return self._static("login.html")
 
+            # Public mini-app shell only. Its data API validates MAX initData/session.
+            if path in ('/max-app','/max-app/','/max-app.html','/max-app.js','/max-app.css'):
+                if req.method not in ('GET','HEAD'):
+                    return self._send_json(405,{'ok':False,'error':'метод не поддерживается'})
+                return self._static('max-app.html' if path in ('/max-app','/max-app/','/max-app.html') else path.lstrip('/'))
+
             # ---------- статика (веб-панель закрыта паролем) ----------
             if not path.startswith("/api/"):
                 if not auth.session_ok(self._cookie(auth.COOKIE)):
@@ -356,6 +379,11 @@ class Handler(BaseHTTPRequestHandler):
             if sess_ok:
                 auth.touch_session(sid)
             req.params["_sid"] = sid if sess_ok else ""
+            # v3.233: кто вошёл; пользователь (не владелец) — только чат и просмотр
+            _who = auth.session_info(sid) if sess_ok else {}
+            _role = _who.get("role", "")
+            req.params["_user"] = _who
+            owner_sess = sess_ok and _role == "owner"
             board_tok = (self.headers.get("X-Mozg-Token") or
                          query.get("token") or
                          req.files_data.get("fields", {}).get("token", ""))
@@ -371,7 +399,7 @@ class Handler(BaseHTTPRequestHandler):
                         "type": "forbidden"}})
                 rec = aiapi.check(aiapi.key_from_headers(self.headers,
                                                          query))
-                if not rec and sess_ok:
+                if not rec and owner_sess:
                     rec = {"id": "owner", "name": "владелец (панель)"}
                 if not rec:
                     _log_auth_fail(req.client_ip, path, "приложение без "
@@ -386,6 +414,15 @@ class Handler(BaseHTTPRequestHandler):
                                    "запросов в минуту на ключ",
                         "type": "rate_limit"}})
                 req.params["_ai_key"] = rec
+            elif mode == 'miniapp':
+                import support_app, aiapi
+                actor=support_app.session(self.headers.get('X-Support-Session',''))
+                if not actor and owner_sess:actor={'id':'owner','admin':True,'name':'Специалист','user_id':''}
+                if not actor:
+                    return self._send_json(401,{'ok':False,'error':'Откройте приложение из MAX или войдите в панель облака'})
+                if not aiapi.rate_ok('support:'+actor['id']):
+                    return self._send_json(429,{'ok':False,'error':'Слишком много запросов; повторите позже'})
+                req.params['_support_actor']=actor
             elif mode == "open" or mode in ("setup", "login"):
                 pass                              # публичные маршруты входа
             elif mode == "panel":
@@ -398,7 +435,7 @@ class Handler(BaseHTTPRequestHandler):
                         "error": "нужен вход: открой /login"})
             elif mode is True:
                 # API платы: токен платы (или сессия владельца)
-                if not (token_ok or sess_ok):
+                if not (token_ok or owner_sess):
                     _log_auth_fail(req.client_ip, path,
                                    "плата/запрос с неверным токеном")
                     return self._send_json(401, {"ok": False,
@@ -406,9 +443,18 @@ class Handler(BaseHTTPRequestHandler):
                                                  "(X-Mozg-Token)"})
             else:
                 pass                              # открытые API платы
+            if mode == "panel" and sess_ok and _role != "owner" and not token_ok:
+                if not _user_allowed(req.method, path):
+                    return self._send_json(403, {"ok": False, "error": "это может только владелец"})
+                req.client_ip = ("u:" + _who.get("email", ""))[:45]   # чаты и проекты пользователя — по его почте
 
             _tf = time.time()
-            result = fn(req)
+            _cg = crashguard.begin("http", req.method + " " + path) if req.method != "GET" else None
+            try:
+                result = fn(req)
+            finally:
+                if _cg:
+                    crashguard.end(_cg, ok=True)
             _dtf = time.time() - _tf
             if _dtf > 4.0:              # v3.84: журнал медленных запросов
                 try:
@@ -637,6 +683,7 @@ def main():
         store.redirect_std()
     except Exception:
         pass
+    crashguard.setup()                     # v3.228: стек потоков, лимит рекурсии
     want = int(os.environ.get("NEURO_PORT") or 8077)
     port = _pick_port(want)
     token = store.ensure_dirs()
@@ -657,7 +704,8 @@ def main():
             # такой обрыв (WinError 10053) печатал трассировку: десятки тысяч
             # в restart.log. Настоящие исключения печатаем как прежде.
             et = sys.exc_info()[0]
-            if et is not None and issubclass(et, (ConnectionError, TimeoutError)):
+            if et is not None and issubclass(et, (ConnectionError, TimeoutError,
+                                           __import__("ssl").SSLError)):
                 return
             ThreadingHTTPServer.handle_error(self, request, client_address)
     try:
@@ -670,9 +718,28 @@ def main():
         return                       # код 0: сторож не перезапускает впустую
     httpd.daemon_threads = True
     store.write_port(port)
+    try:                                   # v3.233: учётка владельца (вход по почте)
+        import accounts
+        accounts.ensure_owner()
+    except Exception as e:
+        store.log("СТАРТ", "учётки: %s" % e)
+    try:                                   # v3.228: что оборвалось при прошлом падении
+        _rc = crashguard.recover()
+        if _rc.get("recovered"):
+            store.log("СТАРТ", "после прошлого падения прервано запросов: %d%s" % (
+                _rc["recovered"], " (плановый перезапуск)" if _rc.get("planned") else " — подробно /api/crash/report"))
+        if crashguard.safe():
+            store.log("СТАРТ", "БЕЗОПАСНЫЙ РЕЖИМ: после серии падений отключены numpy-LLM, OCR и распознавание речи")
+    except Exception:
+        pass
     import threading as _th0
     _th0.Thread(target=httpd.serve_forever, daemon=True, name="http").start()
     store.log("СТАРТ", "порт %d открыт — облако запускается…" % port)
+    try:                                   # v3.210: HTTPS рядом с HTTP
+        import tls
+        tls.start(_Srv, Handler, port)
+    except Exception as e:
+        store.log("СТАРТ", "HTTPS: %s" % e)
     t_start = time.time()
     skills.seed()                         # v3.170: навыки -> App Lab (Python)
     try:
@@ -683,6 +750,7 @@ def main():
     api_ui.h_seed_kb(None)
     api_ui.seed_platform_guide()          # самоучитель платформы в KB+сети
     brain.start_background()
+    crashguard.start_autosave(300)         # v3.228: обученное — на диск раз в 5 минут
     # v3.27: индекс базы знаний строится фоном сразу — первый вопрос в
     # чате/МАКС не ждёт чтения тысяч статей
     import threading as _th
@@ -702,10 +770,10 @@ def main():
             store.update_settings({"ssh_on": True})
             store.log("СТАРТ", "SSH-агент администрирования доступен")
         # посев знаний по серверам (один раз)
-        if not store.settings().get("ssh_seed_done"):
+        if int(store.settings().get("ssh_seed_ver", 0) or 0) < 8:   # v3.230: + кирпичики и уроки ИБ; v3.225: + App Lab; v3.216/218/219: + справочник команд, Windows, инструменты, библиотека инструкций
             import ssh_agent as _sa
             _sa.seed_admin_knowledge()
-            store.update_settings({"ssh_seed_done": True})
+            store.update_settings({"ssh_seed_done": True, "ssh_seed_ver": 8})
             store.log("СТАРТ", "базовые знания администрирования серверов добавлены в KB")
     except Exception:
         pass
@@ -802,6 +870,16 @@ def main():
         llmlink.start()
     except Exception as e:
         store.log("СТАРТ", "связь LLM не запустилась: %s" % e)
+    try:
+        import cloudthought               # v3.209: облако шлёт СВОИ мысли платам и в чат
+        cloudthought.start()
+    except Exception as e:
+        store.log("СТАРТ", "мысли облака не запустились: %s" % e)
+    try:
+        import netbus                     # v3.237: «дружба нейросетей» — обмен пакетами без чата
+        netbus.start()
+    except Exception as e:
+        store.log("СТАРТ", "шина дружбы сетей не запустилась: %s" % e)
     study.start()                         # v3.24.2: фоновая перечитка ссылок-инструкций
     store.write_port(port)
     if port != want:
@@ -928,6 +1006,10 @@ def _supervise():
     pause, fails = 3, 0
     while True:
         t0 = time.time()
+        if fails >= 3:                  # v3.228: серия быстрых падений — безопасный режим
+            env["NEURO_SAFE"] = "1"
+        else:
+            env.pop("NEURO_SAFE", None)
         try:
             code = subprocess.call([sys.executable, os.path.abspath(__file__)]
                                    + sys.argv[1:], env=env)
@@ -963,8 +1045,13 @@ def _supervise():
             pass
         try:                 # v3.183: падения — списком, их видно в панели и лаунчере
             lst = store.load_json("crashes.json", []) or []
+            try:                      # v3.228: какой запрос обрабатывался в момент падения
+                _inf = store.load_json("inflight.json", []) or []
+            except Exception:
+                _inf = []
             lst.append({"ts": time.time(), "code": code, "why": why, "up": round(time.time() - t0, 1),
-                        "hint": _crash_hint(code)})
+                        "hint": _crash_hint(code), "safe": env.get("NEURO_SAFE") == "1",
+                        "inflight": [{k: e.get(k) for k in ("kind", "path", "text")} for e in _inf[:5] if isinstance(e, dict)]})
             store.save_json("crashes.json", lst[-100:])
         except Exception:
             pass

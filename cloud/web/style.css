@@ -151,6 +151,8 @@ body.light .mathsvg{background:#fff}
 .msg-acts button{font-size:11.5px;color:var(--muted);border:1px solid
   var(--line);border-radius:8px;padding:3px 9px}
 .msg-acts button:hover{color:var(--text);border-color:var(--muted)}
+.msg-quick button.btn-quick{font-size:14px;padding:6px 14px;color:var(--text);font-weight:600}
+.msg-quick button.btn-quick:disabled{opacity:.5;cursor:default}
 .typing{display:flex;gap:5px;padding:6px 0}
 .typing i{width:7px;height:7px;border-radius:50%;background:var(--muted);
   animation:blink 1.3s infinite}
@@ -899,3 +901,76 @@ header{background:var(--glass);backdrop-filter:blur(10px);-webkit-backdrop-filte
   .mtabs{padding:calc(6px + env(safe-area-inset-top)) 8px 6px;gap:4px}
   .mbody,.mpane{padding-bottom:calc(16px + env(safe-area-inset-bottom))}
 }
+
+/* ==========================================================================
+   v3.189 — настройки агента «Контур» внизу чата, режим «Администрирование»,
+   лента кадров «Зрения» с битыми кадрами
+   ========================================================================== */
+.agent-set{max-width:780px;margin:0 auto 8px;background:var(--panel);
+  border:1px solid var(--line);border-radius:14px;font-size:13px}
+.agent-set[hidden]{display:none}
+.agent-set>summary{cursor:pointer;list-style:none;padding:8px 14px;
+  display:flex;align-items:center;gap:8px;font-weight:600;color:var(--muted)}
+.agent-set>summary::-webkit-details-marker{display:none}
+.agent-set>summary::before{content:"▸";color:var(--muted);transition:transform .15s}
+.agent-set[open]>summary::before{transform:rotate(90deg)}
+.agent-set[open]>summary{color:var(--text);border-bottom:1px solid var(--line)}
+.agent-set-hide{margin-left:auto;font-size:12px;color:var(--muted);
+  background:transparent;border:1px solid var(--line);border-radius:8px;
+  padding:2px 9px;cursor:pointer}
+.agent-set-hide:hover{color:var(--bad);border-color:var(--bad)}
+.agent-set-body{padding:10px 14px 12px}
+.agent-set-grid{display:flex;gap:8px 16px;flex-wrap:wrap;align-items:center;
+  margin-bottom:8px}
+.agent-set-grid label{display:flex;align-items:center;gap:6px;color:var(--muted)}
+.agent-set-grid select{background:var(--panel2);color:var(--text);
+  border:1px solid var(--line);border-radius:8px;padding:4px 8px;max-width:250px}
+.agent-set-body .mini{color:var(--muted);line-height:1.5}
+.agent-set-chip{display:block;max-width:780px;margin:0 auto 8px;padding:6px 14px;
+  font-size:12.5px;color:var(--muted);background:var(--panel);
+  border:1px dashed var(--line);border-radius:12px;cursor:pointer;text-align:left}
+.agent-set-chip:hover{color:var(--text);border-color:rgba(var(--acc-rgb),.5)}
+.agent-set-chip[hidden]{display:none}
+
+/* --- панель режима «Администрирование» --- */
+.adm-modes{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:8px 0}
+.adm-modes label{display:flex;align-items:center;gap:6px;font-size:13px;
+  color:var(--text);cursor:pointer}
+.adm-modes input[type=radio]{accent-color:var(--acc)}
+.adm-block{margin-top:10px;border-top:1px solid var(--line);padding-top:8px;font-size:13px}
+.adm-block>summary{cursor:pointer;font-weight:600}
+.adm-block .frow{margin-top:8px}
+.adm-shot{margin-top:8px}
+.adm-shot[hidden]{display:none}
+.adm-strip{display:flex;gap:8px;overflow-x:auto;padding:4px 0}
+.adm-strip figure{flex:0 0 auto;margin:0;max-width:150px}
+.adm-strip img{width:150px;height:auto;border-radius:8px;display:block;
+  border:1px solid var(--line)}
+
+/* --- лента кадров «Зрения»: целые и битые кадры рядом --- */
+.camstrip{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));
+  gap:10px;margin-top:8px}
+.framethumb{margin:0;background:var(--panel);border:1px solid var(--line);
+  border-radius:10px;overflow:hidden}
+.framethumb img{width:100%;height:auto;display:block;min-height:60px;
+  object-fit:cover;background:#000}
+.framethumb figcaption{padding:6px 8px;font-size:11px;color:var(--muted);
+  display:flex;flex-direction:column;gap:2px}
+.framethumb figcaption .why{color:var(--bad)}
+.framethumb.broken{border-color:rgba(248,113,113,.65);
+  box-shadow:0 0 0 1px rgba(248,113,113,.35)}
+.framethumb.broken img{opacity:.85}
+.framethumb.noimg{padding:8px;font-size:11.5px;color:var(--muted)}
+@media (max-width:600px){.camstrip{grid-template-columns:repeat(auto-fill,minmax(120px,1fr))}}
+
+/* --- v3.193: страница «Сопряжение» — воля платы и воля LLM рядом --- */
+.cup-cols{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px}
+.cup-cols .card{margin:0}
+@media (max-width:760px){.cup-cols{grid-template-columns:1fr}}
+
+.zone-table-wrap{overflow-x:auto}.zone-table-wrap .tbl{min-width:540px}
+
+/* v3.234: инструмент кирпичиков */
+#alBricks a{color:var(--acc,#2dd4bf);text-decoration:none}
+#alBricks a:hover{text-decoration:underline}
+#alBricks code{font-size:12px}

@@ -1141,7 +1141,7 @@ def render_graph(spec):
         parts.append(_line(ml, Y(0), gw - mr_, Y(0), "#9aa2ad", 1.6))
     # подписи осей
     def _fmt(v):
-        return ("%g" % v)
+        return ("%.4g" % v)            # v3.229: длинные подписи оси Y обрезались слева
     for i in range(5):
         v = x0 + (x1 - x0) * i / 4.0
         parts.append(_txt(X(v), gh - mb + 16, _fmt(v), 11, "#7a8899"))

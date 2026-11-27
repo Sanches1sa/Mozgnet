@@ -104,12 +104,14 @@ def _save_sessions():
         pass
 
 
-def create_session(ip="", ua=""):
+def create_session(ip="", ua="", email="", role="owner"):
+    """v3.233: сессия помнит, кто вошёл (почта и роль); вход по паролю панели — владелец."""
     with _LOCK:
         ss = _load_sessions()
         sid = os.urandom(24).hex()
         ss[sid] = {"ts": time.time(), "ip": str(ip)[:45],
-                   "ua": str(ua)[:120]}
+                   "ua": str(ua)[:120], "email": str(email or "")[:254],
+                   "role": "owner" if role == "owner" else "user"}
         # не более 50 сессий — старые выкидываем
         if len(ss) > 50:
             for s in sorted(ss, key=lambda k: ss[k].get("ts", 0))[:-50]:
@@ -132,6 +134,24 @@ def session_ok(sid):
             _save_sessions()
             return False
         return True
+
+
+def session_info(sid):
+    """{email, role} сессии (старые сессии без роли — владелец) | {}."""
+    if not session_ok(sid):
+        return {}
+    with _LOCK:
+        v = _load_sessions().get(sid) or {}
+        return {"email": v.get("email", ""), "role": v.get("role") or "owner"}
+
+
+def drop_sessions_of(email):
+    """Выйти на всех устройствах пользователя (после отклонения/удаления)."""
+    with _LOCK:
+        ss = _load_sessions()
+        for s in [k for k, v in ss.items() if v.get("email") == email]:
+            ss.pop(s, None)
+        _save_sessions()
 
 
 def touch_session(sid):

@@ -1,4 +1,4 @@
-/* neuro_12 — стиль «тёмный LLM-чат» (в духе основного проекта Мозг-12) */
+/* neuro_12 — стиль «тёмный LLM-чат» (в духе основного проекта Star Gate) */
 :root {
   --bg: #0d1117; --bg2: #161b22; --bg3: #1f2630;
   --fg: #e6edf3; --dim: #8b949e; --line: #2d333b;
@@ -170,3 +170,7 @@ main { flex: 1; display: flex; min-height: 0; }
 /* v2.54: в панели настроек чата платы — только связь с облаком, галочки и проверка пинга.
    Поля скрыты на уровне видимости; возможности платы (команды чата, API) не тронуты. */
 #panel [data-adv], #panel .adv{display:none !important}
+
+#neuron-activity{margin:8px 12px;padding:10px;border:1px solid #35505a;border-radius:12px}#neuron-activity summary{cursor:pointer}.neuron-live-grid{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin-top:10px}.neuron-live{border:1px solid #2d8d80;background:#15312d;border-radius:10px;padding:9px;min-width:0}.neuron-live strong,.neuron-live small{display:block;overflow:hidden;text-overflow:ellipsis}.neuron-live small{font-size:10px;white-space:nowrap}.neuron-live.offline{opacity:.4;background:transparent;border-color:#53616c}.neuron-live.spiking{animation:neuron-spike .7s ease-out}.reflection-live{font-size:11px;opacity:.8}@keyframes neuron-spike{0%{box-shadow:0 0 0 0 #45f5c8;background:#208e78}40%{box-shadow:0 0 15px 4px #45f5c870}100%{box-shadow:0 0 0 0 transparent}}@media(max-width:600px){.neuron-live-grid{grid-template-columns:repeat(4,minmax(0,1fr))}}
+
+.reflection-trace{white-space:pre-wrap;max-height:240px;overflow:auto;font-size:11px}

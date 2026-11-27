@@ -302,6 +302,22 @@ def compose(task, lang="python", try_own=True):
                 "```python\n%s\n```\n\nПроверка: %s. "
                 "Соответствие всей задаче нужно проверить отдельно." %
                 (o["n"], o["of"], o["code"], o["check"]))
+    if lang == "python" and re.search(r"app\s*lab|апп\s*лаб|кирпичик|приложени[ея] для чата", task.lower()):
+        try:                              # v3.225: вопрос про функции/кирпичики App Lab
+            import applab_guide
+            m = applab_guide.match(task, 1)
+            if m:
+                return applab_guide.compose(task)
+        except Exception:
+            pass
+    if lang == "python":                  # v3.220: проверенный шаблон из уроков программирования
+        try:
+            import codelessons
+            m = codelessons.match(task, 1)
+            if m and m[0][0] >= 0.45:
+                return codelessons.compose(task)
+        except Exception:
+            pass
     pre = ""
     if o and o.get("draft") and _free():    # v3.175: её черновик — первым
         pre = draft_text(o) + "\n\n---\n\n**Проверенный вариант:**\n\n"

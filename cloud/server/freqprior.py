@@ -28,13 +28,9 @@ def _strength_raw():
 
 
 def strength():
-    """v3.132: сила опоры дышит вместе с платами (±10 %)."""
-    v = _strength_raw()
-    try:
-        import breath as _brf
-        return max(0.0, min(3.0, _brf.mod("Опора на частоту", v, 0.10)))
-    except Exception:
-        return v
+    """Hz-to-word associations are reserved for feeling encoding."""
+    return 0.0
+
 
 def level():
     """Текущий уровень сигнала плат z (-1..+1) или None."""
@@ -47,28 +43,8 @@ def level():
 
 
 def bonus(text, z=None, s=None):
-    """-1..+1: созвучие текста текущему сигналу; 0 — нет данных."""
-    s = strength() if s is None else s
-    if s <= 0:
-        return 0.0
-    z = level() if z is None else z
-    if z is None:
-        _N["zero"] += 1
-        return 0.0
-    try:
-        import genmod
-        lv, known = genmod.word_levels(str(text)[:600])
-    except Exception:
-        return 0.0
-    ls = [x for x in lv if x is not None]
-    if known < 2 or not ls:
-        _N["zero"] += 1
-        return 0.0
-    L = sum(ls) / len(ls)
-    _N["used"] += 1
-    # совпадение уровней: 1 - |L - z| (0..1; при L=z -> 1), центр 0.5 -> 0
-    aff = max(0.0, 1.0 - abs(L - z))
-    return round(max(-1.0, min(1.0, s * (aff - 0.5) * 2.0)), 3)
+    """Never rank textual answers by oscillator frequency."""
+    return 0.0
 
 
 def status():

@@ -1,6 +1,6 @@
 /* ==========================================================================
    app.js — neuro12-cloud · фронтенд в стиле ChatGPT
-   Чат с облаком (мозг-12 без LLM), маршруты авто/облако/плата, файлы,
+   Чат с облаком (Star Gate без LLM), маршруты авто/облако/плата, файлы,
    TTS, хроника, зрение, «Мысли плат», настройки (память, KB, функции,
    учитель-LM только для обучения, голос, журнал).
    ========================================================================== */
@@ -116,6 +116,8 @@ function md(src) {
   s = s.replace(/(^|[\s(])_([^_\n]+)_(?=$|[\s).,!?])/g, '$1<i>$2</i>');
   s = s.replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g,
     '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  s = s.replace(/\[([^\]]+)\]\((\/api\/code\/project\/download\?id=[0-9a-f]{32})\)/g,
+    '<a href="$2" download style="font-weight:600">$1</a>');
   // v3.149.6: документы, созданные ИИ — карточка файла с кнопкой скачивания
   s = s.replace(/\[([^\]]+)\]\((\/api\/files\/get\/[^)\s"'<>]+)\)/g,
     function (_, label, url) {
@@ -153,8 +155,8 @@ function md(src) {
 function whoLabel(m) {
   if (m.role === 'user') return 'Вы';
   if (m.role === 'system') return 'Облако';
-  if (m.brain) return 'мозг-12 · ' + m.brain;
-  return 'мозг-12 · облако';
+  if (m.brain) return 'Star Gate · ' + m.brain;
+  return 'Star Gate · облако';
 }
 
 function renderMsg(m) {
@@ -236,6 +238,28 @@ function renderMsg(m) {
       });
     }
     bub.appendChild(acts);
+    /* v3.237: кнопки быстрого ответа (да/нет, «помогло / не помогло» после администрирования) */
+    if (Array.isArray(m.buttons) && m.buttons.length) {
+      const qb = document.createElement('div');
+      qb.className = 'msg-acts msg-quick';
+      m.buttons.forEach(label => {
+        const b = document.createElement('button');
+        b.textContent = label;
+        b.className = 'btn-quick';
+        if (m._answered) b.disabled = true;
+        b.onclick = () => {
+          if (m._answered) return;
+          m._answered = label;
+          $$('button', qb).forEach(x => { x.disabled = true; });
+          b.classList.add('rated');
+          const ta = $('#input');
+          ta.value = label;
+          send();
+        };
+        qb.appendChild(b);
+      });
+      bub.appendChild(qb);
+    }
   }
   row.appendChild(ava);
   row.appendChild(bub);
@@ -250,7 +274,7 @@ function renderChat() {
     const d = document.createElement('div');
     d.className = 'empty';
     d.innerHTML = '<div class="big">🧠</div>' +
-      '<h2>Облако «мозг-12»</h2>' +
+      '<h2>Облако «Star Gate»</h2>' +
       '<p>Спроси о чём угодно или запусти приложение App Lab — это мои навыки на Python. ' +
       'Своё приложение можно дописать в App Lab (например, для покупок в интернете).</p>' +
       '<div class="ex al-chips"><span class="mini">загружаю приложения App Lab…</span></div>';
@@ -368,8 +392,8 @@ function renderChatList() {
       ' · ' + (c.count || 0) + ' сообщ.</small>' +
       (c.kind === 'thoughts' ? '<span class="badge">лента мыслей</span>' : '') +
       '<span class="acts">' +
-      (c.kind !== 'thoughts' ? '<button data-act="ren" title="Переименовать">✎</button>' : '') +
-      (c.kind !== 'thoughts' ? '<button class="del" data-act="del" title="Удалить">🗑</button>' : '') +
+      (!['thoughts', 'admin', 'code'].includes(c.kind) ? '<button data-act="ren" title="Переименовать">✎</button>' : '') +
+      (!['thoughts', 'admin', 'code'].includes(c.kind) ? '<button class="del" data-act="del" title="Удалить">🗑</button>' : '') +
       '</span>';
     el.onclick = (ev) => {
       const act = ev.target.dataset && ev.target.dataset.act;
@@ -395,6 +419,7 @@ async function openChat(id) {
   $('#chatTitle').textContent = chatTitleFrom(S.chat);
   renderChat();
   renderChatList();
+  if (agentRunning(S.chat)) waitAgent(); else if (S.pending && S.pending.agent) { S.pending = null; typingOff(); }
 }
 
 async function newChat() {
@@ -428,7 +453,7 @@ async function send() {
   const ta = $('#input');
   const text = ta.value.trim();
   if (!text || $('#btnSend').disabled) return;
-  if (S.route === 'code' && PROJECT.project) { await runProjectTask(text); return; }
+  try { localStorage.setItem('n12_unsent', JSON.stringify({ text, chat: (S.chat && S.chat.id) || '', ts: Date.now() })); } catch (_) {}
   ta.value = ''; ta.style.height = 'auto';
   if (!S.chat || !S.chat.id) {
     // пустой чат — просто локально рисуем, id придёт из ответа
@@ -444,6 +469,9 @@ async function send() {
     if (S.route === 'code') body.lang = localStorage.getItem('n12_codelang') || '';
     if (S.chat.id) body.id = S.chat.id;
     if (S.attach) body.attach = S.attach;
+    // v3.231: агенты «Код» и «Администрирование» работают из чата — с настройками агента
+    body.agent = { internet: AGENTSET.internet, model: AGENTSET.model, effort: AGENTSET.effort, will: AGENTSET.will,
+      auto_ok: AGENTSET.autoOk, target: AGENTSET.target, mode: AGENTSET.adminMode || 'both' };
     const r = await api('/api/chat/send', { body });
     typingStop();
     if (!r || !r.ok) throw new Error((r && r.error) || 'сервер не ответил');
@@ -461,17 +489,63 @@ async function send() {
     }
     renderChat();
     if (r.pending && r.mid) waitBoard(r.mid);
+    if (r.agent) waitAgent();
     if (S.tts) playTTS(r.reply);
     refreshChats();
+    try { localStorage.removeItem('n12_unsent'); } catch (_) {}
   } catch (e) {
     typingStop();
+    // v3.228: облако могло упасть и перезапускаться — текст не теряем, чат подтянем после возврата
+    if (!ta.value.trim()) ta.value = text;
     S.chat.messages.push({ role: 'system',
-      text: 'Ошибка: ' + (e.message || 'нет связи') });
+      text: 'Ошибка: ' + (e.message || 'нет связи') + '. Ваш текст возвращён в поле ввода; жду возвращения облака и обновлю чат.' });
     renderChat();
+    waitCloudBack();
   } finally {
     $('#btnSend').disabled = false;
     S.attach = null; renderAttach();
   }
+}
+
+/* v3.228: облако упало/перезапускается — ждём /api/health и перечитываем чат (там заметка о восстановлении) */
+let _backTimer = null;
+function waitCloudBack() {
+  clearTimeout(_backTimer);
+  const t0 = Date.now();
+  const tick = async () => {
+    try {
+      const h = await fetch('/api/health', { cache: 'no-store' }).then(r => r.json());
+      if (h && h.ok && !h.starting) {
+        if (S.chat && S.chat.id) { try { await openChat(S.chat.id); } catch (_) {} }
+        return;
+      }
+    } catch (_) {}
+    if (Date.now() - t0 < 180000) _backTimer = setTimeout(tick, 3000);
+  };
+  _backTimer = setTimeout(tick, 3000);
+}
+window.addEventListener('load', () => {
+  try {
+    const u = JSON.parse(localStorage.getItem('n12_unsent') || 'null');
+    const ta = $('#input');
+    if (u && u.text && ta && !ta.value.trim() && Date.now() - u.ts < 6 * 3600 * 1000) ta.value = u.text;
+  } catch (_) {}
+});
+
+/* v3.231: агент из чата — его сообщения (ход, вопросы, итог) приходят в историю; ждём до итога */
+function waitAgent() {
+  S.pending = { agent: true, until: Date.now() + 4 * 3600 * 1000 };
+  clearTimeout(S.pollTimer);
+  typingOn('Агент работает — ход появится в чате…');
+  S.pollTimer = setTimeout(pollPending, 2000);
+}
+function agentRunning(chat) {
+  const ms = (chat && chat.messages) || [];
+  for (let i = ms.length - 1; i >= 0; i--) {
+    if (ms[i].agent_final) return false;
+    if (ms[i].agent_job || ms[i].admin_job) return !ms.slice(i + 1).some(m => m.agent_final);
+  }
+  return false;
 }
 
 /* ожидание ответа живой платы (поллинг чата) */
@@ -487,7 +561,11 @@ async function pollPending() {
     const r = await api('/api/chat/poll?id=' + encodeURIComponent(S.chat.id) +
       '&after=' + ((S.chat.messages.length &&
         S.chat.messages[S.chat.messages.length - 1].ts) || 0));
-    if (r && r.ok && r.messages && r.messages.length) {
+    if (r && r.ok && r.messages && r.messages.length && S.pending.agent) {
+      r.messages.forEach(m => S.chat.messages.push(m));
+      renderChat();
+      if (r.messages.some(m => m.agent_final)) { S.pending = null; typingOff(); return; }
+    } else if (r && r.ok && r.messages && r.messages.length) {
       r.messages.forEach(m => S.chat.messages.push(m));
       renderChat();
       S.pending = null;
@@ -496,8 +574,27 @@ async function pollPending() {
       return;
     }
   } catch (e) { /* сеть мигнула — не страшно */ }
-  if (Date.now() > S.pending.until) { S.pending = null; return; }
-  S.pollTimer = setTimeout(pollPending, 3000);
+  if (Date.now() > S.pending.until) { S.pending = null; typingOff(); return; }
+  S.pollTimer = setTimeout(pollPending, S.pending.agent ? 2000 : 3000);
+}
+
+/* v3.231: ZIP/RAR в чате — новый проект этого чата для агента «Контур» */
+async function uploadProjectToChat(f) {
+  setRoute('code');
+  if (!S.chat || !S.chat.id) {
+    const n = await api('/api/chat/new', { body: { title: 'Проект ' + f.name } });
+    if (!n || !n.ok) { toast('Не создался чат', 'err'); return; }
+    S.chat = { id: n.id, title: n.title, messages: [] };
+  }
+  toast('Загружаю и распаковываю ' + f.name + '…', 'ok');
+  const fd = new FormData(); fd.append('file', f, f.name);
+  try {
+    const r = await api('/api/code/project/upload?chat=' + encodeURIComponent(S.chat.id), { body: fd });
+    if (!r || !r.ok) throw new Error((r && r.error) || 'архив не принят');
+    await openChat(S.chat.id);
+    refreshChats();
+    $('#input').focus();
+  } catch (e) { toast('Проект не загружен: ' + e.message, 'err'); }
 }
 
 /* ------------------------------ файлы ------------------------------------ */
@@ -521,8 +618,7 @@ $('#fileInput').onchange = async (ev) => {
   if (!f) return;
   if (f.size > 60 * 1024 * 1024) { toast('Файл больше 60 МБ', 'err'); return; }
   if (/\.(zip|rar)$/i.test(f.name)) {
-    setRoute('code');
-    await uploadProject(f);
+    await uploadProjectToChat(f);
     return;
   }
   const fd = new FormData();
@@ -532,14 +628,15 @@ $('#fileInput').onchange = async (ev) => {
   const r = await api('/api/files/upload', { body: fd });
   if (r && r.ok) {
     S.attach = { name: f.name };
+    if (r.kind === 'image') S.attach.visual_context = r.description || '';
     renderAttach();
     const ta = $('#input');
     if (r.kind === 'image') {
       // v3.30: картинку облако разобрало сразу — показываем и спрашиваем
-      toast('Картинка разобрана и запомнена', 'ok');
+      toast(r.saved ? 'Фотография разобрана и сохранена' : 'Фотография разобрана; в базу не сохранена', 'ok');
       if (!S.chat) S.chat = { title: 'Новый чат', messages: [] };
       S.chat.messages.push({ role: 'user', text: '🖼 ' + f.name });
-      S.chat.messages.push({ role: 'bot', text: r.description || '', zone: 'Зрение' });
+      S.chat.messages.push({ role: 'bot', text: r.description || '', zone: 'Камера' });
       renderChat();
       ta.value = 'Что на картинке «' + f.name + '»?';
     } else {
@@ -555,6 +652,7 @@ $('#fileInput').onchange = async (ev) => {
 function setRoute(r) {
   S.route = r;
   renderProjectPanel();
+  renderAdminPanel();
   localStorage.setItem('n12_route', r);
   $$('#modeBox button').forEach(b =>
     b.classList.toggle('on', b.dataset.route === r));
@@ -563,7 +661,128 @@ function setRoute(r) {
     r === 'board' ? 'отвечает живая плата (мозг-почта)' :
     r === 'talk' ? 'разговор: пишет сам мозг, своя LLM дополняет и, если нужно, сверяет факт в интернете' :
     r === 'code' ? 'режим «Код»: ИИ-агент — задача, план, код, проверка' :
+    r === 'admin' ? 'режим «Администрирование»: агент с ядром мозга-12 и своей LLM ведёт серверы и рабочий стол' :
     'облако: тот же ИИ, что в боте МАКС';
+}
+
+/* ------------- v3.189: настройки агента «Контур» внизу чата -------------
+   Панель синхронизирована с опциями панели «Контур»: интернет, модель,
+   усилие (бюджет шагов), воля мозга-12, авто-разрешение изменений для
+   режима «Администрирование», цель по умолчанию. Панель можно свернуть
+   (стрелка) или скрыть совсем (✕), вернуть — кнопкой ⚙ над полем ввода. */
+const AGENTSET = {
+  internet: localStorage.getItem('n12_agent_internet') !== '0',
+  model: localStorage.getItem('n12_agent_model') || 'auto',
+  effort: localStorage.getItem('n12_agent_effort') || '1',
+  will: localStorage.getItem('n12_agent_will') !== '0',
+  autoOk: localStorage.getItem('n12_agent_autook') === '1',
+  target: localStorage.getItem('n12_agent_target') || '',
+  adminMode: localStorage.getItem('n12_agent_admin_mode') || 'both',
+};
+function agentSettingsSave() {
+  localStorage.setItem('n12_agent_internet', AGENTSET.internet ? '1' : '0');
+  localStorage.setItem('n12_agent_model', AGENTSET.model);
+  localStorage.setItem('n12_agent_effort', AGENTSET.effort);
+  localStorage.setItem('n12_agent_will', AGENTSET.will ? '1' : '0');
+  localStorage.setItem('n12_agent_autook', AGENTSET.autoOk ? '1' : '0');
+  localStorage.setItem('n12_agent_target', AGENTSET.target);
+  localStorage.setItem('n12_agent_admin_mode', AGENTSET.adminMode);
+}
+function agentSettingsSync() {
+  const pi = $('#projectInternet'), pm = $('#projectModel');
+  if (pi) pi.checked = AGENTSET.internet;
+  if (pm) pm.value = AGENTSET.model;
+  const as = $('#agentSetInternet'), am = $('#agentSetModel'), ae = $('#agentSetEffort'),
+    aw = $('#agentSetWill'), ao = $('#agentSetAuto'), at = $('#agentSetTarget');
+  if (as) as.checked = AGENTSET.internet;
+  if (am) am.value = AGENTSET.model;
+  if (ae) ae.value = AGENTSET.effort;
+  if (aw) aw.checked = AGENTSET.will;
+  if (ao) ao.checked = AGENTSET.autoOk;
+  if (at) at.value = AGENTSET.target;
+  const amm = $('#agentSetAdminMode'); if (amm) amm.value = AGENTSET.adminMode;
+}
+function renderAgentSettings() {
+  const d = $('#agentSet'), body = $('#agentSetBody'), chip = $('#agentSetShow');
+  if (!d || !body || !chip) return;
+  const hidden = localStorage.getItem('n12_agent_set_hide') === '1';
+  d.hidden = hidden;
+  chip.hidden = !hidden;
+  if (!hidden) d.open = localStorage.getItem('n12_agent_set_open') === '1';
+  if (body.dataset.ready) { agentSettingsSync(); return; }
+  body.dataset.ready = '1';
+  body.innerHTML =
+    '<div class="agent-set-grid">' +
+    '<label><input type="checkbox" id="agentSetInternet"> Интернет</label>' +
+    '<label>Модель <select id="agentSetModel"><option value="auto">Своя LLM + настроенная модель</option>' +
+    '<option value="own">Только своя LLM</option><option value="brain">Star Gate по инструкциям (LLM наблюдает)</option></select></label>' +
+    '<label>Усилие агента <select id="agentSetEffort"><option value="0.6">0.6× — экономно</option>' +
+    '<option value="1">1× — обычно</option><option value="1.5">1.5× — подробно</option></select></label>' +
+    '<label><input type="checkbox" id="agentSetWill"> Воля мозга-12</label>' +
+    '<label><input type="checkbox" id="agentSetAuto"> Изменения без вопросов</label>' +
+    '<label>Цель админа <select id="agentSetTarget"><option value="">— агент выберет сам —</option></select></label>' +
+    '<label>Режим админа <select id="agentSetAdminMode"><option value="both">Ядро + LLM</option>' +
+    '<option value="brain">Только ядро мозга-12</option><option value="llm">Только LLM</option></select></label>' +
+    '</div>' +
+    '<div class="mini">Проект для режима «Код» — пришлите ZIP/RAR в чат (📎): он станет проектом этого чата. ' +
+    'Задачи, ход и итог агентов сохраняются в истории чата.</div>' +
+    '<div class="mini"><button type="button" class="btn ghost sm" id="agentCourse">Обучить свою LLM коду (до 2 мин)</button> ' +
+    '<span id="agentCourseState"></span></div>' +
+    '<div class="mini">Усилие задаёт бюджет шагов агента «Контур» (6–36). «Изменения без вопросов» — ' +
+    'для режима «Администрирование»: опасные действия всё равно спрашивает. Настройки применяются к новым задачам.</div>';
+  const save = () => { agentSettingsSave(); agentSettingsSync(); };
+  $('#agentSetInternet').onchange = e => { AGENTSET.internet = e.target.checked; save(); };
+  $('#agentSetModel').onchange = e => { AGENTSET.model = e.target.value; save(); };
+  $('#agentSetEffort').onchange = e => { AGENTSET.effort = e.target.value; save(); };
+  $('#agentSetWill').onchange = e => { AGENTSET.will = e.target.checked; save(); };
+  $('#agentSetAuto').onchange = async e => {
+    AGENTSET.autoOk = e.target.checked; save();
+    try { await api('/api/admin/settings', { body: { auto_ok: AGENTSET.autoOk } }); } catch (err) {}
+  };
+  $('#agentSetTarget').onchange = e => { AGENTSET.target = e.target.value; save(); };
+  $('#agentSetAdminMode').onchange = async e => {
+    AGENTSET.adminMode = e.target.value; save();
+    try { await api('/api/admin/settings', { body: { mode: AGENTSET.adminMode } }); } catch (err) {}
+  };
+  $('#agentCourse').onclick = async () => {
+    const st = $('#agentCourseState');
+    try {
+      const r = await api('/api/code/course', { body: { steps: 200, seconds: 120, mode: 'dual' } });
+      st.textContent = r.ok ? 'курс запущен — ' + ((r.course && (r.course.message || r.course.phase)) || '') : (r.error || 'не запустился');
+    } catch (err) { st.textContent = err.message; }
+  };
+  agentSettingsSync();
+  api('/api/servers').then(r => {
+    const at = $('#agentSetTarget'); if (!at) return;
+    (r.targets || []).forEach(t => {
+      const o = document.createElement('option');
+      o.value = t.target;
+      o.textContent = (t.via === 'board' ? '📟 ' : '🗄 ') + t.name + (t.host ? ' (' + t.host + ')' : '');
+      at.appendChild(o);
+    });
+    at.value = AGENTSET.target;
+  }).catch(() => {});
+}
+function wireAgentSettings() {
+  const d = $('#agentSet');
+  if (!d) return;
+  renderAgentSettings();
+  d.addEventListener('toggle', () => {
+    if (!d.hidden) localStorage.setItem('n12_agent_set_open', d.open ? '1' : '0');
+  });
+  $('#agentSetHide').onclick = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    localStorage.setItem('n12_agent_set_hide', '1');
+    d.hidden = true;
+    $('#agentSetShow').hidden = false;
+  };
+  $('#agentSetShow').onclick = () => {
+    localStorage.setItem('n12_agent_set_hide', '0');
+    $('#agentSetShow').hidden = true;
+    renderAgentSettings();
+    d.open = true;
+    localStorage.setItem('n12_agent_set_open', '1');
+  };
 }
 
 
@@ -588,6 +807,7 @@ function startActivityTriangles() {
 function renderProjectPanel() {
   const panel = $('#projectAgent');
   if (!panel) return;
+  panel.hidden = true; return;            // v3.231: агент работает из чата и «Настроек агента»
   panel.hidden = S.route !== 'code';
   if (panel.dataset.ready) { if (S.route === 'code') pollBrainWill(); return; }
   panel.dataset.ready = '1';
@@ -601,7 +821,7 @@ function renderProjectPanel() {
     '<div id="projectName" class="mini">Загрузите проект и опишите задачу в поле сообщения ниже.</div>' +
     '<div class="project-options"><label><input type="checkbox" id="projectInternet" checked> Интернет</label>' +
     '<label>Модель <select id="projectModel"><option value="auto">Своя LLM + настроенная модель</option>' +
-    '<option value="own">Только своя LLM</option></select></label></div>' +
+    '<option value="own">Только своя LLM</option><option value="brain">Star Gate по инструкциям (LLM наблюдает)</option></select></label></div>' +
     '<details class="agent-status" id="projectStatus" hidden><summary>' + triangleMarkup() +
     '<span id="projectStatusText" role="status">Ожидаю задачу</span><span class="mini">Действия</span></summary>' +
     '<ol id="projectEvents" class="agent-events"></ol></details>' +
@@ -643,6 +863,9 @@ function renderProjectPanel() {
   };
   try { PROJECT.project = JSON.parse(localStorage.getItem('n12_code_project') || 'null'); } catch (e) {}
   if (PROJECT.project) showProjectName();
+  $('#projectInternet').onchange = e => { AGENTSET.internet = e.target.checked; agentSettingsSave(); agentSettingsSync(); };
+  $('#projectModel').onchange = e => { AGENTSET.model = e.target.value; agentSettingsSave(); agentSettingsSync(); };
+  agentSettingsSync();
   $('#courseStart').onclick = async () => {
     if (PROJECT.busy) return toast('Сначала дождитесь завершения задачи агента', 'err');
     $('#courseStart').disabled = true;
@@ -785,7 +1008,8 @@ async function runProjectTask(task) {
   try {
     const r = await api('/api/code/project/run', { body: {
       project_id: PROJECT.project.id, task, base_job: PROJECT.project.last_job || '',
-      internet: $('#projectInternet').checked, model: $('#projectModel').value,
+      internet: AGENTSET.internet, model: AGENTSET.model,
+      effort: AGENTSET.effort, will: AGENTSET.will,
     } });
     if (!r.ok) throw new Error(r.error || 'Задача не принята');
     PROJECT.jobId = r.id;
@@ -855,6 +1079,360 @@ async function pollProject() {
     $('#projectStatusText').textContent = 'Статус недоступен: ' + e.message + '. Повторяю запрос…';
   }
   PROJECT.timer = setTimeout(pollProject, 1500);
+}
+
+/* ------------- v3.189: режим «Администрирование» -------------
+   Агент с ядром мозга-12 и своей LLM (переключатель режимов) ведёт
+   серверы, платы и рабочий стол ПК. Ниже — те же инструменты, что в
+   окне «Серверы»: цели, консоль, код на сервере, ключ облака, журнал,
+   плюс живой снимок рабочего стола и зрение плат. */
+const ADMIN = { jobId: null, timer: null, busy: false, mode: 'both', targets: [] };
+function renderAdminPanel() {
+  const panel = $('#adminAgent');
+  if (!panel) return;
+  panel.hidden = true; return;            // v3.231: агент работает из чата и «Настроек агента»
+  panel.hidden = S.route !== 'admin';
+  if (panel.dataset.ready) { if (S.route === 'admin') adminLoad(); return; }
+  panel.dataset.ready = '1';
+  panel.innerHTML =
+    '<div class="project-toolbar"><b>🗄 Администрирование · агент с ядром мозга-12 и своей LLM</b></div>' +
+    '<div class="adm-modes" id="admModes">' +
+    '<label><input type="radio" name="admMode" value="both"> Ядро + LLM</label>' +
+    '<label><input type="radio" name="admMode" value="brain"> Только ядро</label>' +
+    '<label><input type="radio" name="admMode" value="llm"> Только LLM</label>' +
+    '<span class="mini" id="admCaps"></span></div>' +
+    '<div class="mini">Ядро: воля мозга-12 задаёт бюджет шагов, правила ведут агента без модели. LLM: настроенная модель планирует действия, своя LLM добавляет заметку. Опишите задачу в поле сообщения ниже.</div>' +
+    '<div class="project-options"><label>Цель <select id="admTarget"><option value="">— агент выберет сам —</option></select></label>' +
+    '<label><input type="checkbox" id="admAuto"> изменения без вопросов (опасные — всегда спросит)</label></div>' +
+    '<details class="agent-status" id="admStatus" hidden><summary>' + triangleMarkup() +
+    '<span id="admStatusText" role="status">Ожидаю задачу</span><span class="mini">Действия</span></summary>' +
+    '<ol id="admEvents" class="agent-events"></ol></details>' +
+    '<div id="admPending"></div>' +
+    '<div id="admShot" class="adm-shot" hidden></div>' +
+    '<div id="admResult" class="project-result" hidden></div>' +
+    '<details class="adm-block"><summary>🖥 Рабочий стол ПК</summary><div id="admDesk" class="mini">Смотрю…</div></details>' +
+    '<details class="adm-block"><summary>⌨ Консоль</summary>' +
+    '<div class="frow"><div class="fgroup" style="flex:1"><select id="admTg"><option value="">— выберите цель —</option></select></div></div>' +
+    '<div style="display:flex;gap:6px"><input type="text" id="admCmd" style="flex:1" placeholder="uptime; df -h"><button class="btn" id="admRun">Выполнить</button></div>' +
+    '<pre id="admOut" style="max-height:220px;overflow:auto;white-space:pre-wrap;font-size:12px;margin-top:6px"></pre></details>' +
+    '<details class="adm-block"><summary>🧩 Код на сервере</summary>' +
+    '<div class="mini">Попросите мозг написать код (раздел «Код»: своя LLM, модель, примеры), проверьте и запишите на цель.</div>' +
+    '<div class="frow"><div class="fgroup" style="flex:1"><select id="admTg3"><option value="">— выберите цель —</option></select></div>' +
+    '<div class="fgroup" style="flex:2"><input type="text" id="admPath" value="~/neuro12-agent/task.py"></div></div>' +
+    '<div style="display:flex;gap:6px;margin-bottom:4px"><input type="text" id="admAsk" style="flex:1" placeholder="что должен делать код"><button class="btn" id="admGen">✨ Написать</button></div>' +
+    '<textarea id="admCode" rows="8" style="width:100%;font-family:monospace;font-size:12px"></textarea>' +
+    '<button class="btn" id="admWrite">💾 Записать</button> <button class="btn" id="admWriteRun">▶ Записать и запустить</button>' +
+    '<pre id="admCodeOut" style="max-height:200px;overflow:auto;white-space:pre-wrap;font-size:12px"></pre></details>' +
+    '<details class="adm-block"><summary>🔑 Ключ облака</summary><div id="admKey" class="mini">Смотрю…</div></details>' +
+    '<details class="adm-block"><summary>📷 Зрение плат</summary><div id="admVision" class="mini">Смотрю…</div></details>' +
+    '<details class="adm-block"><summary>📜 Журнал команд</summary><div id="admHist" class="mini">Смотрю…</div></details>';
+  $$('input[name="admMode"]', panel).forEach(r => r.onchange = async () => {
+    ADMIN.mode = r.value;
+    try { await api('/api/admin/settings', { body: { mode: ADMIN.mode } }); } catch (e) {}
+    adminCaps();
+  });
+  $('#admAuto').onchange = async e => {
+    AGENTSET.autoOk = e.target.checked; agentSettingsSave(); agentSettingsSync();
+    try { await api('/api/admin/settings', { body: { auto_ok: AGENTSET.autoOk } }); } catch (err) {}
+  };
+  /* консоль и код на сервере — те же инструменты, что в окне «Серверы» */
+  const admRunCmd = async (confirmed) => {
+    const cmd = $('#admCmd').value.trim(); if (!cmd) return;
+    $('#admOut').textContent = '⏳ ' + cmd;
+    const x = await api('/api/servers', { body: { action: 'exec', target: $('#admTg').value, command: cmd, confirmed } }).catch(e => ({ ok: false, error: e.message }));
+    if (x.need_confirm) {
+      if (confirm((x.kind === 'danger' ? '⚠ ОПАСНАЯ команда' : 'Команда меняет систему') + ':\n' + cmd + '\n\nВыполнить?')) return admRunCmd(true);
+      $('#admOut').textContent = 'отменено'; return;
+    }
+    $('#admOut').textContent = '$ ' + cmd + '\n' + (x.out || x.error || '') +
+      (x.code != null && x.code !== 0 ? '\n[код выхода ' + x.code + ']' : '');
+    api('/api/servers').then(r => adminHistory(r.history || [])).catch(() => {});
+  };
+  $('#admRun').onclick = () => admRunCmd(false);
+  $('#admCmd').onkeydown = e => { if (e.key === 'Enter') admRunCmd(false); };
+  $('#admGen').onclick = async () => {
+    const ask = $('#admAsk').value.trim(); if (!ask) return;
+    $('#admCodeOut').textContent = '⏳ мозг пишет код…';
+    const lang = /\.sh$/.test($('#admPath').value) ? 'bash' : 'python';
+    const x = await api('/api/code/write', { body: { task: ask, lang } }).catch(e => ({ ok: false, error: e.message }));
+    const m = /```[\w+#.-]*\s*\n([\s\S]*?)```/.exec(x.reply || x.text || '');
+    if (m) { $('#admCode').value = m[1]; $('#admCodeOut').textContent = (x.reply || '').replace(m[0], '').trim().slice(0, 600); }
+    else $('#admCodeOut').textContent = x.reply || x.error || 'кода нет';
+  };
+  const admWr = async (runIt) => {
+    $('#admCodeOut').textContent = '⏳';
+    const x = await api('/api/servers', { body: { action: 'write', target: $('#admTg3').value, path: $('#admPath').value.trim(), content: $('#admCode').value, run: runIt } }).catch(e => ({ ok: false, error: e.message }));
+    $('#admCodeOut').textContent = (x.written ? 'записано: ' + x.written + '\n' : '') + (x.out || x.error || '') + (x.code ? '\n[код выхода ' + x.code + ']' : '');
+  };
+  $('#admWrite').onclick = () => { if (confirm('Записать файл на сервер?')) admWr(false); };
+  $('#admWriteRun').onclick = () => { if (confirm('Записать и запустить код на сервере?')) admWr(true); };
+  adminLoad();
+  const saved = localStorage.getItem('n12_admin_job');
+  if (saved && !ADMIN.jobId) { ADMIN.jobId = saved; pollAdmin(); }
+}
+async function adminLoad() {
+  /* цели, настройки по умолчанию, возможности — раз при показе панели */
+  try {
+    const [rs, ra] = await Promise.all([api('/api/servers'), api('/api/admin/agent').catch(() => null)]);
+    const ts = (rs && rs.targets) || [];
+    ADMIN.targets = ts;
+    if (ra && ra.mode) ADMIN.mode = ra.mode;
+    if (ra && ra.auto_ok != null && localStorage.getItem('n12_agent_autook') == null) {
+      AGENTSET.autoOk = !!ra.auto_ok; agentSettingsSave(); agentSettingsSync();
+    }
+    $$('input[name="admMode"]').forEach(r => { r.checked = r.value === ADMIN.mode; });
+    $('#admAuto').checked = AGENTSET.autoOk;
+    const opt = '<option value="">— выберите цель —</option>' + ts.map(t =>
+      '<option value="' + esc(t.target) + '">' + esc((t.via === 'board' ? '📟 ' : '🗄 ') + t.name +
+        (t.host ? ' (' + t.host + ')' : '')) + '</option>').join('');
+    ['#admTarget', '#admTg', '#admTg3'].forEach(s => {
+      const el = $(s); if (!el) return;
+      const v = el.value || AGENTSET.target;
+      el.innerHTML = s === '#admTarget' ? '<option value="">— агент выберет сам —</option>' + opt.slice(opt.indexOf('</option>') + 9) : opt;
+      if (v) el.value = v;
+    });
+    $('#admTarget').value = AGENTSET.target || '';
+    adminCaps();
+    adminHistory(rs.history || []);
+    adminKey(rs.key || {});
+    adminVision();
+    renderAdminDesk();
+  } catch (e) {
+    const c = $('#admCaps'); if (c) c.textContent = 'нет связи: ' + e.message;
+  }
+}
+async function adminCaps() {
+  const el = $('#admCaps'); if (!el) return;
+  try {
+    const r = await api('/api/admin/settings');
+    const c = r.caps || {};
+    el.textContent = 'модель: ' + (c.ext_model ? 'настроена' : 'не настроена') +
+      ' · своя LLM: ' + (c.own_llm ? 'готова' : 'не готова') +
+      ' · рабочий стол: ' + (c.desktop ? 'включён' : 'выключен');
+  } catch (e) { el.textContent = ''; }
+}
+function adminHistory(items) {
+  const box = $('#admHist'); if (!box) return;
+  box.innerHTML = (items || []).map(x => '<div class="mini">' +
+    new Date((x.ts || 0) * 1000).toLocaleString('ru') + ' · ' + esc(x.server || '') +
+    ' · <code>' + esc(x.cmd || '') + '</code> → ' + esc(String(x.code)) + '</div>').join('') ||
+    '<span class="muted">пусто</span>';
+}
+async function adminKey(k) {
+  const box = $('#admKey'); if (!box) return;
+  if (k.ok) {
+    box.innerHTML = '<div class="mini">Положи строку в <code>~/.ssh/authorized_keys</code> сервера:</div>' +
+      '<textarea readonly style="width:100%;height:52px;font-size:12px">' + esc(k.pub) + '</textarea>' +
+      '<div class="mini">Одной командой на сервере:</div>' +
+      '<textarea readonly style="width:100%;height:52px;font-size:12px">' + esc(k.hint) + '</textarea>';
+  } else {
+    box.innerHTML = '<div class="mini">Ключа ещё нет. ' + esc(k.missing ? '' : (k.error || '')) + '</div>' +
+      '<button class="btn" id="admKeyGo">Создать ключ облака</button>';
+    const b = $('#admKeyGo');
+    if (b) b.onclick = async () => {
+      const x = await api('/api/servers', { body: { action: 'key' } });
+      if (!x.ok) toast(x.error || 'ошибка', 'err');
+      adminLoad();
+    };
+  }
+}
+async function adminVision() {
+  const box = $('#admVision'); if (!box) return;
+  try {
+    const [rc, rb] = await Promise.all([api('/api/vision/cams'), api('/api/vision/buffer?limit=6')]);
+    const cams = (rc && rc.cams) || [];
+    if (!cams.length) { box.innerHTML = '<span class="muted">кадров пока нет — плата ещё не прислала ни одного кадра</span>'; return; }
+    let h = cams.map(c => '<div class="kv"><span>📷 ' + esc(c.cam) + '</span><b>' +
+      (c.ts ? 'кадр ' + Math.max(0, Math.round(Date.now() / 1000 - c.ts)) + ' с назад' : 'нет кадров') +
+      (c.broken ? ' · 🧩 последний битый' : '') +
+      (c.broken_n ? ' · битых в последних 24: ' + c.broken_n : '') + '</b></div>' +
+      (c.bad_why ? '<div class="mini">причина: ' + esc(c.bad_why) + '</div>' : '')).join('');
+    const items = (rb && rb.items) || [];
+    if (items.length) h += '<div class="mini" style="margin-top:6px">Последние кадры:</div><div class="adm-strip">' +
+      items.map(b => b.file ? '<figure' + (b.broken ? ' class="broken"' : '') + '><img loading="lazy" src="/api/vision/frame.jpg?cam=' +
+        encodeURIComponent(b.cam) + '&f=' + encodeURIComponent(b.file) + '" alt="кадр">' +
+        '<figcaption class="mini">' + esc(b.cam) + (b.broken ? ' · 🧩 ' + esc(b.why || 'битый') : '') + '</figcaption></figure>' : '').join('') + '</div>';
+    box.innerHTML = h;
+    $$('.adm-strip img', box).forEach(im => im.onerror = () => {
+      const fig = im.closest('figure');
+      if (!fig) return;
+      fig.classList.add('noimg');
+      im.replaceWith(Object.assign(document.createElement('span'),
+        { className: 'mini', textContent: 'кадр не открылся' }));
+    });
+  } catch (e) { box.textContent = 'зрение недоступно: ' + e.message; }
+}
+async function renderAdminDesk() {
+  const box = $('#admDesk'); if (!box || S.route !== 'admin') return;
+  let r;
+  try { r = await api('/api/desktop'); } catch (e) { box.textContent = 'нет связи: ' + e.message; return; }
+  if (!r || !r.ok) {
+    box.innerHTML = '<span class="muted">Рабочий стол недоступен: ' + esc((r && r.error) || 'нет доступа') +
+      '. Включите «Терминал и рабочий стол» в ⚙ Настройки → Общие.</span>';
+    return;
+  }
+  const kb = ['Enter', 'Esc', 'Tab', 'Win', 'Alt+Tab', 'Ctrl+C', 'Ctrl+V', 'Win+D'];
+  box.innerHTML =
+    '<div class="desk-bar mini">экран ' + r.screen.w + '×' + r.screen.h + ' · клик по снимку — клик мышью, правый клик — контекстное меню, колесо — прокрутка</div>' +
+    '<div class="desk-screen"><img id="admDeskImg" alt="рабочий стол" draggable="false"><div class="desk-dot" id="admDeskDot"></div></div>' +
+    '<div class="desk-row"><input id="admDeskText" placeholder="Текст — напечатать в активное окно" style="flex:1">' +
+    '<button class="btn" id="admDeskType">Напечатать</button></div>' +
+    '<div class="desk-row desk-keys">' + kb.map(k => '<button class="btn ghost sm" data-ak="' + k + '">' + k + '</button>').join('') +
+    '<input id="admDeskCombo" placeholder="своя: ctrl+shift+esc" style="width:150px"><button class="btn ghost sm" id="admDeskComboGo">Нажать</button></div>' +
+    '<div class="desk-row"><input id="admDeskOpen" placeholder="Открыть: notepad, calc, https://ya.ru" style="flex:1">' +
+    '<button class="btn" id="admDeskOpenGo">Открыть</button></div>' +
+    '<div class="desk-wins" id="admDeskWins" style="margin-top:8px"></div>';
+  const img = $('#admDeskImg');
+  const shot = () => new Promise(res => {
+    const n = new Image();
+    n.onload = () => { img.src = n.src; res(true); };
+    n.onerror = () => res(false);
+    n.src = '/api/desktop?shot=1&w=' + Math.min(1920, Math.round(img.clientWidth * (devicePixelRatio || 1)) || 1200) + '&t=' + Date.now();
+  });
+  const act = async (b, then = true) => {
+    const x = await api('/api/desktop', { body: b });
+    if (x && !x.ok) toast(x.error || 'не получилось', 'err');
+    if (then) setTimeout(shot, 350);
+    return x;
+  };
+  const frac = (e) => {
+    const rc = img.getBoundingClientRect();
+    return { fx: (e.clientX - rc.left) / rc.width, fy: (e.clientY - rc.top) / rc.height };
+  };
+  const dot = (e) => {
+    const d = $('#admDeskDot'), pr = img.parentElement.getBoundingClientRect();
+    d.style.left = (e.clientX - pr.left) + 'px'; d.style.top = (e.clientY - pr.top) + 'px';
+    d.classList.remove('go'); void d.offsetWidth; d.classList.add('go');
+  };
+  let clickT = null;
+  img.onclick = (e) => { const f = frac(e); dot(e); clearTimeout(clickT); clickT = setTimeout(() => act(Object.assign({ act: 'click' }, f)), 240); };
+  img.ondblclick = (e) => { clearTimeout(clickT); dot(e); act(Object.assign({ act: 'click', double: true }, frac(e))); };
+  img.oncontextmenu = (e) => { e.preventDefault(); dot(e); act(Object.assign({ act: 'click', button: 'right' }, frac(e))); };
+  let wheelT = null, wheelSum = 0;
+  img.onwheel = (e) => {
+    e.preventDefault(); wheelSum += e.deltaY > 0 ? -1 : 1;
+    clearTimeout(wheelT);
+    wheelT = setTimeout(async () => {
+      const f = frac(e); await act(Object.assign({ act: 'move' }, f), false);
+      act({ act: 'scroll', dy: wheelSum * 3 }); wheelSum = 0;
+    }, 160);
+  };
+  $('#admDeskType').onclick = () => { const t = $('#admDeskText').value; if (t) { act({ act: 'type', text: t }); $('#admDeskText').value = ''; } };
+  $('#admDeskText').onkeydown = (e) => { if (e.key === 'Enter') $('#admDeskType').click(); };
+  $$('[data-ak]', box).forEach(b => b.onclick = () => act({ act: 'key', keys: b.dataset.ak.toLowerCase() }));
+  $('#admDeskComboGo').onclick = () => { const k = $('#admDeskCombo').value.trim(); if (k) act({ act: 'key', keys: k }); };
+  $('#admDeskOpenGo').onclick = () => { const t = $('#admDeskOpen').value.trim(); if (t) act({ act: 'open', target: t }).then(() => setTimeout(shot, 1500)); };
+  $('#admDeskOpen').onkeydown = (e) => { if (e.key === 'Enter') $('#admDeskOpenGo').click(); };
+  try {
+    const x = await api('/api/desktop', { body: { act: 'windows' } });
+    const ws = (x && x.windows) || [];
+    const wins = $('#admDeskWins');
+    wins.innerHTML = ws.length ? '' : '<span class="mini">окон не нашёл</span>';
+    ws.slice(0, 20).forEach(w => {
+      const b = document.createElement('button');
+      b.className = 'btn ghost sm'; b.textContent = w.title.slice(0, 60); b.title = w.title;
+      b.onclick = () => act({ act: 'focus', id: w.id });
+      wins.appendChild(b);
+    });
+  } catch (e) {}
+  await shot();
+}
+async function runAdminTask(task) {
+  if (ADMIN.busy) return;
+  ADMIN.busy = true;
+  $('#admStatus').hidden = false;
+  $('#admStatus').classList.remove('finished');
+  $('#admStatusText').textContent = 'Передаю задачу агенту…';
+  $('#admResult').hidden = true;
+  $('#admPending').textContent = '';
+  $('#admEvents').textContent = '';
+  const mode = ADMIN.mode || 'both';
+  try {
+    const r = await api('/api/admin/agent', { body: {
+      action: 'start', task, mode,
+      target: ($('#admTarget') && $('#admTarget').value) || '',
+      auto_ok: AGENTSET.autoOk,
+    } });
+    if (!r.ok) throw new Error(r.error || 'Задача не принята');
+    ADMIN.jobId = r.job_id;
+    localStorage.setItem('n12_admin_job', r.job_id);
+    $('#input').value = ''; $('#input').style.height = 'auto';
+    pollAdmin();
+  } catch (e) {
+    $('#admStatusText').textContent = 'Не удалось запустить: ' + e.message;
+    $('#admStatus').classList.add('finished');
+  } finally { ADMIN.busy = false; }
+}
+function adminStepTitle(a) {
+  if (a.tool === 'desk') return 'стол: ' + (a.act || '?') + (a.text ? ' «' + String(a.text).slice(0, 40) + '»' : '') +
+    (a.keys ? ' ' + a.keys : '') + (a.target ? ' ' + a.target : '') +
+    (a.fx != null && a.fy != null ? ' (' + Number(a.fx).toFixed(2) + ', ' + Number(a.fy).toFixed(2) + ')' : '');
+  if (a.tool === 'shot') return 'снимок рабочего стола';
+  if (a.tool === 'vision') return 'зрение плат';
+  return (a.server ? a.server + ': ' : '') + (a.command || a.path || a.tool || '');
+}
+async function pollAdmin() {
+  clearTimeout(ADMIN.timer);
+  const id = ADMIN.jobId;
+  if (!id || S.route !== 'admin') return;
+  const r = await api('/api/admin/agent?id=' + encodeURIComponent(id)).catch(() => null);
+  const j = r && r.job;
+  if (!j) {
+    localStorage.removeItem('n12_admin_job');
+    ADMIN.jobId = null;
+    $('#admStatus').hidden = false;
+    $('#admStatus').classList.add('finished');
+    $('#admStatusText').textContent = 'Задание не найдено (облако перезапускалось)';
+    return;
+  }
+  $('#admStatus').hidden = false;
+  $('#admStatus').classList.toggle('finished', !(j.status === 'работает' || j.status === 'ждёт разрешения'));
+  $('#admStatusText').textContent = j.status + ' · ' + (j.planner || '') +
+    (j.will && j.will.connected ? ' · воля: ×' + j.will.agent_strength : '');
+  $('#admEvents').textContent = '';
+  (j.steps || []).forEach(s => {
+    const a = s.act || {}, res = s.result || {};
+    const li = document.createElement('li');
+    const t = document.createElement('div');
+    t.textContent = new Date(s.ts * 1000).toLocaleTimeString() + ' · ' + (res.ok ? '✓' : '✗') + ' ' +
+      (a.tool || '') + ' · ' + adminStepTitle(a);
+    li.appendChild(t);
+    const out = String(res.out || res.error || '').slice(-1600);
+    if (out) { const pre = document.createElement('pre'); pre.textContent = out; li.appendChild(pre); }
+    $('#admEvents').appendChild(li);
+  });
+  $('#admPending').textContent = '';
+  if (j.pending) {
+    const a = j.pending.act || {};
+    $('#admPending').innerHTML = '<div class="card" style="border:1px solid ' +
+      (j.pending.kind === 'danger' ? '#e55' : '#ca4') + ';padding:8px;margin:6px 0">' +
+      (j.pending.kind === 'danger' ? '⚠ ' : '❓ ') + esc(j.pending.why) + ':<pre style="white-space:pre-wrap">' +
+      esc(a.command || adminStepTitle(a) || a.tool) +
+      (a.content ? '\n' + String(a.content).slice(0, 1200) : '') + '</pre>' +
+      '<button class="btn" id="admYes">✅ Разрешить</button> <button class="btn" id="admNo">❌ Отклонить</button></div>';
+    const dec = yes => api('/api/admin/agent', { body: { action: 'approve', id: j.id, yes } }).then(pollAdmin);
+    $('#admYes').onclick = () => dec(true);
+    $('#admNo').onclick = () => dec(false);
+  }
+  const shots = (j.steps || []).filter(s => s.act && s.act.tool === 'shot' && s.result && s.result.file);
+  if (shots.length) {
+    const f = shots[shots.length - 1].result.file;
+    $('#admShot').hidden = false;
+    $('#admShot').innerHTML = '<img loading="lazy" src="/api/desktop?shot=' + encodeURIComponent(f) + '" alt="снимок рабочего стола" style="max-width:100%;border-radius:10px;border:1px solid var(--line)">';
+  }
+  if (j.result) {
+    const res = $('#admResult');
+    res.hidden = false; res.textContent = '';
+    const p = document.createElement('p'); p.textContent = j.result; res.appendChild(p);
+    if (j.own_note) {
+      const n = document.createElement('p'); n.className = 'mini';
+      n.textContent = 'Своя LLM: ' + j.own_note; res.appendChild(n);
+    }
+    const m = document.createElement('p'); m.className = 'mini';
+    m.textContent = 'Режим: ' + (j.mode || '') + (j.will ? ' · ' + (j.will.source || '') : '');
+    res.appendChild(m);
+  }
+  if (j.status === 'работает' || j.status === 'ждёт разрешения') ADMIN.timer = setTimeout(pollAdmin, 1500);
 }
 
 /* ------------------- v3.150: рабочий стол компьютера ------------------- */
@@ -1155,7 +1733,7 @@ async function renderVision(quiet) {
   const box = $('#visionBox');
   if (!quiet) box.innerHTML = '<div class="typing"><i></i><i></i><i></i></div>';
   const [rc, rb] = await Promise.all([api('/api/vision/cams'),
-    api('/api/vision/buffer?limit=8')]);
+    api('/api/vision/buffer?limit=12')]);
   const cams = (rc && rc.cams) || [];
   const buf = (rb && rb.items) || [];
   /* v3.130: пока раздел открыт — кадр обновляется сам каждые 4 с */
@@ -1200,16 +1778,36 @@ async function renderVision(quiet) {
   box.innerHTML = '';
   box.appendChild(grid);
   if (buf.length) {
+    /* v3.189: лента последних кадров — целые и БИТЫЕ (с значком и причиной).
+       Кадры лежат файлами в кольце камеры (/api/vision/frame.jpg), старые
+       записи без файла показываются строкой, как раньше. */
     const card = document.createElement('div');
     card.className = 'card';
-    card.innerHTML = '<h3>Буфер детекций</h3>';
-    buf.forEach(b => {
-      card.innerHTML += '<div class="kv"><span>' + esc(b.cam) + ' · ' +
-        esc(b.src || '') + ' · ' +
-        new Date((b.ts || 0) * 1000).toLocaleTimeString('ru') +
-        '</span><b>' + esc((b.names || []).join(', ') || '—') + '</b></div>';
-    });
+    const brkTotal = buf.filter(b => b.broken).length;
+    card.innerHTML = '<h3>Буфер детекций · лента кадров' +
+      (brkTotal ? ' · 🧩 битых в ленте: ' + brkTotal : '') + '</h3>' +
+      '<div class="camstrip">' +
+      buf.map(b => b.file ?
+        '<figure class="framethumb' + (b.broken ? ' broken' : '') + '">' +
+        '<img loading="lazy" src="/api/vision/frame.jpg?cam=' + encodeURIComponent(b.cam) +
+        '&f=' + encodeURIComponent(b.file) + '" alt="кадр ' + esc(b.cam) + '">' +
+        '<figcaption><span>' + esc(b.cam) + ' · ' + new Date((b.ts || 0) * 1000).toLocaleTimeString('ru') + '</span>' +
+        (b.broken ? '<span class="why">🧩 ' + esc(b.why || 'битый/неполный') + '</span>' : '') +
+        '<span class="names">' + esc((b.names || []).join(', ') || '—') + '</span></figcaption></figure>' :
+        '<figure class="framethumb noimg"><figcaption><span>' + esc(b.cam) + ' · ' +
+        new Date((b.ts || 0) * 1000).toLocaleTimeString('ru') + '</span><span class="names">' +
+        esc((b.names || []).join(', ') || '—') + (b.broken ? ' · 🧩 битый' : '') + '</span></figcaption></figure>').join('') +
+      '</div>';
     box.appendChild(card);
+    /* кадр может не открываться в браузере (например, без Pillow) — вместо
+       сломанной иконки показываем подпись с причиной */
+    $$('.camstrip img', card).forEach(im => im.onerror = () => {
+      const fig = im.closest('figure');
+      if (!fig) return;
+      fig.classList.add('noimg');
+      im.replaceWith(Object.assign(document.createElement('span'),
+        { className: 'mini', textContent: 'кадр не открылся в браузере' }));
+    });
   }
 }
 
@@ -1218,6 +1816,71 @@ const AL = { apps: [], cur: null, guide: null };
 const AL_TEMPLATE = "# Приложение App Lab: python/main.py\n# run(text, ctx) получает фразу из чата и возвращает ответ строкой.\n# ctx — настоящие функции облака (справка — кнопка «Инструкция и API»).\n\ndef run(text, ctx):\n    hits = ctx.web.search(text, 5)\n    if not hits:\n        return \"Ничего не нашла по «%s».\" % text\n    return \"\\n\".join(\"• %s — %s\" % (h[\"title\"], h[\"url\"]) for h in hits)\n";
 
 function alEsc(t) { return String(t == null ? '' : t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+/* v3.234: инструмент кирпичиков — свой кирпичик (с тестом), автогенерация шаблонов-цепочек, приложение из шаблона */
+const BRICK_TPL = {
+  id: 'only_errors', title: 'Только строки с ошибками', stage: 3, in: 'lines', out: 'lines', words: 'ошибк, error, сбой',
+  code: 'def b_only_errors(x, ctx):\n    """Строки -> только строки с ошибками."""\n    return [s for s in x if "error" in s.lower() or "ошибк" in s.lower()]\n',
+  test: 'assert b_only_errors(["ok", "ERROR disk"], None) == ["ERROR disk"]\n',
+  sample: 'ok 1\nERROR disk full\nok 2'
+};
+async function drawBricks() {
+  const box = $('#alBricks');
+  if (!box) return;
+  let lib = {}, tpl = {};
+  try { lib = await api('/api/bricks'); tpl = await api('/api/bricks?templates=1'); } catch (e) { box.textContent = e.message; return; }
+  const ts = tpl.templates || [], bs = lib.bricks || [];
+  box.innerHTML =
+    '<div class="frow" style="gap:6px;flex-wrap:wrap;margin:8px 0">' +
+    '<button class="btn" id="brNew">＋ Новый кирпичик</button>' +
+    '<button class="btn ghost" id="brGen">⚙ Сгенерировать шаблоны</button>' +
+    '<span>кирпичиков: ' + bs.length + ' · шаблонов: ' + ts.length + '</span></div>' +
+    '<div id="brForm"></div>' +
+    '<div><b>Кирпичики</b> (этап · вход → выход · откуда)</div>' +
+    bs.map(b => '<div>• <code>b_' + alEsc(b.id) + '</code> ' + alEsc(b.title) + ' · ' + b.stage + ' · ' + alEsc(b.in.join('/')) + ' → ' + alEsc(b.out) +
+      ' · ' + alEsc(b.origin) + (String(b.origin).startsWith('свой') ? ' <a href="#" data-brdel="' + alEsc(b.id) + '">удалить</a>' : '') + '</div>').join('') +
+    '<div style="margin-top:10px"><b>Шаблоны-цепочки</b> (собраны и проверены на образцах; 🔌 — аппаратный уровень)</div>' +
+    (ts.length ? ts.slice(0, 60).map(t => '<div>• ' + alEsc(t.title) + (t.hw ? ' 🔌' : '') +
+      ' <a href="#" data-tplapp="' + alEsc(t.id) + '">→ в App Lab</a></div>').join('') : '<div>Шаблонов нет — нажмите «Сгенерировать шаблоны».</div>');
+  $('#brGen').onclick = async () => {
+    const r = await api('/api/bricks', { body: { action: 'autogen' } }).catch(e => ({ ok: false, error: e.message }));
+    toast(r.ok ? 'Шаблонов: ' + r.made + ' из ' + r.tried + ' проверенных цепочек' : r.error, r.ok ? 'ok' : 'err'); drawBricks();
+  };
+  $$('[data-brdel]', box).forEach(a => a.onclick = async e => {
+    e.preventDefault();
+    if (!confirm('Удалить кирпичик b_' + a.dataset.brdel + '?')) return;
+    await api('/api/bricks', { body: { action: 'delete', id: a.dataset.brdel } }); drawBricks();
+  });
+  $$('[data-tplapp]', box).forEach(a => a.onclick = async e => {
+    e.preventDefault();
+    const r = await api('/api/bricks', { body: { action: 'template_app', id: a.dataset.tplapp } }).catch(er => ({ ok: false, error: er.message }));
+    toast(r.ok ? r.text : r.error, r.ok ? 'ok' : 'err'); if (r.ok) renderAppLab();
+  });
+  $('#brNew').onclick = () => {
+    const f = $('#brForm'), d = BRICK_TPL;
+    const inp = (id, lab, v) => '<div class="fgroup"><label>' + lab + '</label><input id="' + id + '" value="' + alEsc(String(v)) + '"></div>';
+    f.innerHTML = '<div class="fgroup" style="border:1px solid var(--line,#334);padding:8px;border-radius:10px">' +
+      '<div class="hint">Кирпичик — функция <code>b_&lt;id&gt;(x, ctx)</code>. Этап: 1 разбор, 2 извлечение, 3 фильтр, 4 подсчёт, 5 сравнение, 6 оформление, 7 действие. ' +
+      'Типы: text, lines, records, list, counts, report. По «словам задачи» мозг ставит кирпичик в цепочки. ' +
+      'Аппаратный уровень — <code>ctx.boards.hw("w D7 1; a A5")</code> (свободные выводы D5, D7 и A5).</div>' +
+      inp('brId', 'id (латиница)', d.id) + inp('brTitle', 'Название', d.title) + inp('brStage', 'Этап (1–7)', d.stage) +
+      inp('brIn', 'Вход (через запятую)', d.in) + inp('brOut', 'Выход', d.out) + inp('brWords', 'Слова задачи (через запятую)', d.words) +
+      '<div class="fgroup"><label>Код</label><textarea id="brCode" rows="8" style="width:100%;font-family:monospace">' + alEsc(d.code) + '</textarea></div>' +
+      '<div class="fgroup"><label>Тест (assert …)</label><textarea id="brTest" rows="3" style="width:100%;font-family:monospace">' + alEsc(d.test) + '</textarea></div>' +
+      '<div class="fgroup"><label>Образец данных (для автошаблонов)</label><textarea id="brSample" rows="2" style="width:100%;font-family:monospace">' + alEsc(d.sample) + '</textarea></div>' +
+      '<div class="frow" style="gap:6px"><button class="btn ghost" id="brTestGo">▶ Проверить</button><button class="btn" id="brSave">💾 Сохранить в библиотеку</button></div>' +
+      '<div class="mini" id="brState"></div></div>';
+    const spec = a => ({ action: a, id: $('#brId').value.trim(), title: $('#brTitle').value, stage: $('#brStage').value, in: $('#brIn').value,
+      out: $('#brOut').value.trim(), words: $('#brWords').value, code: $('#brCode').value, test: $('#brTest').value, sample: $('#brSample').value });
+    const go = async a => {
+      const st = $('#brState'); st.textContent = '…';
+      const r = await api('/api/bricks', { body: spec(a) }).catch(e => ({ ok: false, error: e.message }));
+      st.textContent = r.ok ? (a === 'save' ? '✅ Сохранён: ' + r.test + '. Шаблоны пересоберутся в фоне.' : '✅ ' + r.test) : '❌ ' + r.error;
+      if (r.ok && a === 'save') setTimeout(drawBricks, 1500);
+    };
+    $('#brTestGo').onclick = () => go('test'); $('#brSave').onclick = () => go('save');
+  };
+}
 
 async function renderAppLab(openId) {
   const box = $('#applabBox');
@@ -1246,7 +1909,9 @@ function drawAppLabList() {
     '<button class="btn ghost" id="alGuide">📘 Инструкция и API</button></div>' +
     '<div class="fgroup"><label for="alAiDesc"><b>🤖 ИИ, напиши приложение</b> — опиши, что оно должно делать (например: «ищет билеты на поезд и показывает ссылки»). Первой пишет своя LLM (если училась коду), потом локальная модель, потом заготовки; каждый код проверяется запуском.</label>' +
     '<div class="frow" style="gap:6px"><input id="alAiDesc" style="flex:1" placeholder="что должно делать приложение"><button class="btn" id="alAiGo">Написать</button></div>' +
-    '<div class="mini" id="alAiState"></div></div>';
+    '<div class="mini" id="alAiState"></div></div>' +
+    '<details class="fgroup" id="alBricksWrap"><summary><b>🧱 Кирпичики мозга-12 и шаблоны-цепочки</b> — инструмент: свой кирпичик, автошаблоны, приложение из шаблона</summary>' +
+    '<div id="alBricks" class="mini">загружаю…</div></details>';
   if (!AL.apps.length) {
     html += '<div class="empty"><div class="big">🧩</div><h2>Приложений пока нет</h2><p>Нажми «＋ Новое приложение».</p></div>';
   } else {
@@ -1259,8 +1924,11 @@ function drawAppLabList() {
       ((m.triggers || []).length ? '<div class="mini">триггеры: ' + alEsc(m.triggers.join(', ')) + '</div>' : '<div class="mini">без триггеров — запускается только отсюда</div>') +
       '<div class="frow" style="gap:6px;margin-top:6px;flex-wrap:wrap">' +
       '<button class="btn ghost" data-open="' + alEsc(m.id) + '">Открыть код</button>' +
-      '<label class="mini"><input type="checkbox" data-en="' + alEsc(m.id) + '"' + (m.enabled ? ' checked' : '') + '> включено</label>' +
-      '<label class="mini"><input type="checkbox" data-chat="' + alEsc(m.id) + '"' + (m.chat ? ' checked' : '') + '> в окне чата</label>' +
+      '<button class="btn ghost" data-ren="' + alEsc(m.id) + '" data-name="' + alEsc(m.name) + '">✎ Переименовать</button>' +
+      '<button type="button" class="btn ' + (m.enabled ? '' : 'ghost ') + 'al-tg" data-en="' + alEsc(m.id) + '" data-on="' + (m.enabled ? 1 : 0) + '">' +
+        (m.enabled ? '✅ Включено' : '⏸ Выключено — включить') + '</button>' +
+      '<button type="button" class="btn ghost al-tg" data-chat="' + alEsc(m.id) + '" data-on="' + (m.chat ? 1 : 0) + '">' +
+        (m.chat ? '💬 В окне чата' : '💬 Не в окне чата') + '</button>' +
       '</div></div></div>').join('') + '</div>';
   }
   box.innerHTML = html;
@@ -1276,8 +1944,25 @@ function drawAppLabList() {
     } catch (e) { $('#alAiState').textContent = 'Ошибка: ' + (e && e.message || e); }
   };
   $$('[data-open]', box).forEach(b => b.onclick = () => openApp(b.dataset.open));
-  $$('[data-en]', box).forEach(c => c.onchange = async () => { await api('/api/applab/flags', { body: { id: c.dataset.en, enabled: c.checked } }); renderAppLab(); });
-  $$('[data-chat]', box).forEach(c => c.onchange = async () => { await api('/api/applab/flags', { body: { id: c.dataset.chat, chat: c.checked } }); });
+  const bw = $('#alBricksWrap'); if (bw) bw.ontoggle = () => { if (bw.open) drawBricks(); };
+  // v3.232: ответ сервера проверяется — ошибка показывается, галочка возвращается
+  // v3.233: крупные кнопки-переключатели (галочку на телефоне трудно нажать); ответ сервера проверяется
+  const setFlag = async (b, body) => {
+    b.disabled = true; const was = b.textContent; b.textContent = '…';
+    let r = null;
+    try { r = await api('/api/applab/flags', { body }); } catch (e) { r = { ok: false, error: e.message }; }
+    b.disabled = false;
+    if (!r || !r.ok) { b.textContent = was; toast('Не переключилось: ' + ((r && r.error) || 'нет ответа'), 'err'); return; }
+    toast('Сохранено', 'ok'); renderAppLab();
+  };
+  $$('button[data-en]', box).forEach(b => b.onclick = () => setFlag(b, { id: b.dataset.en, enabled: b.dataset.on !== '1' }));
+  $$('button[data-chat]', box).forEach(b => b.onclick = () => setFlag(b, { id: b.dataset.chat, chat: b.dataset.on !== '1' }));
+  $$('[data-ren]', box).forEach(b => b.onclick = async () => {
+    const name = prompt('Новое имя приложения:', b.dataset.name || '');
+    if (name == null || !name.trim() || name.trim() === b.dataset.name) return;
+    const r = await api('/api/applab/rename', { body: { id: b.dataset.ren, name: name.trim() } }).catch(e => ({ ok: false, error: e.message }));
+    if (r && r.ok) { toast('Переименовано', 'ok'); renderAppLab(); } else toast('Не переименовалось: ' + ((r && r.error) || '?'), 'err');
+  });
 }
 
 async function showGuide() {
@@ -1400,16 +2085,64 @@ function renderTab(name) {
   $$('.mpane').forEach(p => p.classList.toggle('on',
     p.dataset.pane === name));
   if (TAB_BUSY[name]) return;   // двойной клик: раньше две отрисовки шли наперегонки
+  const currentPane = $('[data-pane="' + name + '"]'); if (currentPane) delete currentPane.dataset.grouped;
   TAB_BUSY[name] = true;        // и писали в блоки, которые уже заменены
   let r;
   try {
-    r = ({ common: tabCommon, devices: tabDevices, ssh: tabSsh,
-     memory: tabMemory, kb: tabKB, zones: tabZones,
-     teacher: tabTeacher, instruct: tabInstruct, voice: tabVoice, security: tabSecurity,
-     maxbot: tabMaxbot, tgbot: tabTgbot, aiapi: tabAiApi, update: tabUpdate,
+    r = ({ common: tabCommon, communication: tabCommunication, coupling: tabCoupling, devices: tabDevices,
+     ssh: tabSsh, memory: tabMemory, kb: tabKB, zones: tabZones,
+     photoocr: tabPhotoOCR, loopllm: tabLoopLLM, teacher: tabTeacher, instruct: tabInstruct, voice: tabVoice, security: tabSecurity,
+     supportapp: tabSupportApp, maxbot: tabMaxbot, tgbot: tabTgbot, aiapi: tabAiApi, update: tabUpdate,
      log: tabLog }[name] || tabCommon)();
   } catch (e) { TAB_BUSY[name] = false; throw e; }
-  Promise.resolve(r).catch(() => {}).finally(() => { TAB_BUSY[name] = false; });
+  Promise.resolve(r).then(() => {
+    if (name !== 'common' && name !== 'coupling' && name !== 'communication') groupSettings($('[data-pane="'+name+'"]'));
+  }).catch(() => {}).finally(() => { TAB_BUSY[name] = false; });
+}
+
+function groupSettings(p) {
+  if (!p || p.dataset.grouped === '1') return;
+  p.dataset.grouped = '1';
+  let body = null, count = 0;
+  for (const node of Array.from(p.children)) {
+    if (node.tagName === 'H2') { body = null; continue; }
+    if (node.tagName === 'BUTTON' && /сохранить|применить/i.test(node.textContent)) { body = null; continue; }
+    if (node.matches('details.sgrp')) { body = null; continue; }
+    const heading = node.tagName === 'H3';
+    if (heading || !body) {
+      const details = document.createElement('details'); details.className = 'sgrp'; details.open = count++ === 0;
+      const summary = document.createElement('summary'); summary.textContent = heading ? node.textContent : 'Основные параметры';
+      body = document.createElement('div'); body.className = 'sbody'; details.append(summary, body); p.insertBefore(details, node);
+      if (heading) { node.remove(); continue; }
+    }
+    body.appendChild(node);
+  }
+}
+
+async function tabCommunication() {
+  const p = $('[data-pane="communication"]'); p.innerHTML = ''; delete p.dataset.grouped;
+  tabCommon();
+  const current = SETTINGS.settings || {};
+  p.innerHTML = '<h2>Общение</h2><h3>Длина и источники</h3>' +
+    '<div class="fgroup"><label for="convStyle">Ответы в чате и МАКС</label><select id="convStyle">' +
+    ['short','normal','detailed'].map((v,i) => '<option value="'+v+'"'+((current.conversation_style || 'normal')===v?' selected':'')+'>'+['Коротко','Обычно','Подробно'][i]+'</option>').join('')+'</select></div>' +
+    '<div class="fgroup"><label><input id="convWeb" type="checkbox"'+(current.conversation_web!==false?' checked':'')+'> Искать в интернете, если готового ответа нет (чат и МАКС)</label></div>' +
+    '<div class="fgroup"><label><input id="convSources" type="checkbox"'+(current.conversation_sources!==false?' checked':'')+'> Добавлять ссылки на использованные источники</label></div>' +
+    '<h3>Модель, проверка и сообщения</h3><div id="conversationControls"></div>' +
+    '<button class="btn" id="saveConversation">Сохранить общение</button><div id="conversationSaved" class="mini"></div>';
+  for (const id of ['setHonest','setLlmFree','setOffline','setBotStatus','setBrainLlm','setLlmFactTalk']) {
+    const control = $('#'+id); if (control) $('#conversationControls').appendChild(control.closest('.fgroup'));
+  }
+  $('#saveConversation').onclick = async () => {
+    const r = await api('/api/settings',{body:{conversation_style:$('#convStyle').value,conversation_web:$('#convWeb').checked,
+      conversation_sources:$('#convSources').checked,answer_honest:$('#setHonest').checked,answer_strict:$('#setHonest').checked,
+      llm_free:$('#setLlmFree').checked,answer_offline:$('#setOffline').checked,bot_status_msg:$('#setBotStatus').checked,
+      brain_llm_thought:$('#setBrainLlm').checked,llm_web_check_talk:$('#setLlmFactTalk').checked}});
+    if (r.ok) { SETTINGS = await api('/api/settings'); $('#conversationSaved').textContent = 'Сохранено'; }
+    else $('#conversationSaved').textContent = r.error || 'Не сохранено';
+  };
+  groupSettings(p);
+  p.appendChild($('#saveConversation')); p.appendChild($('#conversationSaved'));
 }
 
 async function tabInstruct() {
@@ -1549,6 +2282,20 @@ async function tabAiApi() {
     '<button class="btn ghost" id="tlRetrain">Переобучить на текущей базе</button> ' +
     '<button class="btn ghost" id="tlRec">Взять рекомендуемые размеры</button> ' +
     '<button class="btn danger" id="tlDelete" style="background:#b8443a;color:#fff">🗑 Удалить нейросеть</button>' +
+    /* v3.237: скачать свою LLM и загрузить её на плату */
+    '<div class="fgroup" style="margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px">' +
+    '<b>Своя LLM вне облака</b><div class="mini">Пакет: веса, словарь и запуск board_llm.py (numpy или чистый Python). Учится LLM в облаке, плата только генерирует.</div>' +
+    '<a class="btn" id="tlDl" href="/api/llm/download" download>⬇ Скачать свою LLM</a> ' +
+    '<button class="btn" id="tlPush">📤 Загрузить LLM на плату</button> ' +
+    '<span id="tlExp" class="mini"></span></div>' +
+    /* v3.237: дружба нейросетей */
+    '<div class="fgroup" style="margin-top:12px;padding:10px;border:1px solid var(--line);border-radius:10px">' +
+    '<b>Дружба нейросетей</b><div class="mini">Мозг, своя LLM и нейроны плат обмениваются пакетами знаний без чата; доверие растёт, когда пакеты подтверждаются. Пакеты уходят на платы и проигрываются на пине D6.</div>' +
+    '<div class="fgroup switch"><input type="checkbox" id="nbOn"><label for="nbOn">Обмен включён</label></div>' +
+    '<div class="fgroup switch"><input type="checkbox" id="nbD6"><label for="nbD6">Пакеты — на пин D6 плат</label></div>' +
+    '<div class="fgroup"><label>Круг обмена, секунд (30–3600)</label><input type="number" id="nbPer" min="30" max="3600"></div>' +
+    '<button class="btn ghost" id="nbRound">Круг обмена сейчас</button>' +
+    '<div id="nbStat" class="mini" style="margin-top:6px;white-space:pre-wrap"></div></div>' +
     '<div class="fgroup switch" style="margin-top:10px"><input type="checkbox" id="tlDisk"><label for="tlDisk">' +
     'Состояние Adam на диске — «виртуальный размер» (v3.78): можно обучать модель больше, чем помещается в ОЗУ вместе с оптимизатором; шаг медленнее (обмен с диском). Бюджет диска — поле ниже, 0 = половина свободного места (до 20 ГБ). Применяется при следующем обучении.</label></div>' +
     '<div class="fgroup switch" style="margin-top:10px"><input type="checkbox" id="tlSwap"><label for="tlSwap">' +
@@ -1580,6 +2327,11 @@ async function tabAiApi() {
     'Опыт чтения: LLM «читает» статьи базы знаний и передаёт мозгу выжимку (в сеть материалов и мысли)</label></div>' +
     '<div class="fgroup switch"><input type="checkbox" id="tlLinkExt"><label for="tlLinkExt">' +
     'LLM развивает мысли плат по фактам базы знаний (не заменяет их: мозг думает лучше)</label></div>' +
+    '<h4 style="margin:14px 0 4px">Журнал мыслей: что делали мозг и LLM</h4>' +
+    '<div class="hint">Связная мысль платы остаётся как есть (отвечает мозг). Разрозненную собирает LLM — ' +
+    'в журнале видно связность до/после и итог. Длина своих мыслей LLM — настройка <code>llm_thought_chars</code> (по умолч. 900).</div>' +
+    '<div class="frow"><button class="btn" id="tlTjRef">Обновить журнал</button> ' +
+    '<button class="btn" id="tlTjClr">Очистить</button></div><div id="tlTj" class="hint">…</div>' +
     '<div class="frow">' +
     '<div class="fgroup"><label>думать сама раз в, сек (0 — выкл.)</label><input type="number" id="tlEvery" min="0" step="30"></div>' +
     '<div class="fgroup"><label>порог качества мысли (0–1; 0 — пускать всё)</label><input type="number" id="tlQ" min="0" max="1" step="0.05"></div>' +
@@ -1627,12 +2379,42 @@ async function tabAiApi() {
     $('#tlDirty').textContent = tlDirty.size ? 'Есть неприменённые правки размеров (' + tlDirty.size +
       ') — нажми «Применить размеры и переобучить». Пока не нажато, панель их не сбрасывает.' : '';
   };
+  const tlTjLoad = async (clr) => {
+    const box = $('#tlTj'); if (!box) return;
+    try {
+      const r = clr ? await api('/api/thoughts/journal', { method: 'POST', body: JSON.stringify({ clear: true }) })
+                    : await api('/api/thoughts/journal?limit=40');
+      const st = r.stats || {}, sm = r.smooth || {};
+      let h = '<b>Мозг: связных оставлено ' + (st.brain_kept || 0) + ' · LLM: собрано ' + (st.llm_assembled || 0) +
+        ', не вышло ' + (st.llm_failed || 0) + ', своих мыслей ' + (st.llm_own || 0) +
+        '</b> · порог связности ' + (sm.threshold || '') + (sm.on === false ? ' · сборка выключена' : '');
+      h += '<ul style="margin:4px 0 0 18px">' + (r.items || []).map(j => {
+        const t = new Date((j.ts || 0) * 1000).toLocaleTimeString();
+        const who = j.who === 'LLM' ? '🤖 LLM' : '🧠 мозг';
+        const coh = (j.coh0 != null) ? ' [связность ' + j.coh0 + (j.coh1 != null ? ' → ' + j.coh1 : '') + ']' : '';
+        const body = j.out ? '<div style="opacity:.8;white-space:pre-wrap">' + esc(String(j.out).slice(0, 700)) + '</div>' : '';
+        return '<li><b>' + t + ' ' + who + '</b> ' + esc(j.board || '') + coh + ' — ' + esc(j.note || j.act || '') + body + '</li>';
+      }).join('') + '</ul>';
+      box.innerHTML = h;
+    } catch (e) { box.textContent = 'Журнал недоступен: ' + e; }
+  };
+  document.addEventListener('click', (ev) => {
+    const id = ev.target && ev.target.id;
+    if (id === 'tlTjRef') tlTjLoad(false);
+    if (id === 'tlTjClr' && confirm('Очистить журнал мыслей?')) tlTjLoad(true);
+  });
   let tlLastR = null;
   window.tabAiApiRefreshGh = () => setTimeout(async () => { try { drawTl(await api('/api/tinyllm')); } catch (e) {} }, 400);
   const drawTl = (r) => {
     tlLastR = r;
     const t = (r && r.llm) || {}, c = (r && r.config) || {}, lk = (r && r.link) || {};
     if (!$('#tlD')) return;
+    const rt = (r && r.retrain) || {};
+    if (rt.busy) $('#tlDirty').textContent = '⏳ Переобучение: останавливаю прежнее обучение (' +
+      Math.round(Date.now() / 1000 - rt.since) + ' с; большой модели — до 3 мин), затем начну с нуля с новыми размерами…';
+    else if (rt.error) $('#tlDirty').textContent = '⚠ Переобучение не запустилось: ' + rt.error;
+    else if (!tlDirty.size) $('#tlDirty').textContent = '';
+    if ($('#tlTj') && $('#tlTj').textContent === '…') tlTjLoad(false);
     Object.keys(TL_NUM).forEach(id => tlSet(id, c[TL_NUM[id]]));
     tlSet('tlEvery', lk.every); tlSet('tlQ', lk.minq); tlSet('tlGQ', lk.gen_minq); tlSet('tlStepS', c.llm_step_s); tlSet('tlPlanN', c.llm_plan_steps);
     const bt = (r && r.brain_train) || null;
@@ -1834,7 +2616,11 @@ async function tabAiApi() {
           ' (' + Math.min(100, Math.round(100 * t.inc_done / Math.max(1, t.inc_total))) + '%), новых документов ' +
           fmtN(t.inc_new_docs) + '; всего шагов за всё время ' + fmtN(t.steps) +
           ' (основной план обучения выполнен — проценты выше 100 означают именно дообучение)'
-        : ' — шаг ' + fmtN(t.steps) + ' из ' + fmtN(t.total_steps) + ' (' + Math.min(100, t.pct || 0) + '%)') +
+        : (t.training && !t.total_steps
+          ? ' — <b>подготовка</b>: ' + esc(t.phase || 'запускаю обучение') + (t.phase_s ? ' (' + t.phase_s + ' с)' : '') +
+            ' — шаги появятся, когда корпус и словарь будут готовы (на большой базе знаний это минуты)'
+          : (!t.training && !t.ready && t.error ? ' — ⚠ ' + esc(t.error)
+          : ' — шаг ' + fmtN(t.steps) + ' из ' + fmtN(t.total_steps) + ' (' + Math.min(100, t.pct || 0) + '%)'))) +
       (t.loss != null ? ', потеря ' + t.loss : '') +
       (t.tok_per_s ? ', скорость ' + fmtN(t.tok_per_s) + ' токенов/с' : '') +
       (t.step_s != null ? ', шаг ' + t.step_s + ' с' + (t.step_target ? ' (цель ' + t.step_target + ' с)' : '') +
@@ -1933,11 +2719,45 @@ async function tabAiApi() {
     const b = {};
     Object.keys(TL_NUM).forEach(id => { b[TL_NUM[id]] = +$('#' + id).value; });
     b.llm_force = $('#tlForce').checked;
+    b.retrain = true;                 // v3.235: кнопка всегда переобучает, даже если числа не менялись
     const r = await tlSave(b);
     if (r) { tlDirty.clear(); tlMark(); drawTl(r); }
-    toast(r && r.llm && r.llm.error ? 'Размеры сохранены. ' + r.llm.error : 'Размеры сохранены, обучение запущено',
-      r && r.llm && r.llm.error ? 'err' : 'ok');
+    toast(!r ? 'Нет ответа облака' : r.retrain_started === false ? 'Переобучение уже запускается — подождите' :
+      'Размеры сохранены. Останавливаю прежнее обучение и начинаю заново — статус обновится сам', r ? 'ok' : 'err');
   };
+  /* v3.237: экспорт LLM и дружба сетей */
+  const drawExp = async () => {
+    try {
+      const r = await api('/api/llm/export');
+      const bd = r.boards || {};
+      const rows = Object.keys(bd).map(k => k + ': ' + (bd[k].ok ? '✓ загружена (' + (bd[k].sig || '') + ')' + (bd[k].sample ? ' «' + bd[k].sample.slice(0, 60) + '»' : '') : '✗ ' + (bd[k].error || 'ещё нет')));
+      $('#tlExp').textContent = (!r.available ? 'модель ещё не сохранена на диск. ' : (r.bundle && r.bundle.bytes ? 'пакет ' + Math.round(r.bundle.bytes / 1024) + ' КБ. ' : '')) +
+        (r.push && r.push.sig ? 'в очереди на платы: ' + r.push.sig + '. ' : '') + rows.join('; ');
+    } catch (_) {}
+  };
+  $('#tlPush').onclick = async () => {
+    const r = await api('/api/llm/export', { body: { action: 'push', boards: '*' } });
+    toast(r.ok ? r.text : ('Не вышло: ' + (r.error || '?')), r.ok ? 'ok' : 'err');
+    drawExp();
+  };
+  const drawNb = async () => {
+    try {
+      const r = await api('/api/netbus');
+      $('#nbOn').checked = !!r.on; $('#nbD6').checked = !!r.d6; $('#nbPer').value = r.period || 120;
+      const tr = Object.keys(r.trust || {}).map(k => k + ' ' + Math.round(r.trust[k] * 100) + '%').join(', ');
+      const pk = (r.packets || []).slice(-6).reverse().map(p => '• ' + p.from + ' → ' + p.to + ' [' + p.kind + ']: ' + (p.text || p.keys.join(' ')).slice(0, 90));
+      $('#nbStat').textContent = 'кругов: ' + (r.rounds || 0) + (r.err ? ' · ошибка: ' + r.err : '') + '\nдоверие: ' + (tr || 'пока 50% у всех') + '\n' + pk.join('\n');
+    } catch (_) {}
+  };
+  ['nbOn', 'nbD6'].forEach(id => $('#' + id).addEventListener('change', async (ev) => {
+    const b = {}; b[id === 'nbOn' ? 'on' : 'd6'] = ev.target.checked;
+    await api('/api/netbus', { body: b }); toast('Сохранено', 'ok'); drawNb(); }));
+  $('#nbPer').addEventListener('change', async (ev) => { await api('/api/netbus', { body: { period: +ev.target.value || 120 } }); drawNb(); });
+  $('#nbRound').onclick = async () => {
+    const r = await api('/api/netbus', { body: { action: 'round' } });
+    toast(r.ok ? ('Круг: тема «' + (r.topic || '?') + '»' + (r.llm ? ', LLM ' + (r.llm.accepted ? 'принята' : 'отвергнута') : '') + ', на платы ' + r.boards) : (r.note || r.error || 'не вышло'), r.ok ? 'ok' : 'err');
+    drawNb(); };
+  drawExp(); drawNb();
   $('#tlDisk').addEventListener('change', async (ev) => {
     await tlSave({ llm_disk_state: ev.target.checked }, 'Сохранено — применится при следующем обучении'); });
   $('#tlSwap').addEventListener('change', async (ev) => { await tlSave({ llm_use_swap: ev.target.checked }, 'Сохранено'); });
@@ -1956,7 +2776,7 @@ async function tabAiApi() {
     tlMark(); probe();
     toast('Подставлено под ~' + rc.free_mb + ' МБ свободной памяти — проверь и нажми «Применить»', 'ok');
   };
-  $('#tlRetrain').onclick = async () => { await tlSave({ retrain: true }, 'Переобучение запущено: старые веса удалены, обучение с нуля'); };
+  $('#tlRetrain').onclick = async () => { await tlSave({ retrain: true }, 'Переобучение запускается: останавливаю прежнее обучение, потом — с нуля'); };
   $('#tlDelete').onclick = async () => {
     if (!confirm('Удалить свою LLM полностью (веса, состояние Adam, план обучения)? Память и база мозга НЕ трогаются.')) return;
     const again = confirm('Сразу начать обучение новой нейросети с нуля?\nОК — начать, Отмена — оставить без LLM (ответит мозг).');
@@ -2069,16 +2889,16 @@ async function tabAiApi() {
 /* ------------------------------- Общие ----------------------------------- */
 /* v3.57: «Общие» — группы-аккордеоны, длинные пояснения под «подробнее» */
 function groupCommon(p) {
+  /* v3.193: групп стало 6, тонкие пиновые настройки — один блок с 2 селектами */
   const GR = [
-    ['💬 Чат и ответы', true, ['setMode', 'setHonest', 'setLlmFree', 'setOffline', 'setImagine']],
-    ['🕸 Сеть материалов — сколько помнит мозг', true, ['setNetBox', 'setNetNodes', 'setNetDocs', 'setNetSents']],
-    ['🧠 Связь с мозгом neuro-12', false, ['setBrainStrict', 'setBrainBox', 'setBrainLlm']],
-    ['🌐 Интернет и знания', false, ['setWeb', 'setWebSrc', 'setSrcBox', 'setLlmWebBox', 'setReadFirst', 'setPassage', 'setEngBox', 'setWebPages']],
-    ['📡 Сигналы платы: D4 / D6, кадр камеры', false,
-      ['setD6Neg', 'setD4Neg', 'setD6Cam', 'setD6CamMode', 'setD4Cam']],
-    ['🤖 Боты', false, ['setBotStatus']],
-    ['🖥 Компьютер облака', false, ['setTerminal']],
-    ['🔐 Доступ и чаты', false, ['setChatsIp', 'setToken']]];
+    ['💬 Общение и ответы', true, [ 'setHonest', 'setLlmFree', 'setOffline', 'setImagine', 'setBotStatus']],
+    ['🌐 Интернет и поиск', true, ['setEngBox', 'setSrcBox', 'setWeb', 'setWebSrc', 'setReadFirst', 'setPassage',
+      'setLlmWebBox', 'setLlmFact', 'setLlmFactTalk']],
+    ['🧠 Сопряжение с мозгом neuro-12', false, ['setBrainStrict', 'setBrainBox', 'setBrainLlm']],
+    ['📡 Тонкие сигналы платы: знак частоты и кадр камеры', false, ['setNegFreq', 'setCamPin']],
+    ['🕸 Сеть материалов, доступ и чаты', false, ['setNetBox', 'setNetNodes', 'setNetDocs',
+      'setNetSents', 'setChatsIp', 'setToken']],
+    ['🖥 Компьютер облака', false, ['setTerminal']]];
   const save = $('#saveCommon');
   GR.forEach(g => {
     const d = document.createElement('details');
@@ -2308,7 +3128,7 @@ async function crashCheck() {
     bn.onclick = () => {
       const w = window.open('', '_blank');
       if (!w) return;
-      w.document.title = 'Мозг-12: падения облака';
+      w.document.title = 'Star Gate: падения облака';
       w.document.body.innerHTML = '<pre style="white-space:pre-wrap;font:13px monospace">' + esc(r.crashes.map(x => new Date(x.ts * 1000).toLocaleString('ru') + '  код ' + x.code + '  проработало ' + x.up + ' с  ' + (x.hint || '') + '\n   ' + (x.why || '')).join('\n')) + '\n\n===== crash.log (хвост) =====\n' + esc(r.tail || '') + '</pre>';
     };
   } catch (e) {}
@@ -2330,8 +3150,129 @@ setInterval(async () => {
 }, 15000);
 
 /* ------------------------- Общие (вкладка) ------------------------------- */
+/* ----------------- Сопряжение (v3.193): воля платы ↔ воля LLM ------------ */
+let _cupTimer = null;
+async function tabCoupling() {
+  const p = $('[data-pane="coupling"]');
+  p.innerHTML = '<h2>Сопряжение всех зон</h2>' +
+    '<div class="hint">Одна страница вместо тонких настроек: слева — воля платы ' +
+    '(мозг neuro-12 посылает активность зон, её ворота разрешают или останавливают ' +
+    'фоновые процессы облака), справа — воля LLM (свои решения и параметры, которые ' +
+    'она получает от воли зон). Задача владельца, права и лимиты задач от этого ' +
+    'не меняются. Обновляется каждые 5 секунд.</div>' +
+    '<details class="sgrp" open><summary>Зонная LLM и объединение сигналов</summary><div class="sbody">' +
+    '<label><input type="checkbox" id="zoneLlmOn"'+((SETTINGS.settings || {}).llm_zones_on!==false?' checked':'')+'> Зонные контексты собственной LLM</label>' +
+    '<div class="fgroup"><label>Доля активности LLM при наличии обоих сигналов (остальное — плата)</label>' +
+    '<input id="zoneMix" type="range" min="0" max="100" value="'+((SETTINGS.settings || {}).coupling_zone_mix ?? 50)+'"><span id="zoneMixValue"></span></div>' +
+    '<button class="btn" id="zoneSave">Сохранить сопряжение</button><div id="zoneSaveState" class="mini"></div></div></details>' +
+    '<div id="cupBody"><div class="typing"><i></i><i></i><i></i></div></div>';
+  $('#zoneMix').oninput = () => { $('#zoneMixValue').textContent = $('#zoneMix').value+'% LLM'; }; $('#zoneMix').oninput();
+  $('#zoneSave').onclick = async () => {
+    const r=await api('/api/settings',{body:{llm_zones_on:$('#zoneLlmOn').checked,coupling_zone_mix:Number($('#zoneMix').value)}});
+    if(r.ok) SETTINGS=await api('/api/settings'); $('#zoneSaveState').textContent=r.ok?'Сохранено':r.error || 'Ошибка';
+  };
+  clearTimeout(_cupTimer);
+  const pct = a => Math.max(0, Math.min(100, Math.round(100 * a)));
+  const wbar = (name, a, who) =>
+    '<div style="margin:4px 0"><b>' + esc(name) + '</b>' +
+    (who ? ' <span class="mini">(' + esc(who) + ')</span>' : '') +
+    ' — <b>' + pct(a) + '%</b>' +
+    '<div style="height:8px;border-radius:4px;background:var(--line,#333);margin-top:2px">' +
+    '<div style="height:8px;border-radius:4px;width:' + pct(a) + '%;background:' +
+    (pct(a) < 15 ? '#e5484d' : pct(a) < 40 ? '#d19a1e' : 'var(--acc,#2dd4bf)') +
+    '"></div></div></div>';
+  const mark = on => on ? '<span style="color:var(--acc,#2dd4bf)">✓</span>'
+                        : '<span class="mini">✗</span>';
+  const load = async () => {
+    const box = $('#cupBody');
+    if (!box || !$('[data-pane="coupling"]').classList.contains('on')) {
+      clearTimeout(_cupTimer); return;
+    }
+    let r;
+    try { r = await api('/api/coupling'); }
+    catch (e) { box.textContent = 'Не загрузилось: ' + (e && e.message || e); return; }
+    if (!$('#cupBody')) return;
+    const b = r.board || {}, l = r.llm || {};
+    const boardCard =
+      '<div class="card"><h3 style="margin-top:0">🧩 Воля платы (мозг neuro-12)</h3>' +
+      '<div class="mini">' + esc(b.source || 'Сигнала нет') + '</div>' +
+      ((b.zones || []).length
+        ? b.zones.map(z => wbar(z.zone, z.a)).join('')
+        : '<div class="mini">Зоны молчат — нейтральный режим: процессы работают как обычно</div>') +
+      (b.lead ? '<div class="mini" style="margin-top:6px">Ведущая зона: <b>' +
+        esc(b.lead.zone) + '</b> (' + Number(b.lead.a).toFixed(2) +
+        (b.lead.derived ? ', по воле зон' : ', плата ' + esc(b.lead.board || '')) +
+        ')</div>' : '') +
+      (b.thought && b.thought.text ? '<div class="mini">Мысль мозга: «' +
+        esc(b.thought.text) + '»</div>' : '') +
+      '<div class="mini" style="margin-top:6px">Ворота мозга' +
+      (b.strict ? ' (строгий режим, порог ' + b.strict_min + ')' : ' (выключены)') +
+      ': работают <b>' + b.gates_run + '</b>, стоят <b>' + b.gates_stop + '</b></div>' +
+      ((b.gates || []).length
+        ? '<details style="margin:6px 0 0"><summary class="mini" style="cursor:pointer">Что именно разрешено и что стоит</summary><div class="mini">' +
+          b.gates.map(g => mark(g.ok) + ' ' + esc(g.name) + ' — ' + esc(g.why)).join('<br>') +
+          '</div></details>' : '') +
+      '</div>';
+    const decide = [
+      [l.free, 'Пишет свободно', 'переписывает предложения и пишет код, фильтры отсеивают пустое'],
+      [l.web_on, 'Ходит в интернет сама', 'читает Википедию/Рувики и Confluence в свой корпус'],
+      [l.fact_check, 'Проверяет факты', 'сверяет утверждения ответа с источниками'],
+      [l.fact_talk, 'Проверка и в «Разговоре»', 'факт приходит следующим сообщением'],
+      [l.from_thought, 'Пишет от мысли мозга', 'затравка — мысль neuro-12 по теме вопроса'],
+    ];
+    const llmCard =
+      '<div class="card"><h3 style="margin-top:0">🤖 Воля LLM (своя LLM)</h3>' +
+      '<div class="mini">Свои решения:</div>' +
+      decide.map(x => '<div class="mini">' + mark(x[0]) + ' <b>' + x[1] + '</b> — ' +
+        esc(x[2]) + '</div>').join('') +
+      '<div class="mini" style="margin-top:6px">Учитель кода: <b>' + esc(l.teacher || '—') +
+      '</b> · уроков в банке <b>' + (l.teacher_bank || 0) + '</b>' +
+      (l.teacher_lessons ? ' (за курс ' + l.teacher_lessons + ')' : '') + '</div>' +
+      '<div class="mini">Программа обучения: <b>' + (l.courses || 0) + '</b> уроков · ' +
+      'прочитала сама: <b>' + (l.reads == null ? '—' : l.reads) + '</b> статей · ' +
+      'проверок фактов: <b>' + (l.facts == null ? '—' : l.facts) + '</b></div>' +
+      '<div class="mini" style="margin-top:6px">В чате LLM не отвечает — только учится ' +
+      'и помогает в ответах под фильтрами.</div>' +
+      '<h3 style="margin-top:10px">Параметры, заданные волей платы</h3>' +
+      wbar('Сила кода', l.code_strength, 'зона «Кирпичики»') +
+      wbar('Темп учёбы', l.learning_strength, 'зона «Обучение»') +
+      wbar('Усилие агента', l.agent_strength, 'зоны «Помощь»+«Кирпичики»') +
+      '<div class="mini">Воля зон даёт LLM: попыток кода ×' +
+      Number(l.code_strength).toFixed(2) + ', температура ×' +
+      Number(l.temperature_multiplier).toFixed(2) + ', шаг курса ×' +
+      Number(l.learning_rate_multiplier).toFixed(2) + ', шагов агента ×' +
+      Number(l.agent_effort).toFixed(2) + '.</div></div>';
+    const linksCard = '<div class="card" style="grid-column:1/-1"><h3 style="margin-top:0">🔗 Как воля платы доходит до LLM</h3>' +
+      ((r.links || []).length
+        ? '<table style="width:100%;border-collapse:collapse"><tr>' +
+          '<th style="text-align:left;padding:4px 6px">Зона платы</th>' +
+          '<th style="text-align:left;padding:4px 6px">Что задаёт</th>' +
+          '<th style="text-align:left;padding:4px 6px">Сила</th>' +
+          '<th style="text-align:left;padding:4px 6px">Параметр LLM</th></tr>' +
+          r.links.map(x => '<tr>' +
+            '<td style="padding:4px 6px"><b>' + esc(x.zone) + '</b></td>' +
+            '<td style="padding:4px 6px">' + esc(x.what) + '</td>' +
+            '<td style="padding:4px 6px">' + Math.round(x.strength * 100) + '%</td>' +
+            '<td style="padding:4px 6px">' + (x.result == null ? '—' : '×' + Number(x.result).toFixed(2)) + '</td></tr>').join('') +
+          '</table><div class="mini">Свежий сигнал — 90 секунд; нет сигнала — параметры нейтральные (×1).</div></div>'
+        : '</div>');
+    const merged = r.unified || {};
+    const allZones = '<details class="sgrp" open><summary>Все зоны: плата → LLM → единение</summary><div class="sbody">' +
+      '<p class="mini">'+esc(merged.architecture || '')+'</p>'+
+      '<p id="cupWork" class="mini">LLM сейчас: <b>'+((merged.activity || {}).busy ? esc(((merged.activity || {}).operations || []).map(x=>x.kind+' · '+(x.zones || []).join(', ')).join('; ')) : 'нет выполняющихся вызовов')+'</b>. Занятость за окно '+Number((merged.activity || {}).window_seconds || 0).toFixed(1)+' с: '+pct((merged.activity || {}).duty || 0)+'%.</p>'+
+      '<p class="mini">Контекст — тематический сигнал, а не загрузка LLM. Работа — доля времени в реальных вызовах обучения/генерации за последние 30 с; это не загрузка CPU/GPU. Подключение платы само по себе не запускает модель.</p>'+
+      '<div class="zone-table-wrap"><table class="tbl"><tr><th>Зона</th><th>Плата</th><th>Контекст LLM</th><th>Работа LLM · 30 с</th><th>Единая</th><th>Примеров</th></tr>'+
+      (merged.zones || []).map(z=>'<tr><td>'+esc(z.zone)+'</td>'+['board','llm'].map(k=>'<td>'+(z[k]==null?'Нет сигнала':pct(z[k])+'%')+'</td>').join('')+'<td>'+(z.llm_busy?'<b>В работе</b> · ':'')+(z.llm_duty==null?'Нет вызовов':pct(z.llm_duty)+'%')+'</td><td>'+(z.unified==null?'Нет сигнала':pct(z.unified)+'%')+'</td><td>'+z.examples+'</td></tr>').join('')+
+      '</table></div><p class="mini">Нет свежего сигнала — он не участвует в среднем. Общие веса не сбрасываются.</p></div></details>';
+    box.innerHTML = allZones + '<details class="sgrp"><summary>Диагностика платы и модели</summary><div class="sbody cup-cols">' + boardCard + llmCard + '</div></details>';
+    _cupTimer = setTimeout(load, 5000);
+  };
+  await load();
+}
+
 function tabCommon() {
   const p = $('[data-pane="common"]');
+  const comm = $('[data-pane="communication"]'); if (comm) { comm.innerHTML = ''; delete comm.dataset.grouped; }
   const st = S.status || {};
   const rset = SETTINGS || {};
   const L = st.load || {};
@@ -2339,13 +3280,16 @@ function tabCommon() {
   clearTimeout(MIC_T); MIC_T = setTimeout(micWire, 80);   // v3.178: уши и глаза плат
   setTimeout(safeWire, 100);                               // v3.180: сейф памяти плат
   p.innerHTML = '<h2>Общие</h2>' +
-    /* v3.173.1: блок Pillow был два раза (одинаковые id — второй вечно «Проверка…») */
+    /* v3.173.1: блок Pillow был два раза (одинаковые id — второй вечно «Проверка…»);
+       v3.193: тонкие настройки сокращены (5 галочек пинов -> 2 селекта) и свёрнуты */
+    '<details class="sgrp"><summary>🧩 Компоненты системы — Pillow для зрения<small>1 парам.</small></summary><div class="sbody">' +
     '<div class="fgroup" style="margin-bottom:12px"><label><b>Зрение — Pillow</b></label>' +
     '<div id="pillowStatus" class="mini" style="margin:6px 0">Проверка…</div>' +
     '<button class="btn" id="btnInstallPillow">Установить Pillow</button>' +
     '<div class="hint">Нужен для анализа картинок и кадров. Установка 1–2 минуты.</div></div>' +
+    '</div></details>' +
 
-    '<div class="hint">Платформа «мозг-12» v' + (st.version || '3.0.0') +
+    '<div class="hint">Платформа «Star Gate» v' + (st.version || '3.0.0') +
     '. Время работы: ' + Math.round((st.uptime || 0) / 60) + ' мин. ' +
     'Каталог данных: <code>' + esc(rset.data_dir || '') + '</code></div>' +
     (L.cores ? '<div class="card" style="margin:8px 0 12px"><h3 style="margin-top:0">' +
@@ -2361,6 +3305,7 @@ function tabCommon() {
           (v.replaced ? ', заменено свежими ' + v.replaced : '') + (v.dropped ? ', <b>выброшено ' + v.dropped + '</b>' : '') +
           (v.last_sec ? ', последняя ' + v.last_sec + ' с' : '') + (v.errors ? ', <span style="color:#e88">ошибок ' + v.errors + ': ' + esc(v.last_err) + '</span>' : '')).join(' · ') +
         '</div>' : '') + '<div class="mini" id="llmLoad"></div></div>' : '') +
+    '<details class="sgrp"><summary>🎤 Каналы платы: кванты на D6, сейф памяти, микрофон и камера<small>3 блока статуса</small></summary><div class="sbody">' +
     '<div class="card" id="partBox" style="margin:8px 0 12px"><h3 style="margin-top:0">⚛ Кванты на D6 (плата v2.92+)</h3>' +
     '<div class="mini">Скетч платы выдаёт на пин D6 дискретные уровни ШИМ: короткие вспышки, пакеты и низкий фон. ' +
     'Шум конденсатора на A4 становится стимулом нейронам и ускоряет подбор весов. Это имитация квантов: настоящие частицы конденсатор не рождает.</div>' +
@@ -2372,10 +3317,7 @@ function tabCommon() {
     '<div class="mini">Уровень микрофона, распознанные фразы и живой звук с платы — нажми «Слушать», и плата начнёт слать звук в облако на ПК; ' +
     'для камеры по проводу (UART) видны счётчики приёмника: сколько байт и целых кадров дошло и почему нет кадра.</div>' +
     '<div id="micForm" class="mini" style="margin-top:6px">загрузка…</div></div>' +
-    '<div class="fgroup" id="setMode"><label><b>Как мозг отвечает на вопрос</b> (v3.129)</label>' +
-    '<div class="mini">1) Команды и точные вещи: расчёт, время, заметки, камера и микрофон, код. ' +
-    '2) Подтверждённый ответ из памяти диалогов (👍 или «правильный ответ: …»). 3) Статья базы знаний — по контексту вопроса (эпоха, что спрашивают). ' +
-    '4) Интернет — с источниками. 5) Прочитанные материалы и похожая статья — только если в них есть ВСЕ слова темы вопроса. 6) Иначе — честное «не знаю» и почему.</div></div>' +
+    '</div></details>' +
     '<div class="fgroup switch"><input type="checkbox" id="setHonest"' +
     (rset.settings && rset.settings.answer_honest !== false ? ' checked' : '') + '>' +
     '<label for="setHonest"><b>Честный ответ без бреда</b> (рекомендуется; объединяет «Честный ответ» и «Не показывать бред»): ответ только из проверяемого — база знаний, интернет, расчёт, код, камера, ' +
@@ -2404,18 +3346,22 @@ function tabCommon() {
     (function () {           /* v3.155: поисковики Google и Яндекс + ключи API */
       const ss = rset.settings || {}, en = String(ss.web_engines || 'mailru,mojeek');
       const esc = v => String(v || '').replace(/[&"<>]/g, c => ({ '&': '&amp;', '"': '&quot;', '<': '&lt;', '>': '&gt;' }[c]));
-      return '<div class="fgroup" id="setEngBox"><label for="setEngines"><b>Поисковики</b>: Поиск Mail.ru и Mojeek — без ключей, доступны в России. Google и Яндекс — только с ключами API (без ключа они отдают капчу). Ключи хранятся только в облаке, в панель приходит маска.</label>' +
+      return '<div class="fgroup" id="setEngBox"><label for="setEngines"><b>Поисковики</b>: Яндекс (выдача), Поиск Mail.ru и Mojeek — без ключей, доступны в России (v3.194: безключевая выдача Яндекса включена первой, мёртвый поисковик сам уходит на паузу). Google и Яндекс API — только с ключами (без ключа они отдают капчу). Ключи хранятся только в облаке, в панель приходит маска.</label>' +
         '<select id="setEngines">' +
-        '<option value="mailru,mojeek"' + (!/google|yandex/.test(en) || /mailru/.test(en) && /mojeek/.test(en) ? ' selected' : '') + '>Поиск Mail.ru и Mojeek (доступны в России, без ключа)</option>' +
+        '<option value="yandex"' + (en === 'yandex' ? ' selected' : '') + '>Яндекс Search API v2 (ключ + Folder ID)</option>' +
+        '<option value="yandex-html,mailru,mojeek"' + (/yandex-html/.test(en) ? ' selected' : '') + '>Анонимные страницы: Яндекс, Mail.ru и Mojeek (могут требовать капчу)</option>' +
+        '<option value="mailru,mojeek"' + (!/google|yandex/.test(en) && /mailru/.test(en) && /mojeek/.test(en) ? ' selected' : '') + '>Поиск Mail.ru и Mojeek (без Яндекс-выдачи)</option>' +
         '<option value="mailru"' + (en === 'mailru' ? ' selected' : '') + '>Только Поиск Mail.ru</option>' +
         '<option value="mojeek"' + (en === 'mojeek' ? ' selected' : '') + '>Только Mojeek</option></select>' +
-        '<div class="mini">v3.167: Google и Яндекс без ключа отдают капчу — теперь они подключаются только по ключу API (поля ниже) и добавляются к выдаче сами. Энциклопедия: Википедия, при недоступности — Рувики.</div>' +
+        '<div class="mini">v3.194: поисковик, трижды не ответивший (сеть, капча, требование входа), отдыхает 10 минут — вопрос не ждёт мёртвый сайт. Если интернет не отвечает, в чате будет причина по каждому поисковику. Google и Яндекс без ключа отдают капчу — они подключаются только по ключу API (поля ниже) и добавляются к выдаче сами. Энциклопедия: Википедия, при недоступности — Рувики.</div>' +
         '<div class="frow" style="margin-top:6px;gap:6px;flex-wrap:wrap">' +
         '<input id="setGKey" placeholder="Google API key (необязательно)" autocomplete="off" value="' + esc(ss.google_api_key) + '">' +
         '<input id="setGCx" placeholder="Google cx (ID поисковой системы)" autocomplete="off" value="' + esc(ss.google_cx) + '"></div>' +
         '<div class="frow" style="margin-top:6px;gap:6px;flex-wrap:wrap">' +
-        '<input id="setYKey" placeholder="Яндекс Search API key (необязательно)" autocomplete="off" value="' + esc(ss.yandex_api_key) + '">' +
-        '<input id="setYFolder" placeholder="Яндекс folderid (каталог Yandex Cloud)" autocomplete="off" value="' + esc(ss.yandex_folder) + '"></div>' +
+        '<input id="setYKey" type="password" placeholder="Яндекс Search API v2: API-ключ сервисного аккаунта" autocomplete="off" value="' + esc(ss.yandex_api_key) + '">' +
+        '<input id="setYFolder" placeholder="Folder ID каталога Yandex Cloud" autocomplete="off" value="' + esc(ss.yandex_folder) + '"></div>' +
+        '<div class="mini">Search API v2: роль search-api.webSearch.user на каталоге. API проверяется первым при заданных ключе и Folder ID.</div>' +
+        '<div class="frow" style="margin-top:6px"><button class="btn ghost" id="yandexTest" type="button">Проверить Яндекс API</button><span class="mini" id="yandexState"></span></div>' +
         '<div class="frow" style="margin-top:6px"><button class="btn ghost" id="engTest" type="button">Проверить поисковики</button></div>' +
         '<div class="mini" id="engState">Ключ Google: programmablesearchengine.google.com (cx) + console.cloud.google.com (Custom Search API). Яндекс: Yandex Cloud → Search API (ключ сервисного аккаунта и ID каталога).</div></div>';
     })() +
@@ -2441,27 +3387,18 @@ function tabCommon() {
     '<div class="fgroup switch"><input type="checkbox" id="setBotStatus"' +
     (!rset.settings || rset.settings.bot_status_msg !== false ? ' checked' : '') + '>' +
     '<label for="setBotStatus">Боты (МАКС, Telegram): пока готовится ответ, писать «🔍 Смотрю базу данных…» и убирать это сообщение, когда ответ пришёл (v3.50)</label></div>' +
-    '<div class="fgroup switch"><input type="checkbox" id="setD6Neg"' +
-    (rset.settings && rset.settings.d6_negfreq ? ' checked' : '') + '>' +
-    '<label for="setD6Neg">Отрицательная частота на D6 (v3.51, опция): знак «−» появляется в генераторе платы вместе с числом («−440 Гц») и уходит на D6 кадром вместе с мыслью. Знак выбирает своя LLM (после какой затравки мысль вероятнее: «частота минус.» или «частота плюс.»; решает, когда накопилось ≥20 примеров с обеих сторон; фоном, обучению и ответам не мешает — занята, значит решает Δf: частота ниже сглаженной → «−»). В чате платы загорается иконка «−f D6». ' +
-    'Честно: физически отрицательной частоты и напряжения на пине нет (D6 даёт 0…3,3 В на несущей 500 Гц) — знак передаётся кодом: маркерный байт 0xFF («−») или 0xFE («+») и два байта частоты в Гц. ' +
-    'Нужны приложение платы v2.47 и скетч v2.46+; читать кадр должен внешний приёмник (вольтметр/A1 другой платы), нейроны шины D4 его не слышат.</label></div>' +
-    '<div class="fgroup switch"><input type="checkbox" id="setD4Neg"' +
-    (rset.settings && rset.settings.d4_negfreq ? ' checked' : '') + '>' +
-    '<label for="setD4Neg">Отрицательная частота и на D4 (v3.52, опция): знак решается так же (своя LLM, иначе Δf). Честно: частота на D4 остаётся той же, меняется ПОЛЯРНОСТЬ меандра — «+»: высокий уровень 1/3 периода, «−»: 2/3 периода (инверсия). Нейроны считают фронты, поэтому темп для них не меняется; знак виден по среднему напряжению на A0 (≈1,1 В против ≈2,2 В) или по длительности высокого уровня. Нужны приложение платы v2.48 и пересобранный скетч.</label></div>' +
-    '<div class="fgroup switch"><input type="checkbox" id="setD6Cam"' +
-    (rset.settings && rset.settings.d6_camframe ? ' checked' : '') + '>' +
-    '<label for="setD6Cam">Кадр ESP32-CAM на D6 (v3.52): кадр уходит САМИМ КАДРОМ — растром 16×12 серых точек, каждая точка уровнем PWM (1…254), строка за строкой (255 — начало/конец кадра, 0 — конец строки), а не байтами JPEG. Идёт по тому же пину циклом из 4 слотов: слот 0 — мысль, слот 1 — точка кадра (отставание кадра от мысли π/2), при галочке «отрицательная частота» точка идёт в слоте 3 (−π/2), темп тот же. Один кадр ≈ 40 с. Уменьшает кадр облако (нужен Pillow), камера ESP32-CAM должна быть подключена. Выкл — D6 несёт только мысль.</label></div>' +
-    '<div class="fgroup switch"><input type="checkbox" id="setD4Cam"' +
-    (rset.settings && rset.settings.d4_camframe ? ' checked' : '') + '>' +
-    '<label for="setD4Cam">Кадр камеры и на D4 (v3.55, опция): тот же чистый кадр (Манчестер 32×24, без PWM и байтов), но частота кадра — «глубокое дыхание» в пределах −2000…+2000 Гц: частоту по строкам задаёт ТОЛЬКО внутренняя тензорная сеть платы (не LLM и не нейроны): по неуверенности сети в зоне последней мысли она выбирает период вдоха-выдоха (4…12 с), глубину размаха и паузу между кадрами (3…10 с вместо прежних 30 с). Знак частоты — код строки: минус = длинный низкий уровень после синхро и обратный код точек (уровни не инвертируются). Частота ведётся не быстрее ±25 % за строку, по модулю не ниже 200 Гц (перед сменой знака «пауза между вдохом и выдохом»). Честно: пока идёт кадр (~2,5 с), меандр генератора на D4 не выводится — при частых кадрах нейроны заметную часть времени видят искажённый темп; снимите галочку, если это мешает. Частота совпадает со словами (v3.56): строки кадра делятся между словами мысли, и если слово есть в таблице «сигнал ↔ слова» (слова с низким сигналом — к минусу, с высоким — к плюсу), его уровень на 60 % задаёт частоту строки, остальное — дыхание сети; неизвестное слово — чистое дыхание. Дыхание (без слов) вместе с фразой уходит в облако и учит смыслу (пара «уровень ↔ слова», дообучение LLM). Нужны плата v2.52 и пересобранный скетч.</label></div>' +
-    '<div class="fgroup"><label>Как слать кадр на D6 (v3.53)</label><select id="setD6CamMode">' +
-    '<option value="pure"' + ((rset.settings && rset.settings.d6_cammode) !== 'pwm' ? ' selected' : '') + '>Чистый кадр: без PWM и байтов (цифровой уровень, ~1,7 с на кадр)</option>' +
-    '<option value="pwm"' + ((rset.settings && rset.settings.d6_cammode) === 'pwm' ? ' selected' : '') + '>Растр уровнями PWM (v3.52, ~41 с на кадр)</option></select>' +
-    '<div class="mini">Чистый кадр: пин D6 — обычный цифровой выход, кадр 32×24 чёрно-белых точек (серое — дизеринг) рисуется самим уровнем сигнала, как факс: точка = Манчестер-слот (белая ВЫСОКИЙ→НИЗКИЙ, чёрная НИЗКИЙ→ВЫСОКИЙ), начало кадра — высокий уровень 6 половинок, начало строки — 3 (в данных больше 2 подряд не бывает). «+»: кадр идёт после мысли с паузой π/2 (мысль, пришедшая во время кадра, кадр прерывает); «−» (отрицательная частота): кадр опережает мысль на π/2, мысль ждёт его конца. Пока не проверено на железе UNO Q; приёмник — осциллограф/логический анализатор/A1 другой платы.</div></div>' +
-    '<div class="fgroup"><label>Сколько первых страниц выдачи читать для ответа (v3.14, до 10)</label>' +
-    '<input type="number" id="setWebPages" min="1" max="10" step="1" value="' +
-    (rset.settings && rset.settings.web_pages ? rset.settings.web_pages : 10) + '"></div>' +
+    '<div class="fgroup"><label for="setNegFreq"><b>Знак частоты «−» (v3.51–3.52; один селект вместо двух галочек)</b>: знак «−» уходит с мыслью кодом (маркерный байт 0xFF/0xFE + два байта Гц); знак выбирает своя LLM (сравнение затравок «частота минус.»/«частота плюс.», ≥20 примеров) или Δf. Честно: физически отрицательного напряжения на пине нет (D6 даёт 0…3,3 В на несущей 500 Гц); на D4 меняется полярность меандра («+»: высокий уровень 1/3 периода, «−»: 2/3 — инверсия). Читать знак должен внешний приёмник (вольтметр/A1 другой платы). Нужны приложение платы v2.48 и скетч v2.46+</label>' +
+    '<select id="setNegFreq">' +
+    '<option value="no"' + (!(rset.settings && rset.settings.d6_negfreq) ? ' selected' : '') + '>Не посылать знак частоты</option>' +
+    '<option value="d6"' + (rset.settings && rset.settings.d6_negfreq && !rset.settings.d4_negfreq ? ' selected' : '') + '>На D6 — знак «−» кадром вместе с мыслью (иконка «−f D6» в чате платы)</option>' +
+    '<option value="d64"' + (rset.settings && rset.settings.d6_negfreq && rset.settings.d4_negfreq ? ' selected' : '') + '>На D6 и на D4 — на D4 меняется полярность меандра</option></select></div>' +
+    '<div class="fgroup"><label for="setCamPin"><b>Кадр камеры ESP32-CAM на пин (v3.52–3.55; один селект вместо трёх галочек)</b>: кадр уходит САМИМ КАДРОМ — растром точек, не байтами JPEG; на D4 — «глубокое дыхание» −2000…+2000 Гц, частоту по строкам ведёт тензорная сеть платы (не LLM и не нейроны). Кадр уменьшает облако (нужен Pillow), камера должна быть подключена; приёмник — осциллограф/логический анализатор/A1 другой платы</label>' +
+    '<select id="setCamPin">' +
+    '<option value="no"' + (!(rset.settings && rset.settings.d6_camframe) ? ' selected' : '') + '>Не посылать кадр — D6 несёт только мысль</option>' +
+    '<option value="pure"' + (rset.settings && rset.settings.d6_camframe && (rset.settings.d6_cammode) !== 'pwm' && !rset.settings.d4_camframe ? ' selected' : '') + '>Чистый кадр на D6 — 32×24, Манчестер, ~1,7 с (v3.53)</option>' +
+    '<option value="pwm"' + (rset.settings && rset.settings.d6_camframe && (rset.settings.d6_cammode) === 'pwm' ? ' selected' : '') + '>Растр уровнями PWM на D6 — 16×12, ~41 с (v3.52)</option>' +
+    '<option value="d64"' + (rset.settings && rset.settings.d6_camframe && rset.settings.d4_camframe ? ' selected' : '') + '>Кадр на D6 и «дыхание» на D4 (v3.55; слово из таблицы «сигнал ↔ слова» задаёт частоту строки на 60 %)</option></select>' +
+    '<div class="mini">Чистый кадр: пин D6 — цифровой выход, точка = Манчестер-слот (белая ВЫСОКИЙ→НИЗКИЙ, чёрная НИЗКИЙ→ВЫСОКИЙ), начало кадра — высокий уровень 6 половинок, строки — 3; слоты цикла: 0 — мысль, 1 — точка кадра (π/2), при знаке «−» — 3 (−π/2). Растр PWM: точка уровнем 1…254, строка за строкой (255 — границы кадра, 0 — конец строки). Пока не проверено на железе UNO Q.</div></div>' +
     (function () {          /* v3.166: строгая связь с мозгом neuro-12 */
       const ss = rset.settings || {};
       return '<div class="fgroup switch"><input type="checkbox" id="setBrainStrict"' + (ss.brain_strict !== false ? ' checked' : '') + '>' +
@@ -2635,12 +3572,23 @@ function tabCommon() {
       srcLoad();
     } catch (e) { $('#srcOut').textContent = 'Ошибка: ' + (e && e.message || e); }
   };
+  if ($('#yandexTest')) $('#yandexTest').onclick = async () => {
+    const button = $('#yandexTest'), box = $('#yandexState');
+    button.disabled = true; box.textContent = 'Проверяю Search API v2…';
+    try {
+      const r = await api('/api/web/yandex/test', { body: {
+        yandex_api_key: $('#setYKey').value.trim(), yandex_folder: $('#setYFolder').value.trim(), q: 'фотосинтез'
+      } });
+      box.textContent = r.ok ? r.message + (r.found ? ': ' + r.found + ' ссылок' : '') + '. Для постоянной работы сохраните настройки.' : (r.error || 'Проверка не удалась');
+    } catch (e) { box.textContent = 'Проверка не удалась: ' + (e.message || e); }
+    finally { button.disabled = false; }
+  };
   if ($('#engTest')) $('#engTest').onclick = async () => {
     const box = $('#engState'); box.textContent = 'Ищу «фотосинтез» во всех поисковиках…';
     try {
       const r = await api('/api/web/engines', { body: { q: 'фотосинтез' } });
       box.textContent = Object.entries(r.engines || {}).map(([k, v]) =>
-        k + ': ' + (v.found ? '✅ ' + v.found + ' ссылок' : '❌ ' + (v.err || 'пусто')) + (v.via ? ' (' + v.via + ')' : '')).join(' · ') || 'нет ответа';
+        k + ': ' + (v.found ? '✅ ' + v.found + ' ссылок' : v.ok ? '✅ API отвечает, 0 ссылок' : '❌ ' + (v.err || 'пусто')) + (v.via ? ' (' + v.via + ')' : '')).join(' · ') || 'нет ответа';
     } catch (e) { box.textContent = 'Проверка не удалась: ' + (e && e.message || e); }
   };
   $('#saveCommon').onclick = async () => {
@@ -2652,7 +3600,6 @@ function tabCommon() {
       answer_honest: $('#setHonest').checked, llm_free: ($('#setLlmFree') ? $('#setLlmFree').checked : true),
       answer_offline: $('#setOffline').checked,
       web_first: $('#setWebSrc').value !== 'off',
-      web_pages: Math.max(1, Math.min(10, parseInt($('#setWebPages').value, 10) || 10)),
       answer_read_first: $('#setReadFirst').checked, llm_web_on: $('#setLlmWeb').checked,
       llm_web_check: $('#setLlmFact') ? $('#setLlmFact').checked : true,
       llm_web_check_talk: $('#setLlmFactTalk') ? $('#setLlmFactTalk').checked : true,
@@ -2671,11 +3618,12 @@ function tabCommon() {
       imagine_on: $('#setImagine').checked,
       terminal_on: $('#setTerminal') ? $('#setTerminal').checked : false,
       bot_status_msg: $('#setBotStatus').checked,
-      d6_negfreq: $('#setD6Neg').checked,
-      d4_negfreq: $('#setD4Neg').checked,
-      d6_camframe: $('#setD6Cam').checked,
-      d6_cammode: $('#setD6CamMode').value,
-      d4_camframe: $('#setD4Cam').checked,
+      /* v3.193: один селект «знак частоты» и один «кадр камеры» вместо 5 галочек */
+      d6_negfreq: $('#setNegFreq').value !== 'no',
+      d4_negfreq: $('#setNegFreq').value === 'd64',
+      d6_camframe: $('#setCamPin').value !== 'no',
+      d6_cammode: $('#setCamPin').value === 'pwm' ? 'pwm' : 'pure',
+      d4_camframe: $('#setCamPin').value === 'd64',
       d6_on: true } });
     if (token && token !== (rset.token || '')) {
       const fd = new FormData(); fd.append('token', token);
@@ -4154,6 +5102,25 @@ async function tabTeacher() {
     '" placeholder="sk-…"></div></div>' +
     '<button class="btn" id="tSave">Сохранить</button> ' +
     '<button class="btn ghost" id="tTest">Проверить учителя</button>' +
+    '<div class="card" style="margin:14px 0"><h3 style="margin-top:0">🎓 Учитель кода для своей LLM</h3>' +
+    '<div class="hint" id="ctHint"></div>' +
+    '<div class="frow"><div class="fgroup"><label>Движок учителя</label>' +
+    '<select id="ctEngine"><option value="yandex">Яндекс (YandexGPT)</option>' +
+    '<option value="teacher">Внешний учитель (настройки выше)</option></select></div>' +
+    '<div class="fgroup"><label>Модель</label>' +
+    '<input type="text" id="ctModel" placeholder="yandexgpt/latest"></div>' +
+    '<div class="fgroup"><label>Уроков за курс (1–40; v3.193: по умолчанию 12, темы по кругу — программирование → безопасность → администрирование → сети)</label>' +
+    '<input type="number" id="ctLessonsN" min="1" max="40" value="12"></div></div>' +
+    '<div class="fgroup" id="ctUrlRow"><label>Свой адрес Яндекса (не обязательно)</label>' +
+    '<input type="text" id="ctUrl" placeholder="https://ai.api.cloud.yandex.net/v1/chat/completions"></div>' +
+    '<div class="fgroup"><label>Темы через запятую (пусто — по кругу все 27 тем: программирование → ИБ → администрирование → сети)</label>' +
+    '<input type="text" id="ctTopics" placeholder="шифр Цезаря, разбор вывода df"></div>' +
+    '<div class="frow"><button class="btn" id="ctRun">🎓 Провести урок</button>' +
+    '<button class="btn ghost" id="ctStop">Остановить</button>' +
+    '<button class="btn ghost" id="ctApply">Сохранить настройки</button>' +
+    '<button class="btn ghost" id="ctCheck">Проверить учителя кода</button></div>' +
+    '<div id="ctBox" style="margin-top:10px"><div class="typing"><i></i><i></i><i></i></div></div>' +
+    '<div id="ctLessons" style="margin-top:8px"></div></div>' +
     '<h2 style="margin-top:18px">Мысли учителя</h2><div class="hint">Мысли своей ' +
     'LLM (🤖), плат (🧩) и облака (☁) — они же уходят на пин D6 плат.</div>' +
     '<div id="tThoughts" class="hint"></div>' +
@@ -4179,6 +5146,89 @@ async function tabTeacher() {
     toast(rr.ok ? ('Учитель: ' + (rr.reply || '').slice(0, 120))
       : ('Ошибка: ' + rr.error), rr.ok ? 'ok' : 'err');
   };
+  /* ------- v3.191: учитель кода (ЯндексGPT / внешний учитель) ------- */
+  let ctTimer = null, ctFilled = false;
+  const ctRender = (t) => {
+    const box = $('#ctBox');
+    if (!box || !t) return;
+    const st = t.stats || {};
+    box.innerHTML =
+      '<div class="' + (t.running ? 'okbox' : 'warnbox') + '">' +
+      (t.running
+        ? 'Идёт: <b>' + esc(t.phase || '') + '</b> — ' + esc(t.message || '')
+        : 'Движок: <b>' + esc(t.engine_name || '—') + '</b>' +
+          (t.phase ? ' · ' + esc(t.phase) : '') +
+          (t.message ? ' — ' + esc(t.message) : '')) +
+      ' · принято ' + (st.accepted || 0) + ' из ' + (st.requested || 0) +
+      (st.rejected ? ', отбраковано ' + st.rejected : '') +
+      ' · в банке ' + (t.bank_size || 0) + ' уроков</div>' +
+      (t.last_error ? '<div class="warnbox">' + esc(t.last_error) + '</div>' : '') +
+      (t.boot ? '<div class="hint">Курс кода: ' +
+        esc([t.boot.phase, t.boot.message, t.boot.error].filter(Boolean).join(' · ')) +
+        '</div>' : '') +
+      (t.last_lesson ? '<div class="hint">Последний урок «' + esc(t.last_lesson.task) +
+        '»:<pre style="white-space:pre-wrap;margin:4px 0 0">' + esc(t.last_lesson.code) + '</pre></div>' : '');
+    const list = $('#ctLessons');
+    if (list) {
+      const bank = t.bank || [];
+      list.innerHTML = bank.length
+        ? bank.map(x => '<div>📚 <b>' + esc(x.g || x.group || '') + '</b> · <b>' + esc(x.topic || '') + '</b> · ' + esc(x.t || '') + '</div>').join('')
+        : '<div class="mini">Банк уроков пуст — проведите первый урок.</div>';
+    }
+    clearTimeout(ctTimer);
+    if (t.running) ctTimer = setTimeout(loadCt, 3000);
+  };
+  const loadCt = () => {
+    if (!$('#ctBox')) { clearTimeout(ctTimer); return Promise.resolve(); }
+    return api('/api/code/teach').then(r => {
+      const t = r.teach || {};
+      if (!ctFilled) {
+        ctFilled = true;
+        $('#ctEngine').value = t.engine || 'yandex';
+        $('#ctModel').value = t.model || '';
+        $('#ctLessonsN').value = t.lessons || 12;
+        $('#ctTopics').value = t.topics || '';
+        $('#ctUrl').value = t.endpoint || '';
+        ctEngineSync();
+      }
+      ctRender(t);
+    }).catch(() => {});
+  };
+  const ctSave = (action) => api('/api/code/teach', { body: {
+    action, engine: $('#ctEngine').value, endpoint: $('#ctUrl').value.trim(),
+    model: $('#ctModel').value.trim(), lessons: $('#ctLessonsN').value,
+    topics: $('#ctTopics').value.trim() } });
+  const ctEngineSync = () => {
+    if (!$('#ctEngine')) return;
+    const y = $('#ctEngine').value === 'yandex';
+    $('#ctUrlRow').style.display = y ? '' : 'none';
+    $('#ctHint').textContent = y
+      ? 'Яндекс (YandexGPT): ключ и каталог — те же, что для поиска (⚙ «Интернет и знания»: «Яндекс (ключ API)» и folder). Учитель придумывает упражнения на Python по темам 4 групп — программирование, информационная безопасность, администрирование серверов, сети (как курсы программы обучения); облако проверяет код в песочнице и дообучает свою LLM. Уроков за курс — до 40.'
+      : 'Внешний учитель: берутся URL/модель/ключ из блока выше («Включить внешний учитель»). Он в чате не отвечает — только учит. Темы те же 4 группы: программирование, безопасность, администрирование, сети.';
+  };
+  $('#ctEngine').onchange = ctEngineSync;
+  ctEngineSync();
+  $('#ctApply').onclick = async () => {
+    const r = await ctSave('configure');
+    toast(r.ok ? 'Настройки учителя кода сохранены' : ('Ошибка: ' + r.error),
+          r.ok ? 'ok' : 'err');
+    loadCt();
+  };
+  $('#ctRun').onclick = async () => {
+    const r = await ctSave('start');
+    toast(r.ok ? 'Урок пошёл: учитель придумывает упражнения, облако их проверяет'
+               : ('Не запустилось: ' + r.error), r.ok ? 'ok' : 'err');
+    loadCt();
+  };
+  $('#ctStop').onclick = async () => { await ctSave('stop'); loadCt(); };
+  $('#ctCheck').onclick = async () => {
+    const r = await ctSave('check');
+    if (!r.ok) return toast('Учитель кода: ' + r.error, 'err');
+    toast(r.valid ? ('Урок прошёл проверку: ' + (r.task || '').slice(0, 90))
+                  : ('Урок отбракован: ' + (r.why || 'причина не названа')),
+          r.valid ? 'ok' : 'err');
+  };
+  loadCt();
   api('/api/teacher/thoughts').then(rt => {
     const el = $('#tThoughts');
     if (!el) return;
@@ -4297,12 +5347,13 @@ function tabSecurity() {
     } catch (e) {}
   }, 50);
   p.innerHTML = '<h2>Безопасность</h2>' +
-    '<div class="okbox">Веб-панель закрыта паролем. Платы подключаются ' +
+    '<div class="okbox" id="secWho">Веб-панель закрыта паролем. Платы подключаются ' +
     'отдельно — по токену платы (вкладка «Общие»). Пароль хранится ' +
     'только на этой машине (PBKDF2, 240 000 итераций).</div>' +
+    '<div id="secUsersBox"></div>' +
     '<div class="fgroup"><label>Старый пароль</label>' +
     '<input id="secOld" type="password" autocomplete="current-password"></div>' +
-    '<div class="fgroup"><label>Новый пароль (от 4 знаков)</label>' +
+    '<div class="fgroup"><label>Новый пароль (от 4 знаков; для входа по почте — от 8)</label>' +
     '<input id="secNew" type="password" autocomplete="new-password"></div>' +
     '<div class="fgroup"><label>Повтори новый пароль</label>' +
     '<input id="secNew2" type="password" autocomplete="new-password"></div>' +
@@ -4317,6 +5368,7 @@ function tabSecurity() {
     'окно.</div>' +
     '<button class="btn danger" id="secLogoutAll">⎋ Выйти на всех ' +
     'устройствах</button>';
+  secAccounts();
   $('#secSave').onclick = async () => {
     const o = $('#secOld').value, n1 = $('#secNew').value,
           n2 = $('#secNew2').value;
@@ -4335,6 +5387,42 @@ function tabSecurity() {
     await api('/api/auth/logout-all', { body: {} });
     location.href = '/login';
   };
+}
+
+/* v3.233: учётки — кто вошёл, начальный пароль, пользователи и заявки (только владелец) */
+async function secAccounts() {
+  let ck = {};
+  try { ck = await (await fetch('/api/auth/check')).json(); } catch (e) { return; }
+  const u = ck.user || {};
+  const who = $('#secWho');
+  if (who && u.email) who.innerHTML = 'Вы вошли как <b>' + esc(u.email) + '</b> · ' + (u.role === 'owner' ? 'владелец' : 'пользователь') +
+    '. Ниже меняется пароль этой учётки (от 8 знаков).' +
+    (ck.seed_password ? '<div style="margin-top:6px">⚠ Стоит начальный пароль владельца — смените его.</div>' : '');
+  const box = $('#secUsersBox');
+  if (!box || u.role !== 'owner') return;
+  const draw = (users) => {
+    const st = { pending: '⏳ ждёт одобрения', active: '✅ активен', rejected: '⛔ отклонён' };
+    box.innerHTML = '<h2 style="margin-top:20px">👥 Пользователи и заявки</h2>' +
+      '<div class="hint">Регистрация — через вас: человек подаёт заявку на странице входа, вы одобряете здесь. ' +
+      'Пользователь видит только свои чаты, может запускать включённые приложения App Lab; настройки, серверы, ' +
+      'администрирование, обновление и рабочий стол — только у владельца.</div>' +
+      (users.length ? users.map(x => '<div class="fgroup" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">' +
+        '<div style="flex:1;min-width:200px"><b>' + esc(x.email) + '</b>' + (x.name ? ' · ' + esc(x.name) : '') +
+        '<div class="mini">' + (x.role === 'owner' ? '👑 владелец' : 'пользователь') + ' · ' + (st[x.status] || x.status) +
+        (x.created ? ' · ' + new Date(x.created * 1000).toLocaleString('ru') : '') + (x.note ? ' · «' + esc(x.note) + '»' : '') + '</div></div>' +
+        (x.status !== 'active' ? '<button class="btn sm" data-ua="approve" data-ue="' + esc(x.email) + '">✅ Одобрить</button>' : '') +
+        (x.status === 'pending' ? '<button class="btn ghost sm" data-ua="reject" data-ue="' + esc(x.email) + '">⛔ Отклонить</button>' : '') +
+        (x.status === 'active' && x.email !== u.email ? '<button class="btn ghost sm" data-ua="' + (x.role === 'owner' ? 'user' : 'owner') + '" data-ue="' + esc(x.email) + '">' +
+          (x.role === 'owner' ? 'Сделать пользователем' : '👑 Сделать владельцем') + '</button>' : '') +
+        (x.email !== u.email ? '<button class="btn ghost sm danger" data-ua="delete" data-ue="' + esc(x.email) + '">🗑</button>' : '') +
+        '</div>').join('') : '<div class="mini">Пока никого.</div>');
+    $$('[data-ua]', box).forEach(b => b.onclick = async () => {
+      if (b.dataset.ua === 'delete' && !confirm('Удалить учётку ' + b.dataset.ue + '?')) return;
+      const r = await api('/api/auth/users', { body: { email: b.dataset.ue, action: b.dataset.ua } }).catch(e => ({ ok: false, error: e.message }));
+      if (r && r.ok) { toast('Готово', 'ok'); draw(r.users || []); } else toast((r && r.error) || 'не вышло', 'err');
+    });
+  };
+  try { const r = await api('/api/auth/users'); draw(r.users || []); } catch (e) {}
 }
 
 /* ---------------------------- Макс-бот (v3.23) ---------------------------- */
@@ -4420,7 +5508,7 @@ async function tabMaxbot() {
   const p = $('[data-pane="maxbot"]');
   p.innerHTML = '<h2>Бот в мессенджере МАКС</h2>' +
     '<div id="mxBox" class="hint">Смотрю…</div>' +
-    '<div class="okbox">Бот отвечает мозгом облака (без внешнего LLM) и ' +
+    '<div class="okbox">ИИ-ответ приходит из того же сервиса, что в облачном чате и API /api/v1/ask (режим cloud). Отдельный ключ для встроенного бота не нужен. Бот передаёт контекст чата и получает готовый ответ без собственных дописок. Бот также ' +
     'учится по статьям из групп: сообщения длиннее минимума (по умолчанию ' +
     '10 знаков), ссылки на Википедию и присланные документы (docx, doc, ' +
     'rtf, pdf, txt…) он складывает в базу знаний, файлы сохраняет себе. ' +
@@ -4448,10 +5536,19 @@ async function tabMaxbot() {
     'последние реплики каждого чата и понимает продолжения («а почему?», ' +
     '«а когда он основан?», «о чём мы говорили?»); «забудь» в чате ' +
     'стирает память диалога</label></div>' +
-    '<h3 style="margin-top:14px">Кто отвечает</h3>' +
-    '<div class="hint">Отвечают мозг neuro-12 + своя LLM — тот же движок, что в веб-чате (v3.99): база знаний и интернет, ' +
-    'а если статьи нет — мозг сам, с опорой на память (сеть материалов, память диалогов, память платы). ' +
-    'Приветствие — только в начале диалога; длинный ответ уходит следующим сообщением.</div>' +
+    '<h3 style="margin-top:14px">Как отвечает бот</h3>' +
+    '<div class="fgroup"><label>Режим ответа</label><select id="mxMode">' +
+    '<option value="talk"' + ((SETTINGS.settings || {}).maxbot_mode !== 'web' ? ' selected' : '') +
+    '>Разговор — отвечает мозг: берёт свои длинные мысли по теме и ' +
+    'достраивает ими ответ, пока не кончится лимит или тема</option>' +
+    '<option value="web"' + ((SETTINGS.settings || {}).maxbot_mode === 'web' ? ' selected' : '') +
+    '>Интернет — только ответ из сети, с источниками</option></select></div>' +
+    '<div class="fgroup"><label>Потолок ответа в режиме «Разговор» (знаков)</label>' +
+    '<input type="number" id="mxTalk" min="500" max="7000" step="100" value="' +
+    (((SETTINGS.settings || {}).maxbot_talk_chars) || 3500) + '"></div>' +
+    '<div class="hint">Если по теме у мозга нет подходящей мысли (или сеть ничего не дала), ' +
+    'отвечает обычный движок облака — база знаний и зоны. Приветствие — только в начале диалога; ' +
+    'длинный ответ уходит следующим сообщением.</div>' +
     '<h3 style="margin-top:18px">Скан истории чата</h3>' +
     '<div class="hint">Кнопка ниже читает историю чата через официальный ' +
     'метод GET /messages (новейшие первыми, дальше — вглубь) и загружает ' +
@@ -4549,6 +5646,8 @@ async function tabMaxbot() {
     if (!isNaN(mnV)) body.maxbot_min_learn = mnV;
     if (!isNaN(gpV)) body.maxbot_learn_gap = gpV;
     if ($('#mxMem')) body.maxbot_memory = $('#mxMem').checked;
+    if ($('#mxMode')) body.maxbot_mode = $('#mxMode').value;
+    if ($('#mxTalk')) { const tv = parseInt($('#mxTalk').value, 10); if (!isNaN(tv)) body.maxbot_talk_chars = tv; }
     box.className = 'hint'; box.textContent = 'Сохраняю и проверяю токен…';
     const rr = await api('/api/maxbot/config', { body });
     const pr = rr.probe || {};
@@ -5140,6 +6239,8 @@ function boot() {
       else showView(b.dataset.view);
     });
 
+  wireAgentSettings();
+
   const ta = $('#input');
   ta.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
@@ -5385,4 +6486,175 @@ async function tabSsh() {
       $('#sshMsg').textContent = e.message;
     }
   };
+}
+
+
+let PHOTO_OCR_TIMER = null;
+async function tabPhotoOCR() {
+  clearTimeout(PHOTO_OCR_TIMER);
+  const pane = $('[data-pane="photoocr"]');
+  pane.innerHTML = '<h2>Своя LLM: обучение чтению фотографий</h2>' +
+    '<p>Обучаемая OCR-голова зоны «Камера»: пиксели → символы. Текстовая LLM использует результат; её веса сохраняются.</p>' +
+    '<h3>Открытый набор русских букв</h3>' +
+    '<p><a href="https://github.com/GregVial/CoMNIST" target="_blank" rel="noopener">CoMNIST — Gregory Vial</a>: 33 русские буквы, нарисованные людьми на сенсорном экране. Это отдельные рукописные символы, не фотографии страниц. Лицензия <a href="https://creativecommons.org/licenses/by-sa/4.0/" target="_blank" rel="noopener">CC BY-SA 4.0</a>. Скачивается около 72 МБ; далее используется локальный кэш.</p>' +
+    '<label>Примеров для импорта (66–396)</label><input type="number" id="ocrLimit" min="66" max="396" value="330">' +
+    '<button class="btn" id="ocrImport">Загрузить русские буквы CoMNIST</button><progress id="ocrImportProgress" max="100" value="0" style="width:100%"></progress><div id="ocrImportInfo" class="mini"></div>' +
+    '<h3>База печатного русского текста</h3>' +
+    '<p><a href="https://huggingface.co/datasets/Foximaz/russian_ocr_small" target="_blank" rel="noopener">Russian OCR Small — printed</a>: 1000 синтетических страниц с правильными расшифровками, CC BY 4.0. Загружается выбранная порция изображений, а не весь файл 710 МБ. Опубликованный test здесь используется как учебный корпус и не считается независимым тестом.</p>' +
+    '<label>Страниц для загрузки (3–100)</label><input type="number" id="printedLimit" min="3" max="100" value="20">' +
+    '<button class="btn" id="printedImport">Загрузить печатную базу</button><progress id="printedProgress" max="100" value="0" style="width:100%"></progress><div id="printedInfo" aria-live="polite"></div>' +
+    '<p>В обучение попадают только согласованные с расшифровкой примеры. Остальные страницы сохраняются для подготовки: выберите страницу, выделите мышью или пальцем строку либо одну букву и введите точный текст выделения.</p>' +
+    '<select id="printedPage"><option value="">Сначала загрузите страницы</option></select><div id="printedReason" class="mini"></div>' +
+    '<canvas id="printedCanvas" style="max-width:100%;touch-action:none;border:1px solid #777" width="1" height="1"></canvas><div id="printedBox" class="mini"></div>' +
+    '<details><summary>Начало исходной расшифровки страницы (до 500 знаков)</summary><div id="printedSource" style="white-space:pre-wrap"></div></details>' +
+    '<label>Правильный текст выделенного фрагмента</label><textarea id="printedText" rows="2"></textarea>' +
+    '<label><input type="checkbox" id="printedSingle"> Выделен один символ, включая Ё/Й</label><button class="btn" id="printedAdd">Добавить выделение в обучение</button><div id="printedResult" aria-live="polite"></div>' +
+    '<h3>Свои учебные фотографии</h3><p>Для текста на фотографиях добавляйте собственные обрезанные строки с точной расшифровкой. Нужно минимум 3 разных фото. Тесные буквы, наклон и сложный фон пока могут не разбираться. Для одного символа включите режим ниже — он сохраняет точки и диакритику.</p>' +
+    '<input type="file" id="ocrFile" accept="image/*"><label><input type="checkbox" id="ocrSingle"> На снимке один символ (включая Ё/Й)</label><label>Правильный текст</label><textarea id="ocrText" rows="3"></textarea>' +
+    '<button class="btn" id="ocrAdd">Добавить пример</button>' +
+    '<h3>Обучение весов</h3><label>Эпох (1–300)</label><input type="number" id="ocrEpochs" value="80" min="1" max="300">' +
+    '<button class="btn" id="ocrTrain">Обучить / продолжить</button><button class="btn ghost" id="ocrStatus">Обновить состояние</button>' +
+    '<progress id="ocrProgress" max="100" value="0" style="width:100%"></progress><div id="ocrProgressInfo" aria-live="polite"></div>' +
+    '<h3>Проверка нового изображения</h3><p>Выберите изображение, которого не было в обучении. Подпись при проверке не используется. Низкая уверенность отображается знаком �.</p>' +
+    '<button class="btn" id="ocrRead">Распознать своей моделью</button><pre id="ocrResult" style="white-space:pre-wrap"></pre>' +
+    '<details><summary>Техническое состояние и метрики</summary><pre id="ocrState" style="white-space:pre-wrap"></pre></details>';
+  let printedPages=[];let printedImage=null;let printedBox=null;let dragStart=null;
+  const stateBox=$('#ocrState');
+  const visible=()=>$('#ocrState')===stateBox && pane.classList.contains('on') && $('#settingsVeil').classList.contains('on');
+  const show = async () => {
+    clearTimeout(PHOTO_OCR_TIMER);
+    try {
+      const r = await api('/api/llm/photo-ocr');
+      if (!visible()) return;
+      stateBox.textContent = JSON.stringify(r, null, 2);
+      const ds=r.dataset||{}, pr=r.printed||{}, m=r.model||{};
+      $('#ocrProgress').value=r.percent||0;
+      const phase={prepare:'Подготовка',training:'Обучение',validation:'Проверка',done:'Завершено',error:'Ошибка'}[r.phase] || 'Ожидание';
+      $('#ocrProgressInfo').textContent=phase+' · '+(r.percent||0)+'% · эпоха '+(r.epoch||0)+'/'+(r.epochs||0)+
+        (r.loss!=null?' · ошибка обучения '+r.loss:'')+(r.eta_seconds!=null?' · осталось примерно '+r.eta_seconds+' с':'')+
+        (r.error?' · '+r.error:'')+(m.validation_accuracy!=null?' · точность на отложенных примерах '+Math.round(m.validation_accuracy*100)+'%':'');
+      const bar=$('#ocrImportProgress');
+      if(ds.running && ds.percent==null)bar.removeAttribute('value');else bar.value=ds.percent||0;
+      $('#ocrImportInfo').textContent=(ds.phase||'idle')+' · принято '+(ds.accepted||0)+' · пропущено '+(ds.skipped||0)+
+        (ds.downloaded?' · скачано '+(ds.downloaded/1000000).toFixed(1)+' МБ':'')+(ds.error?' · '+ds.error:'');
+      $('#printedProgress').value=pr.percent||0;
+      $('#printedInfo').textContent=(pr.phase||'idle')+' · загружено страниц '+(pr.downloaded_pages||0)+' · страниц с учебными фрагментами '+(pr.prepared_pages||0)+' · требуют подготовки '+((pr.downloaded_pages||0)-(pr.prepared_pages||0))+(pr.error?' · '+pr.error:'');
+      const prior=printedPages.map(p=>p.id).join(',');printedPages=pr.pages||[];
+      if(prior!==printedPages.map(p=>p.id).join(',')) {
+        const sel=$('#printedPage'), chosen=sel.value;
+        sel.innerHTML=printedPages.map(p=>'<option value="'+p.id+'">Страница '+p.id+(p.prepared?(p.partial?' — подготовлено начало':' — подготовлена'):' — нужна подготовка')+'</option>').join('');
+        if(printedPages.some(p=>String(p.id)===chosen))sel.value=chosen;
+        choosePrintedPage();
+      }
+      $('#ocrTrain').disabled=!!r.running||!!ds.running||!!pr.running;
+      $('#ocrImport').disabled=!!r.running||!!ds.running||!!pr.running;
+      $('#printedImport').disabled=!!r.running||!!ds.running||!!pr.running;
+      $('#printedAdd').disabled=!!r.running||!!ds.running||!!pr.running;
+
+    } catch(e) {if(visible())$('#ocrProgressInfo').textContent='Не удалось обновить прогресс: '+e.message;}
+    if(visible()){clearTimeout(PHOTO_OCR_TIMER);PHOTO_OCR_TIMER=setTimeout(show,1000);}
+  };
+  const image = () => new Promise((resolve, reject) => {
+    const f=$('#ocrFile').files[0];
+    if(!f || f.size>8000000) {reject(new Error('Выберите фото до 8 МБ'));return;}
+    const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(new Error('Файл не прочитан'));reader.readAsDataURL(f);
+  });
+  for (const [id, action] of [['ocrAdd','add'],['ocrTrain','train'],['ocrRead','read'],['ocrImport','import_comnist'],['printedImport','import_printed']]) {
+    $('#'+id).onclick=async () => {
+      const button=$('#'+id);button.disabled=true;
+      try {
+        const body={action};
+        if(action==='train') body.epochs=Number($('#ocrEpochs').value);
+        else if(action==='import_comnist')body.limit=Number($('#ocrLimit').value);
+        else if(action==='import_printed')body.limit=Number($('#printedLimit').value);
+        else {body.image=await image();body.text=$('#ocrText').value;body.single=$('#ocrSingle').checked;}
+        const r=await api('/api/llm/photo-ocr',{body});
+        if(!visible())return;
+        $('#ocrResult').textContent=JSON.stringify(r,null,2);await show();
+      } catch(e) {if(visible())$('#ocrResult').textContent=e.message;} finally {if(button.isConnected && action!=='train' && action!=='import_comnist' && action!=='import_printed')button.disabled=false;}
+    };
+  }
+  const canvas=$('#printedCanvas');
+  function drawPrinted() {
+    if(!printedImage)return;
+    const ctx=canvas.getContext('2d');ctx.clearRect(0,0,canvas.width,canvas.height);ctx.drawImage(printedImage,0,0,canvas.width,canvas.height);
+    if(printedBox){const k=canvas.width/printedImage.naturalWidth;ctx.strokeStyle='#e33';ctx.lineWidth=2;ctx.strokeRect(printedBox[0]*k,printedBox[1]*k,(printedBox[2]-printedBox[0])*k,(printedBox[3]-printedBox[1])*k);}
+    $('#printedBox').textContent=printedBox?'Выделение: '+printedBox.join(', '):'Выделите нужный фрагмент';
+  }
+  function choosePrintedPage() {
+    const page=printedPages.find(p=>String(p.id)===$('#printedPage').value);
+    if(!page)return;
+    $('#printedReason').textContent=page.reason||'';$('#printedSource').textContent=page.text_preview||'';
+    $('#printedText').value='';printedBox=null;printedImage=null;
+    const img=new Image();img.onload=()=>{
+      if(!visible() || $('#printedPage').value!==String(page.id))return;
+      printedImage=img;canvas.width=Math.min(640,img.naturalWidth);canvas.height=Math.round(img.naturalHeight*canvas.width/img.naturalWidth);drawPrinted();
+    };img.onerror=()=>{if(visible())$('#printedReason').textContent='Не удалось загрузить изображение страницы';};
+    img.src='/api/llm/printed/image?id='+encodeURIComponent(page.id);
+  }
+  function imagePoint(ev) {
+    const rect=canvas.getBoundingClientRect();
+    return [Math.max(0,Math.min(printedImage.naturalWidth,Math.round((ev.clientX-rect.left)/rect.width*printedImage.naturalWidth))),Math.max(0,Math.min(printedImage.naturalHeight,Math.round((ev.clientY-rect.top)/rect.height*printedImage.naturalHeight)))];
+  }
+  canvas.onpointerdown=ev=>{if(!printedImage)return;ev.preventDefault();dragStart=imagePoint(ev);canvas.setPointerCapture(ev.pointerId);};
+  canvas.onpointermove=ev=>{if(!dragStart||!printedImage)return;const p=imagePoint(ev);printedBox=[Math.min(p[0],dragStart[0]),Math.min(p[1],dragStart[1]),Math.max(p[0],dragStart[0]),Math.max(p[1],dragStart[1])];drawPrinted();};
+  canvas.onpointerup=ev=>{if(!dragStart)return;canvas.onpointermove(ev);dragStart=null;};
+  canvas.onpointercancel=()=>{dragStart=null;};
+  $('#printedPage').onchange=choosePrintedPage;
+  $('#printedAdd').onclick=async()=>{
+    try {
+      if(!printedBox||printedBox[0]===printedBox[2]||printedBox[1]===printedBox[3])throw new Error('Выделите фрагмент страницы');
+      const text=$('#printedText').value.trim();if(!text)throw new Error('Введите точный текст выделения');
+      const r=await api('/api/llm/photo-ocr',{body:{action:'printed_crop',page_id:Number($('#printedPage').value),box:printedBox,text,single:$('#printedSingle').checked}});
+      if(!visible())return;$('#printedResult').textContent=r.ok?'Выделение добавлено в обучение':r.error||'Ошибка';await show();
+    }catch(e){if(visible())$('#printedResult').textContent=e.message;}
+  };
+  $('#ocrStatus').onclick=show;
+  await show();
+}
+
+async function tabLoopLLM() {
+  const pane=$('[data-pane="loopllm"]');
+  const s=await api('/api/settings');
+  pane.innerHTML='<h2>Loop Transformer — экспериментальный режим</h2><h3>Повторные проходы через общие блоки</h3>'+
+    '<p>Существующая LLM повторно обрабатывает скрытое состояние теми же весами. Новая модель не скачивается, веса не переобучаются. По умолчанию режим выключен. Без обучения рекуррентности качество может ухудшиться; генерация станет медленнее.</p>'+
+    '<label><input type="checkbox" id="loopOn"> Включить для свободной генерации своей LLM (NumPy)</label>'+
+    '<label>Всего проходов (1–4)</label><input type="number" min="1" max="4" id="loopPasses">'+
+    '<label>Доля изменения состояния в дополнительных проходах (0,05–1)</label><input type="number" min="0.05" max="1" step="0.05" id="loopMix">'+
+    '<p>Обучение, проверка фактов и стабильный режим кода используют обычный путь. Выключение возвращает один проход. Существующие файлы весов сохраняются.</p>'+
+    '<button class="btn" id="loopSave">Сохранить</button><div id="loopSaved" aria-live="polite"></div>';
+  $('#loopOn').checked=!!s.llm_loop_on;$('#loopPasses').value=s.llm_loop_passes||2;$('#loopMix').value=s.llm_loop_mix||.25;
+  $('#loopSave').onclick=async()=>{
+    try {
+      const r=await api('/api/settings',{body:{llm_loop_on:$('#loopOn').checked,llm_loop_passes:Number($('#loopPasses').value),llm_loop_mix:Number($('#loopMix').value)}});
+      $('#loopSaved').textContent=r.ok?'Сохранено; веса не изменены':r.error||'Ошибка сохранения';
+    } catch(e){$('#loopSaved').textContent=e.message;}
+  };
+}
+
+
+async function tabSupportApp() {
+  const p=$('[data-pane="supportapp"]'),r=await api('/api/support/config');
+  p.innerHTML='<h2>МАКС на другой платформе + ИИ облака</h2><h3>Один адрес облака</h3>'+
+    '<p>Внешний бот получает ИИ через API, а мини-приложение принимает заявки. Для публикации мини-приложения в MAX нужен доступный HTTPS-адрес. Ключ ИИ хранится только на сервере другой платформы.</p>'+
+    '<label>Основной адрес облака</label><input id="suURL" placeholder="https://cloud.example.ru">'+
+    '<button class="btn ghost" id="suCopyAPI">⧉ Адрес API ИИ</button> <button class="btn ghost" id="suCopyApp">⧉ Ссылка мини-приложения</button> <a id="suOpenApp" href="/max-app" target="_blank" rel="noopener">Открыть приложение / заявки</a>'+
+    '<h3>Проверка запуска приложения MAX</h3><p>Токен того бота, к которому привязано мини-приложение. Он используется на сервере для проверки подписи MAX, не для получения событий.</p>'+
+    '<label>Токен бота мини-приложения<input id="suToken" type="password" autocomplete="new-password" placeholder="Новый токен; оставить пустым — сохранить"></label><div id="suTokenStatus" class="mini"></div>'+
+    '<h3>Ключ для другой платформы</h3><p>Обычный ключ даёт доступ к ИИ и своим заявкам. Только выбранный ниже ключ специалиста получает доступ ко всем заявкам и временным паролям удалённой поддержки.</p>'+
+    '<button class="btn ghost" id="suNewKey">Создать ключ для платформы</button><div id="suNewKeyResult" style="overflow-wrap:anywhere"></div><label>Ключ специалиста<select id="suConnector"><option value="">Не назначен</option></select></label>'+
+    '<h3>Получение сообщений МАКС</h3><p>Если тот же бот работает на другой платформе, встроенный получатель событий облака должен быть выключен. Иначе два приложения могут конкурировать за сообщения.</p>'+
+    '<button class="btn ghost" id="suStopBuiltin">Выключить встроенный МАКС, оставить API</button>'+
+    '<h3>Заявки и данные Ассистента</h3><p>Заявки хранятся в облаке и доступны выбранному ключу платформы через /api/v1/support/tickets. Пока внешняя платформа не подтвердила свой номер заявки, статус доставки остаётся «Сохранена в облаке». Пароли удалённой помощи хранятся в памяти 2 часа и не передаются ИИ.</p>'+
+    '<button class="btn" id="suSave">Сохранить настройки приложения</button><div id="suSaved" aria-live="polite"></div>';
+  $('#suURL').value=r.public_url||location.origin;
+  $('#suTokenStatus').textContent=r.bot_token_set?'Токен настроен':'Токен ещё не настроен';
+  const fillKeys=(keys,selected)=>{const select=$('#suConnector');select.innerHTML='<option value="">Не назначен</option>';for(const k of keys||[]){if(!k.on)continue;const option=document.createElement('option');option.value=k.id;option.textContent=k.name+' · '+k.prefix;select.append(option);}select.value=selected||'';};
+  fillKeys(r.keys,r.connector_key_id);
+  const copy=async text=>{try{await navigator.clipboard.writeText(text);toast('Скопировано','ok');}catch(e){$('#suSaved').textContent=text;}};
+  $('#suCopyAPI').onclick=()=>copy($('#suURL').value.replace(/\/$/,'')+'/api/v1');
+  $('#suCopyApp').onclick=()=>copy($('#suURL').value.replace(/\/$/,'')+'/max-app');
+  $('#suNewKey').onclick=async()=>{try{const data=await api('/api/ai/keys',{body:{action:'create',name:'Платформа МАКС'}});if(!data.key)throw new Error(data.error||'Ключ не создан');$('#suNewKeyResult').textContent='Скопируйте и сохраните ключ — он показывается один раз: '+data.key;fillKeys(data.keys,$('#suConnector').value);}catch(e){$('#suNewKeyResult').textContent=e.message;}};
+  $('#suStopBuiltin').onclick=async()=>{try{const data=await api('/api/maxbot/config',{body:{maxbot_on:false}});$('#suSaved').textContent=data.ok?'Встроенный получатель выключен; API облака работает':data.error||'Ошибка';}catch(e){$('#suSaved').textContent=e.message;}};
+  $('#suSave').onclick=async()=>{try{const body={support_public_url:$('#suURL').value,support_connector_key_id:$('#suConnector').value};if($('#suToken').value)body.support_max_bot_token=$('#suToken').value;const data=await api('/api/support/config',{body});if(!data.ok)throw new Error(data.error||'Не сохранено');$('#suToken').value='';$('#suTokenStatus').textContent=data.bot_token_set?'Токен настроен':'Токен не настроен';$('#suSaved').textContent='Сохранено';}catch(e){$('#suSaved').textContent=e.message;}};
 }

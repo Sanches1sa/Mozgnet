@@ -1,0 +1,674 @@
+[
+ {
+  "id": "ct.survey",
+  "title": "Изучить структуру проекта",
+  "ask": [
+   "изучи проект",
+   "что в проекте",
+   "обзор проекта",
+   "расскажи о структуре проекта",
+   "опиши структуру"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "survey"
+   },
+   {
+    "op": "notes_md",
+    "path": "PROJECT_NOTES.md"
+   }
+  ],
+  "verified": false,
+  "notes": "Создаёт PROJECT_NOTES.md со списком модулей, функций и классов."
+ },
+ {
+  "id": "ct.notes",
+  "title": "Описание проекта в файл",
+  "ask": [
+   "опиши проект в файле",
+   "сделай документацию проекта",
+   "составь описание модулей",
+   "напиши readme по коду",
+   "сгенерируй PROJECT_NOTES"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "survey"
+   },
+   {
+    "op": "notes_md",
+    "path": "PROJECT_NOTES.md"
+   },
+   {
+    "op": "check"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "ct.locate",
+  "title": "Найти, где используется имя",
+  "ask": [
+   "найди где используется",
+   "найди определение",
+   "где используется функция",
+   "найди в проекте",
+   "покажи где вызывается"
+  ],
+  "writes": false,
+  "steps": [
+   {
+    "op": "locate"
+   }
+  ],
+  "verified": false,
+  "notes": "Имя берётся из кавычек или первого латинского слова задачи: найди «load_config»."
+ },
+ {
+  "id": "ct.read",
+  "title": "Прочитать файл",
+  "ask": [
+   "прочитай файл",
+   "покажи файл",
+   "что в файле",
+   "открой файл",
+   "покажи содержимое"
+  ],
+  "writes": false,
+  "steps": [
+   {
+    "op": "read_file"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "ct.review.full",
+  "title": "Полное ревью кода",
+  "ask": [
+   "сделай ревью кода",
+   "проверь качество кода",
+   "найди проблемы в коде",
+   "аудит проекта",
+   "code review",
+   "найди ошибки в проекте"
+  ],
+  "writes": false,
+  "steps": [
+   {
+    "op": "survey"
+   },
+   {
+    "op": "review",
+    "rules": [
+     "mutable_default",
+     "bare_except",
+     "eq_none",
+     "open_no_encoding",
+     "duplicate_defs",
+     "unused_import",
+     "long_function",
+     "missing_docstring",
+     "todo"
+    ]
+   },
+   {
+    "op": "check"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "ct.review.bugs",
+  "title": "Поиск вероятных ошибок",
+  "ask": [
+   "найди вероятные баги",
+   "где могут быть баги",
+   "поищи опасные места",
+   "что может сломаться"
+  ],
+  "writes": false,
+  "steps": [
+   {
+    "op": "review",
+    "rules": [
+     "mutable_default",
+     "bare_except",
+     "eq_none",
+     "duplicate_defs"
+    ]
+   },
+   {
+    "op": "check"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "ct.review.defaults",
+  "title": "Изменяемые значения по умолчанию",
+  "ask": [
+   "найди изменяемые аргументы по умолчанию",
+   "список по умолчанию в аргументе",
+   "mutable default"
+  ],
+  "writes": false,
+  "steps": [
+   {
+    "op": "review",
+    "rules": [
+     "mutable_default"
+    ]
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "ct.review.except",
+  "title": "Голые except",
+  "ask": [
+   "найди голые except",
+   "except без типа",
+   "ловля всех исключений"
+  ],
+  "writes": false,
+  "steps": [
+   {
+    "op": "review",
+    "rules": [
+     "bare_except"
+    ]
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "ct.review.encoding",
+  "title": "open без кодировки",
+  "ask": [
+   "найди open без encoding",
+   "проблемы с кодировкой файлов",
+   "кракозябры на windows"
+  ],
+  "writes": false,
+  "steps": [
+   {
+    "op": "review",
+    "rules": [
+     "open_no_encoding"
+    ]
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "ct.review.todo",
+  "title": "TODO и FIXME",
+  "ask": [
+   "найди todo",
+   "список fixme",
+   "что недоделано",
+   "оставленные заметки в коде"
+  ],
+  "writes": false,
+  "steps": [
+   {
+    "op": "review",
+    "rules": [
+     "todo"
+    ]
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "ct.review.unused",
+  "title": "Неиспользуемые импорты",
+  "ask": [
+   "найди неиспользуемые импорты",
+   "лишние импорты",
+   "мёртвые импорты"
+  ],
+  "writes": false,
+  "steps": [
+   {
+    "op": "review",
+    "rules": [
+     "unused_import"
+    ]
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "ct.review.long",
+  "title": "Слишком длинные функции",
+  "ask": [
+   "найди длинные функции",
+   "какие функции слишком большие",
+   "что стоит разбить"
+  ],
+  "writes": false,
+  "steps": [
+   {
+    "op": "review",
+    "rules": [
+     "long_function"
+    ]
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "ct.review.docs",
+  "title": "Нет описаний у функций",
+  "ask": [
+   "найди функции без описания",
+   "где нет docstring",
+   "проверь документацию кода"
+  ],
+  "writes": false,
+  "steps": [
+   {
+    "op": "review",
+    "rules": [
+     "missing_docstring"
+    ]
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "ct.review.dups",
+  "title": "Повторные определения",
+  "ask": [
+   "найди дубликаты функций",
+   "повторно определённые функции",
+   "одинаковые имена функций"
+  ],
+  "writes": false,
+  "steps": [
+   {
+    "op": "review",
+    "rules": [
+     "duplicate_defs"
+    ]
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "ct.review.print",
+  "title": "Отладочные print",
+  "ask": [
+   "найди print в коде",
+   "оставленная отладка",
+   "отладочные выводы"
+  ],
+  "writes": false,
+  "steps": [
+   {
+    "op": "review",
+    "rules": [
+     "print_debug"
+    ]
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "ct.fix.defaults",
+  "title": "Исправить изменяемые аргументы по умолчанию",
+  "ask": [
+   "исправь изменяемые аргументы по умолчанию",
+   "замени список по умолчанию на None",
+   "исправь mutable default"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "fix_mutable_defaults"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Только пустые [] и {}; функции в одну строку не трогаются; правка откатывается, если синтаксис ломается."
+ },
+ {
+  "id": "ct.fix.encoding",
+  "title": "Добавить encoding в open",
+  "ask": [
+   "добавь encoding в open",
+   "исправь open без кодировки",
+   "сделай чтение файлов в utf-8",
+   "исправь кракозябры"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "fix_open_encoding"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Только текстовые режимы; бинарные open не трогаются."
+ },
+ {
+  "id": "ct.fix.eqnone",
+  "title": "== None на is None",
+  "ask": [
+   "исправь сравнение с none",
+   "замени == none на is none",
+   "исправь != none"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "fix_eq_none"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "ct.fix.except",
+  "title": "Голый except на except Exception",
+  "ask": [
+   "исправь голые except",
+   "замени except на except exception",
+   "не лови все исключения"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "fix_bare_except"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "ct.fix.space",
+  "title": "Пробелы в конце строк и перевод строки в конце файла",
+  "ask": [
+   "убери пробелы в конце строк",
+   "наведи порядок в форматировании",
+   "отформатируй код",
+   "почисти пробелы"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "fix_whitespace"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "ct.fix.all",
+  "title": "Безопасные исправления разом",
+  "ask": [
+   "исправь безопасные проблемы",
+   "почини очевидные ошибки",
+   "наведи порядок в коде",
+   "сделай рефакторинг безопасный",
+   "исправь типичные ошибки"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "review",
+    "rules": [
+     "mutable_default",
+     "bare_except",
+     "eq_none",
+     "open_no_encoding"
+    ]
+   },
+   {
+    "op": "fix_mutable_defaults"
+   },
+   {
+    "op": "fix_open_encoding"
+   },
+   {
+    "op": "fix_eq_none"
+   },
+   {
+    "op": "fix_bare_except"
+   },
+   {
+    "op": "fix_whitespace"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Каждая правка проверяется синтаксисом; смысл поведения не меняется."
+ },
+ {
+  "id": "ct.tests",
+  "title": "Добавить проверку компиляции",
+  "ask": [
+   "добавь тесты",
+   "напиши тесты",
+   "создай тесты проекта",
+   "добавь проверку кода",
+   "сделай unittest"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_tests"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Тест проверяет только компиляцию файлов — поведение не доказывает."
+ },
+ {
+  "id": "ct.add_lesson",
+  "title": "Добавить проверенный шаблон из уроков",
+  "ask": [
+   "добавь функцию из уроков",
+   "добавь готовую функцию",
+   "вставь шаблон",
+   "добавь в проект функцию",
+   "добавь утилиту"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Подбирает шаблон из 106 уроков по задаче, прогоняет его собственную проверку, кладёт в lessons_added/ или в указанный .py и пишет тест."
+ },
+ {
+  "id": "ct.rename",
+  "title": "Переименовать файл (как просили; нет имени — индекс версии)",
+  "ask": [
+   "переименуй файл",
+   "переименуй файл в",
+   "смени имя файла",
+   "назови файл по-другому",
+   "rename file",
+   "переименовать файл и поправить ссылки"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "rename"
+   },
+   {
+    "op": "check"
+   }
+  ],
+  "verified": false,
+  "autonomy": false,
+  "notes": "Берёт имя из задачи: «переименуй main.py в app.py». Если нового имени нет — добавляет индекс версии (a.py → a_v2.py, a_v2.py → a_v3.py). Во всех файлах проекта исправляет упоминания старого имени, а в Python — импорты (import old → import new as old). «Копию»/«сохрани старый» — не удаляет исходный. Делает только это: без тестов, описаний и журнала."
+ },
+ {
+  "id": "ct.rename.version",
+  "title": "Новая версия файла: индекс версии в имени и ссылки",
+  "ask": [
+   "добавь индекс версии к файлу",
+   "переименуй с индексом версии",
+   "подними версию файла",
+   "новая версия файла",
+   "сделай версию файла",
+   "добавь номер версии в имя файла"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "rename"
+   },
+   {
+    "op": "check"
+   }
+  ],
+  "verified": false,
+  "autonomy": false,
+  "notes": "Если имя не задано — a.py → a_v2.py, a_v2.py → a_v3.py; ссылки на прежнюю версию в остальных файлах переправляются на новую."
+ },
+ {
+  "id": "ct.archive",
+  "title": "Имя итогового архива",
+  "ask": [
+   "назови архив",
+   "назови итоговый архив",
+   "переименуй архив",
+   "имя итогового архива",
+   "как назвать результат",
+   "упакуй в архив с именем",
+   "сохрани архив как"
+  ],
+  "writes": false,
+  "steps": [
+   {
+    "op": "archive_name"
+   }
+  ],
+  "verified": false,
+  "autonomy": false,
+  "notes": "Имя берётся из задачи («назови архив app_final»). Если имени нет — имя проекта с индексом версии: x.zip → x_v2.zip → x_v3.zip. Внутри архива файлы не переименовываются."
+ },
+ {
+  "id": "ct.bump_version",
+  "title": "Поднять версию в файле VERSION (только по просьбе)",
+  "ask": [
+   "подними версию проекта",
+   "увеличь номер версии",
+   "обнови файл version",
+   "новая версия в version",
+   "сделай версию выше"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "bump_version"
+   }
+  ],
+  "verified": false,
+  "autonomy": false,
+  "notes": "x.y.z → x.y.(z+1) в VERSION в корне или в папке первого уровня. По умолчанию не делается: нужно только если результат загружается как обновление облака поверх той же версии."
+ },
+ {
+  "id": "ct.status",
+  "title": "Состояние работ",
+  "ask": [
+   "что изменилось",
+   "что сделал агент",
+   "итог работы",
+   "покажи изменения"
+  ],
+  "writes": false,
+  "steps": [
+   {
+    "op": "survey"
+   },
+   {
+    "op": "check"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "ct.checks",
+  "title": "Проверить синтаксис проекта",
+  "ask": [
+   "проверь синтаксис",
+   "проверь что код компилируется",
+   "нет ли синтаксических ошибок",
+   "проверь python файлы"
+  ],
+  "writes": false,
+  "steps": [
+   {
+    "op": "check"
+   }
+  ],
+  "verified": false
+ },
+ {
+  "id": "ct.changelog",
+  "title": "Записать изменения в журнал",
+  "ask": [
+   "запиши изменения в журнал",
+   "веди changelog",
+   "добавь запись в changelog"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false
+ }
+]

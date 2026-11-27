@@ -138,18 +138,7 @@ cycle() {
   log "app stop…"
   timeout 120 "$CLI" app stop "$APP_DIR" >>"$START_LOG" 2>&1 || true
   sleep 15
-  if [ "${1:-0}" = "1" ]; then
-    restart_router || true; sleep 20
-    # v2.96.5: после перезапуска роутера сокет /var/run/arduino-router.sock
-    # ПЕРЕСОЗДАН, а контейнер приложения держит старый inode (сокет пробро-
-    # шен bind-mount-ом файла) — Bridge.read_loop вечно пишет «Failed to
-    # connect to router: Connection refused». Контейнер надо пересоздать:
-    # убираем его, app start соберёт новый уже с новым сокетом.
-    if command -v docker >/dev/null 2>&1; then
-      docker rm -f "$(basename "$APP_DIR")-main-1" >/dev/null 2>&1 && \
-        log "контейнер приложения удалён — будет пересоздан с новым сокетом моста"
-    fi
-  fi
+  if [ "${1:-0}" = "1" ]; then restart_router || true; sleep 20; fi
   log "app start (сборка и заливка скетча в MCU + Python)…"
   echo "===== $(date '+%F %T') app start (глубокий=${1:-0}) =====" >>"$START_LOG"
   if ! timeout 900 "$CLI" app start "$APP_DIR" >>"$START_LOG" 2>&1; then

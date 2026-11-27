@@ -73,10 +73,14 @@ def analyze(raw):
                          "картинки разобрать нечем"}
     try:
         im = Image.open(io.BytesIO(raw))
+        if im.width * im.height > 20_000_000:
+            return {"error": "изображение больше 20 миллионов пикселей"}
         im.load()
     except Exception as e:
         return {"error": "картинка не открылась: %s" % e}
     W, H = im.size
+    if W * H > 20_000_000:
+        return {"error": "изображение больше 20 миллионов пикселей"}
     rgb = im.convert("RGB")
     small = rgb.resize((48, 48))
     px = list(small.getdata())
@@ -111,10 +115,22 @@ def analyze(raw):
            "detail": detail, "whites": whites, "darks": darks,
            "skin": skin, "palette": uniq, "text": "", "ink": ink,
            "paper": paper}
+    # The own head is preferred once trained; never use Tesseract as its labels.
+    out['ocr_engine'] = ''
+    try:
+        import photo_ocr
+        own=photo_ocr.read(raw)
+        if own:
+            out['text']=own['text'];out['ocr_engine']='own_pixel_mlp'
+            out['ocr_confidence']=own['confidence']
+            return out
+    except Exception as exc:
+        out['own_ocr_error']=str(exc)[:200]
     try:                                    # текст на картинке — если есть
         import pytesseract
         out["text"] = " ".join(pytesseract.image_to_string(
-            rgb, lang="rus+eng").split())[:1500]
+            rgb, lang="rus+eng", timeout=20).split())[:1500]
+        if out['text']:out['ocr_engine']='tesseract'
     except Exception:
         pass
     return out
@@ -126,12 +142,13 @@ def _llm_vision(raw, question=""):
     url = str(s.get("llm_answer_url") or "").rstrip("/")
     if not (s.get("vision_llm_on") and url):
         return ""
+    mime = "image/png" if raw.startswith(b"\x89PNG") else "image/webp" if raw[:4] == b"RIFF" else "image/gif" if raw.startswith(b"GIF8") else "image/jpeg"
     body = {"model": s.get("llm_answer_model") or "llava",
             "messages": [{"role": "user", "content": [
                 {"type": "text", "text": question or
                  "Опиши по-русски, что на картинке, коротко и по делу."},
                 {"type": "image_url", "image_url": {
-                    "url": "data:image/jpeg;base64," +
+                    "url": "data:" + mime + ";base64," +
                     base64.b64encode(raw).decode()}}]}],
             "temperature": 0.2}
     try:
@@ -147,11 +164,12 @@ def _llm_vision(raw, question=""):
         return ""
 
 
-def describe(raw, name="картинка", question="", learn=True):
+def describe(raw, name="картинка", question="", learn=True, structured=False):
     """Картинка -> текст для человека (+ статья в базе знаний)."""
     a = analyze(raw)
     if a.get("error"):
-        return "Картинку «%s» разобрать не смогла: %s." % (name, a["error"])
+        message = "Картинку «%s» разобрать не смогла: %s." % (name, a["error"])
+        return {"ok": False, "error": a["error"], "text": message, "saved": False} if structured else message
     lines = []
     orient = "горизонтальная" if a["w"] > a["h"] * 1.15 else (
         "вертикальная" if a["h"] > a["w"] * 1.15 else "почти квадратная")
@@ -192,7 +210,7 @@ def describe(raw, name="картинка", question="", learn=True):
                      "или лицо (это догадка по цвету, а не распознавание)."
                      % round(a["skin"] * 100))
     if a["text"]:
-        lines.append("Текст на картинке: «%s»." % a["text"][:600])
+        lines.append("Текст на картинке (%s; возможны ошибки): «%s»." % (a.get("ocr_engine") or "OCR", a["text"][:1500]))
     scene = _llm_vision(raw, question)
     if scene:
         lines.insert(0, "Описание сцены (локальная модель со зрением): %s"
@@ -202,13 +220,35 @@ def describe(raw, name="картинка", question="", learn=True):
                      "для этого подключи локальную модель со зрением "
                      "(Настройки → API и ответы).")
     text = "\n".join(lines)
+    # A visual adapter supplies evidence to the text model; it does not turn
+    # existing text weights into an image encoder.
+    zone_active = False
+    if store.settings().get("llm_zones_on", True):
+        try:
+            import llm_zones
+            llm_zones.route(text, zone="Камера")
+            zone_active = True
+            if learn:
+                llm_zones.observe(text, zone="Камера", source="photo_adapter")
+        except Exception:
+            pass
+    saved = False
     if learn:
         try:
             import kb
-            kb.add_article("Картинка: %s" % str(name)[:150], text,
+            result = kb.add_article("Картинка: %s" % str(name)[:150], text,
                            source="картинка %s" % str(name)[:80])
+            saved = bool(isinstance(result, dict) and result.get("ok"))
         except Exception:
             pass
+    if structured:
+        return dict(ok=True, text=text, saved=saved, zone="Камера",
+                    zone_active=zone_active, description=dict(
+                        size=[a["w"], a["h"]], colors=a["colors"],
+                        brightness=a["bright"], contrast=a["contrast"],
+                        text=a["text"], caption=scene, ocr_engine=a.get("ocr_engine", "")),
+                    capabilities=dict(basic=True, ocr=bool(a["text"]), scene=bool(scene)),
+                    adapter="visual evidence to shared text LLM; no image weights trained")
     return text
 
 

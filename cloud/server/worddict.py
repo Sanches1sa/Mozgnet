@@ -80,7 +80,7 @@ def pick(cands, hot=None, grav=None):
                            (tensormod.scalar("Речь из словаря", 1, 2) - 1.0)))
     except Exception:
         pass
-    return get().pick(cands, hot=hot, grav=grav, hz=platform_hz(), breath=br)
+    return get().pick(cands, hot=hot, grav=grav, hz=None, breath=0.0)
 
 
 def status(top=30):

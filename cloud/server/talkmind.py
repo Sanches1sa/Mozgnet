@@ -136,7 +136,14 @@ def _acceptable(text, own=False):
 
 
 def respond_parts(text, ctx=None):
-    """One bounded answer; unverified associations never become chat replies."""
+    """One bounded answer; technical questions share the cloud factual policy."""
+    import answer_focus
+    focused=answer_focus.context_question(text,ctx)
+    if answer_focus.practical(focused) or answer_focus.clarification(focused,ctx):
+        import conversation
+        reply,zone,info=conversation.answer(text,ctx=ctx)
+        return [reply],dict(info or {},factual_mode=True,src_zone=zone)
+
     t0 = time.time()
     a, who = "", ""
     try:                       # v3.170: о себе — ИИ читает свою инструкцию

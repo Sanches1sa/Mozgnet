@@ -1,0 +1,2282 @@
+[
+ {
+  "id": "ct.l.str.reverse",
+  "title": "Добавить: Перевернуть строку",
+  "ask": [
+   "добавь в проект: перевернуть строку",
+   "добавь переверни строку",
+   "добавь строка наоборот"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "str.reverse"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока str.reverse."
+ },
+ {
+  "id": "ct.l.str.palindrome",
+  "title": "Добавить: Проверить палиндром",
+  "ask": [
+   "добавь в проект: проверить палиндром",
+   "добавь проверь палиндром",
+   "добавь является ли слово палиндромом"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "str.palindrome"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока str.palindrome."
+ },
+ {
+  "id": "ct.l.str.count_words",
+  "title": "Добавить: Посчитать слова",
+  "ask": [
+   "добавь в проект: посчитать слова",
+   "добавь посчитай слова",
+   "добавь сколько слов в тексте"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "str.count_words"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока str.count_words."
+ },
+ {
+  "id": "ct.l.str.word_freq",
+  "title": "Добавить: Частота слов",
+  "ask": [
+   "добавь в проект: частота слов",
+   "добавь частота слов",
+   "добавь самые частые слова"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "str.word_freq"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока str.word_freq."
+ },
+ {
+  "id": "ct.l.str.title",
+  "title": "Добавить: Каждое слово с заглавной",
+  "ask": [
+   "добавь в проект: каждое слово с заглавной",
+   "добавь сделай заглавные буквы",
+   "добавь capitalize слова"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "str.title"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока str.title."
+ },
+ {
+  "id": "ct.l.str.vowels",
+  "title": "Добавить: Посчитать гласные",
+  "ask": [
+   "добавь в проект: посчитать гласные",
+   "добавь посчитай гласные",
+   "добавь сколько гласных букв"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "str.vowels"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока str.vowels."
+ },
+ {
+  "id": "ct.l.str.slugify",
+  "title": "Добавить: Сделать слаг из заголовка",
+  "ask": [
+   "добавь в проект: сделать слаг из заголовка",
+   "добавь сделай slug",
+   "добавь преобразуй заголовок в ссылку"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "str.slugify"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока str.slugify."
+ },
+ {
+  "id": "ct.l.str.truncate",
+  "title": "Добавить: Обрезать строку с многоточием",
+  "ask": [
+   "добавь в проект: обрезать строку с многоточием",
+   "добавь обрежь текст",
+   "добавь укороти строку"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "str.truncate"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока str.truncate."
+ },
+ {
+  "id": "ct.l.str.is_number",
+  "title": "Добавить: Проверить, что строка — число",
+  "ask": [
+   "добавь в проект: проверить, что строка — число",
+   "добавь это число",
+   "добавь проверь число в строке"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "str.is_number"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока str.is_number."
+ },
+ {
+  "id": "ct.l.str.caesar",
+  "title": "Добавить: Шифр Цезаря",
+  "ask": [
+   "добавь в проект: шифр цезаря",
+   "добавь шифр цезаря",
+   "добавь зашифруй сдвигом"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "str.caesar"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока str.caesar."
+ },
+ {
+  "id": "ct.l.num.is_prime",
+  "title": "Добавить: Простое ли число",
+  "ask": [
+   "добавь в проект: простое ли число",
+   "добавь простое число",
+   "добавь проверь на простоту"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "num.is_prime"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока num.is_prime."
+ },
+ {
+  "id": "ct.l.num.primes",
+  "title": "Добавить: Простые числа до N (решето)",
+  "ask": [
+   "добавь в проект: простые числа до n (решето)",
+   "добавь все простые до n",
+   "добавь решето эратосфена"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "num.primes"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока num.primes."
+ },
+ {
+  "id": "ct.l.num.fib",
+  "title": "Добавить: Числа Фибоначчи",
+  "ask": [
+   "добавь в проект: числа фибоначчи",
+   "добавь фибоначчи",
+   "добавь числа фибоначчи"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "num.fib"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока num.fib."
+ },
+ {
+  "id": "ct.l.num.factorial",
+  "title": "Добавить: Факториал",
+  "ask": [
+   "добавь в проект: факториал",
+   "добавь факториал",
+   "добавь вычисли факториал"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "num.factorial"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока num.factorial."
+ },
+ {
+  "id": "ct.l.num.gcd",
+  "title": "Добавить: НОД и НОК",
+  "ask": [
+   "добавь в проект: нод и нок",
+   "добавь найди нод",
+   "добавь наибольший общий делитель"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "num.gcd"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока num.gcd."
+ },
+ {
+  "id": "ct.l.num.digits_sum",
+  "title": "Добавить: Сумма цифр числа",
+  "ask": [
+   "добавь в проект: сумма цифр числа",
+   "добавь сумма цифр",
+   "добавь посчитай сумму цифр"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "num.digits_sum"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока num.digits_sum."
+ },
+ {
+  "id": "ct.l.num.clamp",
+  "title": "Добавить: Ограничить число диапазоном",
+  "ask": [
+   "добавь в проект: ограничить число диапазоном",
+   "добавь ограничь значение",
+   "добавь clamp"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "num.clamp"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока num.clamp."
+ },
+ {
+  "id": "ct.l.num.map_range",
+  "title": "Добавить: Перевести значение из одного диапазона в другой (map)",
+  "ask": [
+   "добавь в проект: перевести значение из одного диапазона в другой (map)",
+   "добавь перемасштабируй значение",
+   "добавь map диапазон"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "num.map_range"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока num.map_range."
+ },
+ {
+  "id": "ct.l.num.mean_median",
+  "title": "Добавить: Среднее, медиана, разброс",
+  "ask": [
+   "добавь в проект: среднее, медиана, разброс",
+   "добавь среднее значение",
+   "добавь медиана"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "num.mean_median"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока num.mean_median."
+ },
+ {
+  "id": "ct.l.num.roman",
+  "title": "Добавить: Римские цифры",
+  "ask": [
+   "добавь в проект: римские цифры",
+   "добавь римские цифры",
+   "добавь число в римское"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "num.roman"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока num.roman."
+ },
+ {
+  "id": "ct.l.num.base",
+  "title": "Добавить: Перевод между системами счисления",
+  "ask": [
+   "добавь в проект: перевод между системами счисления",
+   "добавь двоичное число",
+   "добавь перевод в двоичную"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "num.base"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока num.base."
+ },
+ {
+  "id": "ct.l.num.temp",
+  "title": "Добавить: Температура: Цельсий, Кельвин, Фаренгейт",
+  "ask": [
+   "добавь в проект: температура: цельсий, кельвин, фаренгейт",
+   "добавь перевод температуры",
+   "добавь цельсий в фаренгейт"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "num.temp"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока num.temp."
+ },
+ {
+  "id": "ct.l.list.unique",
+  "title": "Добавить: Убрать повторы, сохранив порядок",
+  "ask": [
+   "добавь в проект: убрать повторы, сохранив порядок",
+   "добавь убери дубликаты",
+   "добавь уникальные элементы"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "list.unique"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока list.unique."
+ },
+ {
+  "id": "ct.l.list.flatten",
+  "title": "Добавить: Разгладить вложенные списки",
+  "ask": [
+   "добавь в проект: разгладить вложенные списки",
+   "добавь разверни вложенный список",
+   "добавь flatten"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "list.flatten"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока list.flatten."
+ },
+ {
+  "id": "ct.l.list.chunks",
+  "title": "Добавить: Разбить список на части",
+  "ask": [
+   "добавь в проект: разбить список на части",
+   "добавь разбей список на куски",
+   "добавь chunks"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "list.chunks"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока list.chunks."
+ },
+ {
+  "id": "ct.l.list.sort_by",
+  "title": "Добавить: Сортировка по ключу",
+  "ask": [
+   "добавь в проект: сортировка по ключу",
+   "добавь отсортируй список",
+   "добавь сортировка по полю"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "list.sort_by"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока list.sort_by."
+ },
+ {
+  "id": "ct.l.list.bubble",
+  "title": "Добавить: Сортировка пузырьком",
+  "ask": [
+   "добавь в проект: сортировка пузырьком",
+   "добавь пузырьковая сортировка",
+   "добавь bubble sort"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "list.bubble"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока list.bubble."
+ },
+ {
+  "id": "ct.l.list.quick",
+  "title": "Добавить: Быстрая сортировка",
+  "ask": [
+   "добавь в проект: быстрая сортировка",
+   "добавь быстрая сортировка",
+   "добавь quicksort"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "list.quick"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока list.quick."
+ },
+ {
+  "id": "ct.l.list.bsearch",
+  "title": "Добавить: Бинарный поиск",
+  "ask": [
+   "добавь в проект: бинарный поиск",
+   "добавь бинарный поиск",
+   "добавь найди элемент в отсортированном списке"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "list.bsearch"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока list.bsearch."
+ },
+ {
+  "id": "ct.l.list.moving_avg",
+  "title": "Добавить: Скользящее среднее",
+  "ask": [
+   "добавь в проект: скользящее среднее",
+   "добавь скользящее среднее",
+   "добавь сгладь значения"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "list.moving_avg"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока list.moving_avg."
+ },
+ {
+  "id": "ct.l.list.ema",
+  "title": "Добавить: Экспоненциальное сглаживание",
+  "ask": [
+   "добавь в проект: экспоненциальное сглаживание",
+   "добавь экспоненциальное сглаживание",
+   "добавь ema фильтр"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "list.ema"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока list.ema."
+ },
+ {
+  "id": "ct.l.list.pairs",
+  "title": "Добавить: Пары соседних элементов",
+  "ask": [
+   "добавь в проект: пары соседних элементов",
+   "добавь пары соседей",
+   "добавь попарно элементы"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "list.pairs"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока list.pairs."
+ },
+ {
+  "id": "ct.l.list.transpose",
+  "title": "Добавить: Транспонировать таблицу",
+  "ask": [
+   "добавь в проект: транспонировать таблицу",
+   "добавь транспонируй матрицу",
+   "добавь строки в столбцы"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "list.transpose"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока list.transpose."
+ },
+ {
+  "id": "ct.l.list.group",
+  "title": "Добавить: Сгруппировать по ключу",
+  "ask": [
+   "добавь в проект: сгруппировать по ключу",
+   "добавь сгруппируй по полю",
+   "добавь group by"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "list.group"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока list.group."
+ },
+ {
+  "id": "ct.l.list.top",
+  "title": "Добавить: Топ-N по значению",
+  "ask": [
+   "добавь в проект: топ-n по значению",
+   "добавь самые большие элементы",
+   "добавь топ n"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "list.top"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока list.top."
+ },
+ {
+  "id": "ct.l.dict.merge",
+  "title": "Добавить: Слить словари",
+  "ask": [
+   "добавь в проект: слить словари",
+   "добавь объедини словари",
+   "добавь merge dict"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "dict.merge"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока dict.merge."
+ },
+ {
+  "id": "ct.l.dict.invert",
+  "title": "Добавить: Поменять ключи и значения",
+  "ask": [
+   "добавь в проект: поменять ключи и значения",
+   "добавь инвертируй словарь",
+   "добавь ключи на значения"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "dict.invert"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока dict.invert."
+ },
+ {
+  "id": "ct.l.dict.get_path",
+  "title": "Добавить: Достать вложенное значение по пути",
+  "ask": [
+   "добавь в проект: достать вложенное значение по пути",
+   "добавь достань значение по пути",
+   "добавь вложенный ключ"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "dict.get_path"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока dict.get_path."
+ },
+ {
+  "id": "ct.l.dict.counter",
+  "title": "Добавить: Подсчёт значений",
+  "ask": [
+   "добавь в проект: подсчёт значений",
+   "добавь посчитай сколько раз встречается",
+   "добавь counter"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "dict.counter"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока dict.counter."
+ },
+ {
+  "id": "ct.l.file.read_lines",
+  "title": "Добавить: Прочитать файл построчно",
+  "ask": [
+   "добавь в проект: прочитать файл построчно",
+   "добавь прочитай файл",
+   "добавь считай строки из файла"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "file.read_lines"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока file.read_lines."
+ },
+ {
+  "id": "ct.l.file.write_text",
+  "title": "Добавить: Записать текст в файл",
+  "ask": [
+   "добавь в проект: записать текст в файл",
+   "добавь запиши в файл",
+   "добавь сохрани текст в файл"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "file.write_text"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока file.write_text."
+ },
+ {
+  "id": "ct.l.file.json",
+  "title": "Добавить: Прочитать и записать JSON",
+  "ask": [
+   "добавь в проект: прочитать и записать json",
+   "добавь работа с json",
+   "добавь сохрани в json"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "file.json"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока file.json."
+ },
+ {
+  "id": "ct.l.file.csv",
+  "title": "Добавить: Прочитать и записать CSV",
+  "ask": [
+   "добавь в проект: прочитать и записать csv",
+   "добавь работа с csv",
+   "добавь прочитай csv"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "file.csv"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока file.csv."
+ },
+ {
+  "id": "ct.l.file.walk",
+  "title": "Добавить: Найти файлы по маске",
+  "ask": [
+   "добавь в проект: найти файлы по маске",
+   "добавь найди файлы",
+   "добавь список файлов в папке"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "file.walk"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока file.walk."
+ },
+ {
+  "id": "ct.l.file.sizes",
+  "title": "Добавить: Размеры файлов в папке",
+  "ask": [
+   "добавь в проект: размеры файлов в папке",
+   "добавь размер папки",
+   "добавь сколько весят файлы"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "file.sizes"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока file.sizes."
+ },
+ {
+  "id": "ct.l.file.backup",
+  "title": "Добавить: Резервная копия файла с меткой времени",
+  "ask": [
+   "добавь в проект: резервная копия файла с меткой времени",
+   "добавь сделай копию файла",
+   "добавь бэкап файла"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "file.backup"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока file.backup."
+ },
+ {
+  "id": "ct.l.file.tail",
+  "title": "Добавить: Последние строки файла",
+  "ask": [
+   "добавь в проект: последние строки файла",
+   "добавь последние строки файла",
+   "добавь tail"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "file.tail"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока file.tail."
+ },
+ {
+  "id": "ct.l.re.emails",
+  "title": "Добавить: Найти e-mail адреса",
+  "ask": [
+   "добавь в проект: найти e-mail адреса",
+   "добавь найди email в тексте",
+   "добавь вытащи почту"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "re.emails"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока re.emails."
+ },
+ {
+  "id": "ct.l.re.numbers",
+  "title": "Добавить: Вытащить числа из текста",
+  "ask": [
+   "добавь в проект: вытащить числа из текста",
+   "добавь найди числа в тексте",
+   "добавь извлеки числа"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "re.numbers"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока re.numbers."
+ },
+ {
+  "id": "ct.l.re.ip",
+  "title": "Добавить: Найти IP-адреса",
+  "ask": [
+   "добавь в проект: найти ip-адреса",
+   "добавь найди ip адреса",
+   "добавь извлеки ip из лога"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "re.ip"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока re.ip."
+ },
+ {
+  "id": "ct.l.time.format",
+  "title": "Добавить: Форматирование даты и времени",
+  "ask": [
+   "добавь в проект: форматирование даты и времени",
+   "добавь текущая дата",
+   "добавь отформатируй время"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "time.format"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока time.format."
+ },
+ {
+  "id": "ct.l.time.duration",
+  "title": "Добавить: Длительность человеческим языком",
+  "ask": [
+   "добавь в проект: длительность человеческим языком",
+   "добавь сколько прошло времени",
+   "добавь секунды в часы минуты"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "time.duration"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока time.duration."
+ },
+ {
+  "id": "ct.l.time.timer",
+  "title": "Добавить: Замер времени выполнения",
+  "ask": [
+   "добавь в проект: замер времени выполнения",
+   "добавь замерь время выполнения",
+   "добавь таймер"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "time.timer"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока time.timer."
+ },
+ {
+  "id": "ct.l.time.retry",
+  "title": "Добавить: Повторять при ошибке",
+  "ask": [
+   "добавь в проект: повторять при ошибке",
+   "добавь повтори при ошибке",
+   "добавь retry"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "time.retry"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока time.retry."
+ },
+ {
+  "id": "ct.l.oop.dataclass",
+  "title": "Добавить: Класс-запись (dataclass)",
+  "ask": [
+   "добавь в проект: класс-запись (dataclass)",
+   "добавь создай класс",
+   "добавь dataclass"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "oop.dataclass"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока oop.dataclass."
+ },
+ {
+  "id": "ct.l.oop.stack",
+  "title": "Добавить: Стек и очередь",
+  "ask": [
+   "добавь в проект: стек и очередь",
+   "добавь стек",
+   "добавь очередь"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "oop.stack"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока oop.stack."
+ },
+ {
+  "id": "ct.l.oop.ring",
+  "title": "Добавить: Кольцевой буфер (последние N значений датчика)",
+  "ask": [
+   "добавь в проект: кольцевой буфер (последние n значений датчика)",
+   "добавь кольцевой буфер",
+   "добавь последние n измерений"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "oop.ring"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока oop.ring."
+ },
+ {
+  "id": "ct.l.oop.singleton_cache",
+  "title": "Добавить: Кэш с временем жизни",
+  "ask": [
+   "добавь в проект: кэш с временем жизни",
+   "добавь кэш с таймаутом",
+   "добавь ttl кэш"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "oop.singleton_cache"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока oop.singleton_cache."
+ },
+ {
+  "id": "ct.l.fn.decorator_log",
+  "title": "Добавить: Декоратор: журнал вызовов",
+  "ask": [
+   "добавь в проект: декоратор: журнал вызовов",
+   "добавь напиши декоратор",
+   "добавь декоратор логирования"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "fn.decorator_log"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока fn.decorator_log."
+ },
+ {
+  "id": "ct.l.fn.memo",
+  "title": "Добавить: Запоминание результатов (мемоизация)",
+  "ask": [
+   "добавь в проект: запоминание результатов (мемоизация)",
+   "добавь мемоизация",
+   "добавь кэшируй результат функции"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "fn.memo"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока fn.memo."
+ },
+ {
+  "id": "ct.l.fn.generator",
+  "title": "Добавить: Генератор",
+  "ask": [
+   "добавь в проект: генератор",
+   "добавь напиши генератор",
+   "добавь yield"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "fn.generator"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока fn.generator."
+ },
+ {
+  "id": "ct.l.fn.context",
+  "title": "Добавить: Менеджер контекста",
+  "ask": [
+   "добавь в проект: менеджер контекста",
+   "добавь контекстный менеджер",
+   "добавь with свой класс"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "fn.context"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока fn.context."
+ },
+ {
+  "id": "ct.l.fn.safe_call",
+  "title": "Добавить: Безопасный вызов с ловлей ошибок",
+  "ask": [
+   "добавь в проект: безопасный вызов с ловлей ошибок",
+   "добавь поймай ошибку",
+   "добавь try except"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "fn.safe_call"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока fn.safe_call."
+ },
+ {
+  "id": "ct.l.cli.argparse",
+  "title": "Добавить: Скрипт с аргументами командной строки",
+  "ask": [
+   "добавь в проект: скрипт с аргументами командной строки",
+   "добавь скрипт с аргументами",
+   "добавь argparse"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "cli.argparse"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока cli.argparse."
+ },
+ {
+  "id": "ct.l.cli.env",
+  "title": "Добавить: Переменные окружения с запасным значением",
+  "ask": [
+   "добавь в проект: переменные окружения с запасным значением",
+   "добавь прочитай переменную окружения",
+   "добавь env"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "cli.env"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока cli.env."
+ },
+ {
+  "id": "ct.l.cli.subprocess",
+  "title": "Добавить: Запустить команду и получить вывод",
+  "ask": [
+   "добавь в проект: запустить команду и получить вывод",
+   "добавь запусти команду из python",
+   "добавь subprocess"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "cli.subprocess"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока cli.subprocess."
+ },
+ {
+  "id": "ct.l.cli.logging",
+  "title": "Добавить: Журнал в файл с ротацией",
+  "ask": [
+   "добавь в проект: журнал в файл с ротацией",
+   "добавь настрой логирование",
+   "добавь logging"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "cli.logging"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока cli.logging."
+ },
+ {
+  "id": "ct.l.cli.menu",
+  "title": "Добавить: Простой цикл команд",
+  "ask": [
+   "добавь в проект: простой цикл команд",
+   "добавь цикл команд",
+   "добавь интерактивное меню"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "cli.menu"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока cli.menu."
+ },
+ {
+  "id": "ct.l.net.http_get",
+  "title": "Добавить: HTTP-запрос без сторонних библиотек",
+  "ask": [
+   "добавь в проект: http-запрос без сторонних библиотек",
+   "добавь http запрос",
+   "добавь скачай страницу"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "net.http_get"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока net.http_get."
+ },
+ {
+  "id": "ct.l.net.http_post_json",
+  "title": "Добавить: Отправить JSON по HTTP",
+  "ask": [
+   "добавь в проект: отправить json по http",
+   "добавь отправь json",
+   "добавь post запрос"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "net.http_post_json"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока net.http_post_json."
+ },
+ {
+  "id": "ct.l.net.port_open",
+  "title": "Добавить: Проверить, открыт ли порт",
+  "ask": [
+   "добавь в проект: проверить, открыт ли порт",
+   "добавь проверь порт",
+   "добавь порт открыт"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "net.port_open"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока net.port_open."
+ },
+ {
+  "id": "ct.l.net.simple_server",
+  "title": "Добавить: Простой HTTP-сервер с JSON",
+  "ask": [
+   "добавь в проект: простой http-сервер с json",
+   "добавь напиши http сервер",
+   "добавь простой сервер api"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "net.simple_server"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока net.simple_server."
+ },
+ {
+  "id": "ct.l.net.udp",
+  "title": "Добавить: Передать сообщение по UDP",
+  "ask": [
+   "добавь в проект: передать сообщение по udp",
+   "добавь udp сообщение",
+   "добавь отправь пакет udp"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "net.udp"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока net.udp."
+ },
+ {
+  "id": "ct.l.thr.worker",
+  "title": "Добавить: Фоновый поток с остановкой",
+  "ask": [
+   "добавь в проект: фоновый поток с остановкой",
+   "добавь фоновый поток",
+   "добавь thread"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "thr.worker"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока thr.worker."
+ },
+ {
+  "id": "ct.l.thr.queue",
+  "title": "Добавить: Очередь задач между потоками",
+  "ask": [
+   "добавь в проект: очередь задач между потоками",
+   "добавь очередь задач",
+   "добавь producer consumer"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "thr.queue"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока thr.queue."
+ },
+ {
+  "id": "ct.l.db.sqlite",
+  "title": "Добавить: SQLite: таблица, запись, чтение",
+  "ask": [
+   "добавь в проект: sqlite: таблица, запись, чтение",
+   "добавь база данных sqlite",
+   "добавь сохрани в базу"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "db.sqlite"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока db.sqlite."
+ },
+ {
+  "id": "ct.l.test.unittest",
+  "title": "Добавить: Модульные тесты (unittest)",
+  "ask": [
+   "добавь в проект: модульные тесты (unittest)",
+   "добавь напиши тест",
+   "добавь unittest"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "test.unittest"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока test.unittest."
+ },
+ {
+  "id": "ct.l.hw.serial_parse",
+  "title": "Добавить: Разбор строки от датчика (ключ=значение)",
+  "ask": [
+   "добавь в проект: разбор строки от датчика (ключ=значение)",
+   "добавь разбери строку датчика",
+   "добавь парсинг serial"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "hw.serial_parse"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока hw.serial_parse."
+ },
+ {
+  "id": "ct.l.hw.checksum",
+  "title": "Добавить: Контрольная сумма кадра (XOR и CRC8)",
+  "ask": [
+   "добавь в проект: контрольная сумма кадра (xor и crc8)",
+   "добавь контрольная сумма",
+   "добавь crc8"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "hw.checksum"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока hw.checksum."
+ },
+ {
+  "id": "ct.l.hw.debounce",
+  "title": "Добавить: Антидребезг кнопки",
+  "ask": [
+   "добавь в проект: антидребезг кнопки",
+   "добавь антидребезг",
+   "добавь debounce"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "hw.debounce"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока hw.debounce."
+ },
+ {
+  "id": "ct.l.hw.hysteresis",
+  "title": "Добавить: Порог с гистерезисом",
+  "ask": [
+   "добавь в проект: порог с гистерезисом",
+   "добавь порог с гистерезисом",
+   "добавь включи при превышении"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "hw.hysteresis"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока hw.hysteresis."
+ },
+ {
+  "id": "ct.l.hw.pwm",
+  "title": "Добавить: Яркость/ШИМ из процентов",
+  "ask": [
+   "добавь в проект: яркость/шим из процентов",
+   "добавь шим из процентов",
+   "добавь pwm значение"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "hw.pwm"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока hw.pwm."
+ },
+ {
+  "id": "ct.l.hw.adc",
+  "title": "Добавить: АЦП: код в напряжение и температуру датчика",
+  "ask": [
+   "добавь в проект: ацп: код в напряжение и температуру датчика",
+   "добавь перевод кода ацп в вольты",
+   "добавь температура с датчика"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "hw.adc"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока hw.adc."
+ },
+ {
+  "id": "ct.l.hw.frame",
+  "title": "Добавить: Кадр с длиной и проверкой (пакет данных)",
+  "ask": [
+   "добавь в проект: кадр с длиной и проверкой (пакет данных)",
+   "добавь упакуй данные в кадр",
+   "добавь протокол обмена"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "hw.frame"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока hw.frame."
+ },
+ {
+  "id": "ct.l.hw.blink",
+  "title": "Добавить: Расписание мигания (такты)",
+  "ask": [
+   "добавь в проект: расписание мигания (такты)",
+   "добавь мигание светодиода",
+   "добавь blink"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "hw.blink"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока hw.blink."
+ },
+ {
+  "id": "ct.l.ai.sigmoid",
+  "title": "Добавить: Сигмоида и softmax",
+  "ask": [
+   "добавь в проект: сигмоида и softmax",
+   "добавь сигмоида",
+   "добавь softmax"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "ai.sigmoid"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока ai.sigmoid."
+ },
+ {
+  "id": "ct.l.ai.cosine",
+  "title": "Добавить: Косинусное сходство",
+  "ask": [
+   "добавь в проект: косинусное сходство",
+   "добавь сходство векторов",
+   "добавь cosine similarity"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "ai.cosine"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока ai.cosine."
+ },
+ {
+  "id": "ct.l.ai.jaccard",
+  "title": "Добавить: Сходство текстов по словам",
+  "ask": [
+   "добавь в проект: сходство текстов по словам",
+   "добавь похожи ли два текста",
+   "добавь сравни тексты"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "ai.jaccard"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока ai.jaccard."
+ },
+ {
+  "id": "ct.l.ai.perceptron",
+  "title": "Добавить: Перцептрон: обучение на примерах",
+  "ask": [
+   "добавь в проект: перцептрон: обучение на примерах",
+   "добавь напиши нейрон",
+   "добавь перцептрон"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "ai.perceptron"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока ai.perceptron."
+ },
+ {
+  "id": "ct.l.ai.knn",
+  "title": "Добавить: Ближайший сосед (классификация)",
+  "ask": [
+   "добавь в проект: ближайший сосед (классификация)",
+   "добавь классификатор",
+   "добавь knn"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "ai.knn"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока ai.knn."
+ },
+ {
+  "id": "ct.l.ai.tfidf",
+  "title": "Добавить: Поиск по тексту (BM25-подобный)",
+  "ask": [
+   "добавь в проект: поиск по тексту (bm25-подобный)",
+   "добавь поиск по документам",
+   "добавь найди похожий документ"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "ai.tfidf"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока ai.tfidf."
+ },
+ {
+  "id": "ct.l.sys.disk",
+  "title": "Добавить: Свободное место на диске",
+  "ask": [
+   "добавь в проект: свободное место на диске",
+   "добавь свободное место",
+   "добавь сколько места на диске"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "sys.disk"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока sys.disk."
+ },
+ {
+  "id": "ct.l.sys.proc_list",
+  "title": "Добавить: Процессы через /proc (Linux)",
+  "ask": [
+   "добавь в проект: процессы через /proc (linux)",
+   "добавь список процессов python",
+   "добавь найди процесс по имени"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "sys.proc_list"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока sys.proc_list."
+ },
+ {
+  "id": "ct.l.sys.watch_file",
+  "title": "Добавить: Следить за изменением файла",
+  "ask": [
+   "добавь в проект: следить за изменением файла",
+   "добавь следи за файлом",
+   "добавь файл изменился"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "sys.watch_file"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока sys.watch_file."
+ },
+ {
+  "id": "ct.l.sys.signal",
+  "title": "Добавить: Корректное завершение по сигналу",
+  "ask": [
+   "добавь в проект: корректное завершение по сигналу",
+   "добавь обработай ctrl c",
+   "добавь завершение по сигналу"
+  ],
+  "writes": true,
+  "steps": [
+   {
+    "op": "add_lesson",
+    "lesson": "sys.signal"
+   },
+   {
+    "op": "check"
+   },
+   {
+    "op": "changelog"
+   }
+  ],
+  "verified": false,
+  "notes": "Шаблон из урока sys.signal."
+ }
+]

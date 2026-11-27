@@ -117,6 +117,9 @@ def _body(answer):
         if re.match(r"^\*\*[^*]{1,40}\*\*\s*$", t):     # заголовок раздела
             continue
         t = re.sub(r"\*\*|__|`", "", t)
+        t=re.sub(r"^(?:доброе\s+(?:утро|время)|добрый\s+(?:день|вечер)|здравствуй\w*|привет)(?:\b|[,!])[^.!?]{0,120}[.!?]\s*","",t,flags=re.I)
+        if re.match(r"^(?:доброе\s+утро|добрый\s+(?:день|вечер)|здравствуй\w*|привет)\b",t,re.I) or not t:continue
+        if re.match(r"^(?:пришли|уточни|укажите|подскажите|пожалуйста|можешь)\b",t,re.I):continue
         keep.append(t)
     return " ".join(keep)
 
@@ -131,6 +134,7 @@ def claims(answer, k=4):
     определениями — первыми."""
     out = []
     for s in _sents(_body(answer)):
+        if s.endswith("?"):continue
         st = _stems(s)
         if len(st) < 3:
             continue
@@ -508,6 +512,9 @@ def augment(question, answer, talk=False, force=False):
         return answer, None
     if not res:
         return answer, None
+    import answer_focus
+    if answer_focus.practical(question):
+        return answer, summary(res)  # report verification in diagnostics, not a second answer
     block = render(res, talk=talk)
     if not block:
         return answer, summary(res)

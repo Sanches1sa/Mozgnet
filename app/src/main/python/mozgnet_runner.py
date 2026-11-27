@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""mozgnet — облако «Мозг-12» внутри телефона.
+"""mozgnet — облако «Star Gate» внутри телефона.
 
 Java (CloudService) копирует облако из APK в files/cloud и зовёт start().
 Облако — тот же код, что на компьютере (server/app.py, web/), с теми же

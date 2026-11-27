@@ -1,6 +1,6 @@
 //go:build linux
 
-// os_linux.go — v3.159: лаунчер «Мозг-12» для Linux (РЕД ОС, Ubuntu и другие).
+// os_linux.go — v3.159: лаунчер «Star Gate» для Linux (РЕД ОС, Ubuntu и другие).
 //
 // Окно. В Linux нет WebView2, а встроенный WebKitGTK потребовал бы cgo и свою
 // сборку под каждую версию дистрибутива. Поэтому окно лаунчера — браузер на
@@ -9,7 +9,7 @@
 // такого нет — Firefox или браузер по умолчанию (xdg-open).
 //
 // Облако и плата «в этом окне». Чтобы на их страницах была та же верхняя
-// панель (Мозг-12 · Запуск · Облако · Плата), лаунчер открывает их через
+// панель (Star Gate · Запуск · Облако · Плата), лаунчер открывает их через
 // локальный мост (обратный прокси) и добавляет панель в каждую страницу:
 //   - облако — 127.0.0.1:<свободный порт>;
 //   - плата a.b.c.d — 127.42.c.d:7000 (у каждой платы свой адрес — куки и
@@ -412,7 +412,7 @@ func injectBar(b []byte) []byte {
 	return append(tag, b...)
 }
 
-const bridgeErr = `<!doctype html><meta charset="utf-8"><title>Мозг-12</title>
+const bridgeErr = `<!doctype html><meta charset="utf-8"><title>Star Gate</title>
 <body style="background:#0b0f17;color:#cfd6e4;font:15px system-ui,sans-serif;display:grid;place-items:center;height:100vh;margin:0">
 <div style="text-align:center"><h2 style="color:#eef2f8">%s не отвечает</h2><p>%s</p>
 <p>Пробую снова через 3 с… <a style="color:#2dd4bf" href="%s">⟵ Запуск</a></p></div>
@@ -633,7 +633,7 @@ func runUI() {
 	}
 	if headless {
 		uiShown.Store(true)
-		fmt.Println("Мозг-12: окно браузера не открываю (нет графического сеанса).")
+		fmt.Println("Star Gate: окно браузера не открываю (нет графического сеанса).")
 		fmt.Println("Интерфейс лаунчера:", homeURL)
 		fmt.Println("С другого компьютера: ssh -L 8780:" + strings.TrimSuffix(strings.TrimPrefix(homeURL, "http://"), "/") + " этот_компьютер → http://127.0.0.1:8780/")
 		select {}
@@ -649,7 +649,7 @@ func runUI() {
 			return
 		}
 	} else {
-		msgBox("Мозг-12", "Не открылось окно браузера. Открой вручную: "+homeURL)
+		msgBox("Star Gate", "Не открылось окно браузера. Открой вручную: "+homeURL)
 	}
 	// окно отдано уже запущенному браузеру (Firefox, xdg-open): работаем,
 	// пока окно обращается к лаунчеру; 10 минут тишины — выход

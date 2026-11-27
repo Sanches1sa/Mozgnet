@@ -909,6 +909,10 @@ def mem_brain(text, memory, thought="", board="", sender="", chat_id=None,
     who = ("мозг neuro-12 «%s»" % board) if board else (thought_by or
                                                         "мозг облака")
     th = _clean_fact(thought) if thought else ""
+    import answer_focus
+    focused = answer_focus.practical(text)
+    if focused and th and not answer_focus.relevant(text, th):
+        th = ""
     try:                    # v3.122: «Не показывать бред» — несвязная мысль не ответ
         import strict
         _strict = strict.on()
@@ -926,7 +930,7 @@ def mem_brain(text, memory, thought="", board="", sender="", chat_id=None,
             body.append("_%s от себя:_ %s" % (who[0].upper() + who[1:], th))
     if not ans and th:
         body.append(th)
-        ext = _llm_extend(text, th + " " + facts)
+        ext = "" if focused else _llm_extend(text, th + " " + facts)
         if ext and ext[:40].lower() not in th.lower():
             body.append(ext)
         else:
@@ -934,7 +938,7 @@ def mem_brain(text, memory, thought="", board="", sender="", chat_id=None,
             # v3.117: переработанная LLM говорит настоящими словами без
             # петель — её собственная мысль по теме идёт в ответ (подписана);
             # v3.122: при «Не показывать бред» фантазии LLM в ответ не идут
-            own = "" if _strict else _llm_own(text)
+            own = "" if _strict or focused else _llm_own(text)
             if own:
                 body.append("_Своя LLM от себя:_ " + own)
     if not body:

@@ -27,7 +27,7 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 
 /**
- * Облако «Мозг-12» в телефоне: служба переднего плана держит Python-сервер
+ * Облако «Star Gate» в телефоне: служба переднего плана держит Python-сервер
  * (тот же код облака, что на компьютере) — платы в Wi-Fi подключаются к
  * http://IP-телефона:8077, как к облаку на компьютере.
  */
@@ -54,7 +54,7 @@ public class CloudService extends Service {
         NotificationManager nm = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         if (Build.VERSION.SDK_INT >= 26 && nm != null) {
             NotificationChannel ch = new NotificationChannel(CH, "Облако mozgnet", NotificationManager.IMPORTANCE_LOW);
-            ch.setDescription("Облако «Мозг-12» работает в телефоне");
+            ch.setDescription("Облако «Star Gate» работает в телефоне");
             nm.createNotificationChannel(ch);
         }
     }

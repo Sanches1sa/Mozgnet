@@ -33,6 +33,8 @@ class StreamsTests(unittest.TestCase):
         codestream._Q.clear(); codestream._QUEUED.clear(); codestream._LEFT.clear()
         llmstreams._CREDIT.clear(); llmstreams._LIVE["steps"].clear()
         breath._WILL.clear()
+        import llm_zones
+        llm_zones._LIVE.clear()  # isolate measured training contexts from other tests
 
     def test_weights_follow_brain(self):
         w, on = llmstreams.weights()

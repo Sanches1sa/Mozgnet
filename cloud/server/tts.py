@@ -122,7 +122,8 @@ def synth_espeak(text, voice="neuro"):
     exe = None
     for c in ("espeak-ng", "espeak"):
         try:
-            subprocess.run([c, "--version"], capture_output=True, timeout=5)
+            if subprocess.run([c, "--version"], capture_output=True, timeout=5).returncode:
+                continue
             exe = c
             break
         except Exception:
@@ -131,21 +132,16 @@ def synth_espeak(text, voice="neuro"):
         return None
     ru_v = {"male": "ru+12", "robot": "ru+whisper", "female": "ru+f3"}.get(
         str(voice or "").lower(), "ru")
-    path = tempfile.gettempdir() + "/n12_tts_es.wav"
+    text=' '.join(str(text).split())
+    if not text or len(text)>600:return None
     try:
-        subprocess.run([exe, "-v", ru_v, "-s", "150", "-w", path,
-                        str(text)[:400]], capture_output=True, timeout=20)
-        with open(path, "rb") as f:
-            data = f.read()
-        if data[:4] == b"RIFF" and len(data) > 100:
-            return data
-    except Exception:
-        pass
-    finally:
-        try:
-            os.remove(path)
-        except Exception:
-            pass
+        with tempfile.TemporaryDirectory(prefix='n12-ru-') as folder:
+            path=os.path.join(folder,'speech.wav')
+            result=subprocess.run([exe,'-v',ru_v,'-s','150','-w',path,'--stdin'],input=text.encode('utf-8'),capture_output=True,timeout=40)
+            if result.returncode:return None
+            with open(path,'rb') as f:data=f.read()
+            if data[:4]==b'RIFF' and len(data)>100:return data
+    except Exception:pass
     return None
 
 

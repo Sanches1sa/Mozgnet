@@ -230,7 +230,7 @@ def build_docx(title, text):
             'package/2006/metadata/core-properties" xmlns:dc="http://purl.org/'
             'dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" '
             'xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>'
-            '%s</dc:title><dc:creator>мозг-12 (neuro12-cloud)</dc:creator>'
+            '%s</dc:title><dc:creator>Star Gate (neuro12-cloud)</dc:creator>'
             '<dcterms:created xsi:type="dcterms:W3CDTF">%s</dcterms:created>'
             '</cp:coreProperties>' % (_x(title), now))
     bio = io.BytesIO()

@@ -48,7 +48,7 @@ git add -A
 git commit -q -m "mozgnet: $(date '+%F %R')" 2>/dev/null
 if ! gh repo view "$ME/$NAME" >/dev/null 2>&1; then
   VIS=--private; [ $PUB -eq 1 ] && VIS=--public
-  gh repo create "$ME/$NAME" $VIS --source . --remote origin --push --description "mozgnet — облако Мозг-12 в телефоне" || die "не создал репозиторий"
+  gh repo create "$ME/$NAME" $VIS --source . --remote origin --push --description "mozgnet — облако Star Gate в телефоне" || die "не создал репозиторий"
 else
   git remote | grep -q origin || git remote add origin "https://github.com/$ME/$NAME.git"
   git push -u origin main || die "push не прошёл"

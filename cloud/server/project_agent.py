@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -45,6 +46,34 @@ finish: summary с итогом и ограничениями. Не утверж
 Своя LLM уже могла подготовить изменения: проверь их соответствие задаче.
 Если не можешь закончить — finish с честным объяснением. Изменения проверяются
 и выдаются пользователю ZIP-архивом, не публикуются и не развёртываются автоматически.'''
+
+
+_VERRX = re.compile(r'^(.*?)([._-]v)(\d+)$', re.I)
+_NM = r'(?:[«"\'`]([^»"\'`]{1,80})[»"\'`]|([\w.\-]{1,80}))'
+_ARCH_ASK = [
+    r'(?:назови|назвать|назовите|имя|название)\s+(?:итогов\w+\s+|конечн\w+\s+|результирующ\w+\s+)?(?:архив\w*|результат\w*|zip)\s*(?:как|:|-|—|в)?\s*' + _NM,
+    r'(?:архив\w*|результат\w*)\s+(?:назови|назвать|сохрани|упакуй)\w*\s+(?:как|в)?\s*' + _NM,
+    r'(?:упакуй|сохрани|собери)\w*\s+(?:в|как)\s+[«"\'`]?([\w.\-]{1,80}\.zip)\b',
+    r'переименуй\w*\s+(?:итогов\w+\s+|конечн\w+\s+)?архив\w*\s+(?:в|на)\s+' + _NM,
+]
+
+
+def archive_name(task, uploaded='', previous=''):
+    """Имя итогового архива: как просили в задаче; иначе имя загруженного проекта
+    (или предыдущего результата) + индекс версии: name.zip -> name_v2.zip -> name_v3.zip.
+    Индексы внутри архива не ставятся."""
+    for rx in _ARCH_ASK:
+        m = re.search(rx, str(task), re.I)
+        if m:
+            nm = re.sub(r'[^\w.\- ]', '', (m.group(1) or m.group(2) or '')).strip(' .-')
+            nm = re.sub(r'\.(zip|rar)$', '', nm, flags=re.I).strip()
+            if nm and not re.fullmatch(r'(ему|него|новый|новое|архив\w*|результат\w*|такой|другой)', nm, re.I):
+                return nm[:100] + '.zip'
+    src = str(previous or uploaded or 'project')
+    stem = re.sub(r'\.(zip|rar)$', '', src, flags=re.I)
+    stem = re.sub(r'[^\w.\- ]', '_', stem).strip(' .') or 'project'
+    mm = _VERRX.match(stem)
+    return (('%s%s%d' % (mm.group(1), mm.group(2), int(mm.group(3)) + 1)) if mm else stem + '_v2')[:100] + '.zip'
 
 
 def _owner(owner):
@@ -118,6 +147,11 @@ def _file(work, path):
     return target
 
 
+def _put(path, text):
+    """v3.223: писать байтами — на Windows write_text превращал \\n в \\r\\n и портил диффы."""
+    Path(path).write_bytes(str(text).encode('utf-8'))
+
+
 def _text(path):
     if path.stat().st_size > project_archive.MAX_FILE:
         raise ValueError('Файл превышает лимит чтения 12 МБ')
@@ -156,11 +190,32 @@ def status(ident, owner):
         return {k: v for k, v in job.items() if k != 'owner'}
 
 
-def start(project_id, task, owner, internet=True, model='auto', base_job=''):
+_MAX_STEPS_BASE = 24          # базовый бюджет шагов агента
+
+
+def _neutral_will(base, source):
+    """Нейтральная воля: бюджет как задан, температура без изменений."""
+    return dict(source=source, connected=False, zones={}, sources=[],
+                agent_strength=1.0, code_strength=1.0, learning_strength=1.0,
+                agent_effort=1.0, code_effort=1.0, temperature_multiplier=1.0,
+                learning_rate_multiplier=1.0, step_limit=max(1, int(base)))
+
+
+def _base_steps(effort):
+    """Настройка «усилие агента» внизу чата: 0.6 / 1 / 1.5 бюджета шагов."""
+    try:
+        effort = float(effort)
+    except (TypeError, ValueError):
+        effort = 1.0
+    effort = min(1.5, max(0.6, effort))
+    return max(6, min(48, round(_MAX_STEPS_BASE * effort)))
+
+
+def start(project_id, task, owner, internet=True, model='auto', base_job='', effort=None, use_will=True):
     task = str(task).strip()
     if not task or len(task) > 12000:
         raise ValueError('Опишите задачу (до 12000 символов)')
-    if model not in ('auto', 'own'):
+    if model not in ('auto', 'own', 'brain'):
         raise ValueError('Неизвестный режим модели')
     project, meta = _load('projects', project_id, owner)
     source = project / 'source'
@@ -184,7 +239,9 @@ def start(project_id, task, owner, internet=True, model='auto', base_job=''):
         job = dict(id=ident, owner=_owner(owner), project_id=project_id, task=task,
                    name=meta['name'], base_job=base_job, state='queued', status='Задача принята', done=False,
                    internet=bool(internet), model=model, events=[], created=time.time(), updated=time.time(),
-                   changed=[], checks=[], summary='', download='', diff='')
+                   changed=[], checks=[], summary='', download='', diff='',
+                   base_steps=_base_steps(effort), use_will=bool(use_will),
+                   archive=archive_name(task, meta.get('name') or '', (previous_meta.get('archive') if base_job else '')))
         _save(base, job); _ACTIVE.add(ident)
         threading.Thread(target=_run, args=(job, source), daemon=True,
                          name='project-agent-' + ident[:8]).start()
@@ -283,12 +340,14 @@ def _tool(job, work, action):
         if not isinstance(before, str) or not before or not isinstance(after, str):
             raise ValueError('Нужны before и after; before не должен быть пустым')
         old = _text(p)
+        if '\r\n' in old and '\r\n' not in before:           # v3.223: файл с CRLF, фрагмент модели с LF
+            before, after = before.replace('\n', '\r\n'), after.replace('\n', '\r\n')
         if old.count(before) != 1:
             raise ValueError('Фрагмент before должен встретиться ровно один раз')
         new = old.replace(before, after, 1)
         if len(new.encode('utf-8')) > project_archive.MAX_FILE:
             raise ValueError('Файл после замены больше 12 МБ')
-        p.write_text(new, encoding='utf-8')
+        _put(p, new)
         _event(job, 'Заменён фрагмент файла', rel, 'write')
         return dict(written=rel, bytes=p.stat().st_size)
     if tool == 'write':
@@ -300,7 +359,7 @@ def _tool(job, work, action):
         if not p.exists() and len(inventory(work)) >= project_archive.MAX_FILES:
             raise ValueError('Превышено число файлов проекта')
         p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(content, encoding='utf-8')
+        _put(p, content)
         _event(job, 'Изменён файл рабочей копии', rel, 'write')
         return dict(written=rel, bytes=p.stat().st_size)
     if tool in ('web_search', 'web_read'):
@@ -332,7 +391,7 @@ def _own(job, work, docs=''):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 functions.setdefault(node.name, []).append((rel, node))
                 context.append('%s: %s' % (rel, ast.get_source_segment(text, node)[:1500]))
-    will = brainwill.policy('code')
+    will = _neutral_will(job['base_steps'], 'Воля мозга-12 отключена настройкой агента') if not job.get('use_will', True) else brainwill.policy('code')
     job['will'] = will
     _event(job, 'Воля мозга-12 для своей LLM', will['source'] + '\nСила Кирпичиков: %.2f' % will['code_strength'], 'will')
     _event(job, 'Своя LLM пишет Python-код', 'Задача целиком и доступные функции проекта', 'model')
@@ -355,14 +414,14 @@ def _own(job, work, docs=''):
                 first = min([original.lineno] + [d.lineno for d in original.decorator_list]) - 1
                 new = ''.join(lines[:first]) + candidate.rstrip() + '\n' + ''.join(lines[original.end_lineno:])
                 ast.parse(new)
-                (work / rel).write_text(new, encoding='utf-8')
+                _put(work / rel, new)
                 _event(job, 'Своя LLM изменила функцию', rel + ': ' + node.name + '; проверен синтаксис, поведение ещё не доказано', 'write')
                 written += 1
                 break
             if not matches:
                 rel = 'agent_proposals/solution_' + str(written + 1) + '.py'
                 p = _file(work, rel); p.parent.mkdir(parents=True, exist_ok=True)
-                p.write_text(candidate.rstrip() + '\n', encoding='utf-8')
+                _put(p, candidate.rstrip() + '\n')
                 _event(job, 'Своя LLM подготовила предложение', rel + '; функция не сопоставлена с проектом автоматически', 'write')
                 written += 1
                 break
@@ -374,9 +433,9 @@ def _own(job, work, docs=''):
 
 
 def _model_loop(job, work, baseline, deadline):
-    will = brainwill.agent(MAX_STEPS)
+    will = job.get('will') or _neutral_will(job.get('base_steps') or _MAX_STEPS_BASE, 'воля недоступна')
     job['will'] = will
-    step_limit = will['step_limit']
+    step_limit = max(1, min(48, int(will.get('step_limit') or job.get('base_steps') or _MAX_STEPS_BASE)))
     _event(job, 'Воля мозга-12 для агента', will['source'] + '\nБюджет действий: %d/%d; сила %.2f' % (step_limit, MAX_STEPS, will['agent_strength']), 'will')
     paths = inventory(work)
     messages = [dict(role='system', content=_SYSTEM), dict(role='user', content=json.dumps({
@@ -469,8 +528,13 @@ def _run(job, source):
     try:
         job['state'] = 'running'
         deadline = time.monotonic() + MAX_SECONDS
-        job['will'] = brainwill.policy('agent')
-        _event(job, 'Сигнал воли мозга-12', job['will']['source'], 'will')
+        steps_base = int(job.get('base_steps') or _MAX_STEPS_BASE)
+        if job.get('use_will', True):
+            job['will'] = brainwill.agent(steps_base)
+        else:
+            job['will'] = _neutral_will(steps_base, 'Воля мозга-12 отключена настройкой агента')
+        _event(job, 'Сигнал воли мозга-12', job['will']['source'] +
+               ('; бюджет шагов %d' % job['will'].get('step_limit', steps_base)), 'will')
         _event(job, 'Задача принята', job['task'], 'plan')
         _event(job, 'Создаю рабочую копию проекта', job['name'], 'archive')
         shutil.copytree(source, work)
@@ -488,6 +552,12 @@ def _run(job, source):
                     _event(job, 'Страница получена', page.get('url', url) + '\n' + str(page.get('title') or ''), 'web')
                 except Exception as e:
                     _event(job, 'Страница недоступна', str(e), 'warning')
+        if job['model'] == 'brain':        # v3.221: Star Gate по инструкциям Контура, LLM наблюдает
+            import project_brain
+            _event(job, 'Режим: Star Gate по инструкциям', 'Код проекта не запускается; LLM наблюдает и запоминает', 'model')
+            job['summary'], finished = project_brain.run(job, work, baseline, deadline, sys.modules[__name__])
+            job['state'] = 'running' if finished else 'partial'
+            return
         own_changed = _own(job, work, '\n'.join(docs))
         if job['model'] == 'auto' and codewrite.available():
             job['summary'], finished = _model_loop(job, work, baseline, deadline)
@@ -512,6 +582,11 @@ def _run(job, source):
             job['done'] = True
             _event(job, 'Работа завершена: ' + {'review': 'результат готов к проверке', 'partial': 'частичный результат', 'blocked': 'генерация недоступна', 'error': 'ошибка', 'needs_review': 'нужна проверка ошибок', 'no_changes': 'изменений нет'}.get(job['state'], job['state']), job['summary'], 'result')
             _ACTIVE.discard(job['id'])
+
+
+def download_name(ident, owner):
+    base, job = _load('jobs', ident, owner)
+    return str(job.get('archive') or 'project-result.zip')
 
 
 def download(ident, owner):
